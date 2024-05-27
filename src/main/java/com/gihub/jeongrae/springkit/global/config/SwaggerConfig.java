@@ -17,6 +17,11 @@ public class SwaggerConfig {
 
     @Value("${app.version:v0.0.1}")
     private String APP_VERSION;
+    @Value("${host.deploy.api.server}")
+    private String DEPLOY_HOST;
+
+    @Value("${host.local.api.server}")
+    private String LOCAL_HOST;
 
     private static final String TITLE = "Project Title";
     private static final String DESCRIPTION = "Project Description";
@@ -28,6 +33,14 @@ public class SwaggerConfig {
                 .description(DESCRIPTION)
                 .version(APP_VERSION);
 
+        Server local = new Server()
+                .url(LOCAL_HOST)
+                .description("Local server");
+
+        Server deploy = new Server()
+                .url(DEPLOY_HOST)
+                .description("Deploy server");
+
         SecurityScheme securityScheme = new SecurityScheme()
                 .type(SecurityScheme.Type.HTTP)
                 .scheme("bearer")
@@ -38,6 +51,8 @@ public class SwaggerConfig {
                 .addList("Authorization");
 
         return new OpenAPI()
+                .addServersItem(local)
+                .addServersItem(deploy)
                 .info(info)
                 .components(new Components().addSecuritySchemes("Authorization", securityScheme))
                 .security(Collections.singletonList(securityRequirement));

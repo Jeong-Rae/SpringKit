@@ -6,6 +6,7 @@ build/
 !**/src/test/**/build/
 
 application-db.properties
+application-host.properties
 application-security.properties
 
 ### STS ###
