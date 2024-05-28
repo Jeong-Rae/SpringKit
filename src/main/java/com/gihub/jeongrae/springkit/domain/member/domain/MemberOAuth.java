@@ -19,14 +19,14 @@ public class MemberOAuth {
     private Member member;
 
     @Column(name = "oauth_id") @NotNull
-    private Long oauthId;
+    private String oauthId;
 
     @Column(name = "provider_type") @NotNull
     @Enumerated(value = EnumType.STRING)
     private OAuthProviderType oAuthProviderType;
 
     @Builder
-    public MemberOAuth(Long id, Member member, Long oauthId, OAuthProviderType oAuthProviderType) {
+    public MemberOAuth(Long id, Member member, String oauthId, OAuthProviderType oAuthProviderType) {
         this.id = id;
         this.member = member;
         this.oauthId = oauthId;

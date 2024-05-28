@@ -2,6 +2,8 @@ package com.gihub.jeongrae.springkit.global.config;
 
 import com.gihub.jeongrae.springkit.domain.auth.handler.DefaultAuthenticationFailureHandler;
 import com.gihub.jeongrae.springkit.domain.auth.handler.DefaultAuthenticationSuccessHandler;
+import com.gihub.jeongrae.springkit.domain.auth.handler.OAuthFailureHandler;
+import com.gihub.jeongrae.springkit.domain.auth.handler.OAuthSuccessHandler;
 import com.gihub.jeongrae.springkit.global.filter.*;
 import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +17,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.filter.CorsFilter;
 
@@ -28,6 +29,12 @@ public class SecurityConfig {
     private final AuthenticationTokenFilter authenticationTokenFilter;
     private final BusinessExceptionHandlerFilter businessExceptionHandlerFilter;
     private final JwtProvider jwtProvider;
+
+    private final DefaultAuthenticationSuccessHandler defaultAuthenticationSuccessHandler;
+    private final DefaultAuthenticationFailureHandler defaultAuthenticationFailureHandler;
+
+    private final OAuthSuccessHandler oAuthSuccessHandler;
+    private final OAuthFailureHandler oAuthFailureHandler;
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -36,6 +43,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
+                // Form Login
                 .formLogin(form -> form
                         .loginProcessingUrl("/login")
                         .permitAll())
@@ -44,6 +52,12 @@ public class SecurityConfig {
                         defaultAuthenticationFilter(authenticationManager(http.getSharedObject(AuthenticationConfiguration.class))),
                         UsernamePasswordAuthenticationFilter.class)
 
+                // OAuth2
+                .oauth2Login(oauth2Login -> oauth2Login
+                        .loginPage("/login")
+                        .defaultSuccessUrl("/home")
+                        .successHandler(oAuthSuccessHandler)
+                        .failureHandler(oAuthFailureHandler))
 
                 .authorizeHttpRequests((authorize) -> authorize
                 .requestMatchers("/", "/home/**", "/index/**", "/index.js", "/favicon.ico", "/swagger-ui/**", "/v3/**").permitAll()
@@ -63,9 +77,10 @@ public class SecurityConfig {
 
     @Bean
     public DefaultAuthenticationFilter defaultAuthenticationFilter(AuthenticationManager authenticationManager) {
-        DefaultAuthenticationFilter filter = new DefaultAuthenticationFilter(authenticationManager,
-                new DefaultAuthenticationSuccessHandler(jwtProvider),
-                new DefaultAuthenticationFailureHandler());
+        DefaultAuthenticationFilter filter = new DefaultAuthenticationFilter(
+                authenticationManager,
+                defaultAuthenticationSuccessHandler,
+                defaultAuthenticationFailureHandler);
         filter.setFilterProcessesUrl("/login");
         return filter;
     }
