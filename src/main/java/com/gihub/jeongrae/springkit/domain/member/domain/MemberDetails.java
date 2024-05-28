@@ -1,10 +1,12 @@
 package com.gihub.jeongrae.springkit.domain.member.domain;
 
+import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
 
+@Getter
 public class MemberDetails implements UserDetails {
     private final Member member;
 
