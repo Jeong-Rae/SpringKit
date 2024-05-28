@@ -37,9 +37,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .formLogin(form -> form
-                        .loginPage("/login")
                         .loginProcessingUrl("/login")
-                        .defaultSuccessUrl("/")
                         .permitAll())
                 .logout(logout -> logout.permitAll())
                 .addFilterBefore(

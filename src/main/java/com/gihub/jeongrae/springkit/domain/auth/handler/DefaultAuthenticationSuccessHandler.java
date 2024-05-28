@@ -2,16 +2,12 @@ package com.gihub.jeongrae.springkit.domain.auth.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gihub.jeongrae.springkit.domain.member.domain.MemberDetails;
-import com.gihub.jeongrae.springkit.domain.member.dto.MemberDTO;
 import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
 import com.gihub.jeongrae.springkit.global.jwt.TokenResponse;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 
 import java.io.IOException;
