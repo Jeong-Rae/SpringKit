@@ -53,9 +53,9 @@ public class AuthenticationTokenFilter extends OncePerRequestFilter {
 
         String token = this.resolveToken(request);
 
-        Long aud = jwtProvider.parseAudience(token); // 토큰 Aud에 Member Id를 기록하고 있음
+        String aud = jwtProvider.parseAudience(token); // 토큰 Aud에 Member email을 기록하고 있음
 
-        UserDetails userDetails = memberDetailsService.loadUserByUsername(aud.toString()); // memberId를 기반으로 조회
+        UserDetails userDetails = memberDetailsService.loadUserByUsername(aud); // memberId를 기반으로 조회
 
         UsernamePasswordAuthenticationToken authenticationToken
                 = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());

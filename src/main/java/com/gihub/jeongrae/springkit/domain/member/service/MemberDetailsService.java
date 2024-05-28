@@ -22,11 +22,10 @@ public class MemberDetailsService implements UserDetailsService {
     private final Logger LOGGER = LoggerFactory.getLogger(MemberDetailsService.class);
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        Long id = Long.parseLong(username);
-        Member member = memberRepository.findById(id)
+        Member member = memberRepository.findMemberByEmail(username)
                 .orElseThrow(() -> {
-                    LOGGER.info("[loadUserByUsername] id:{}, {}", id, ErrorCode.MEMBER_NOT_FOUND);
-                    throw new BusinessException(ErrorCode.MEMBER_NOT_FOUND, HttpStatus.NOT_FOUND);
+                    LOGGER.info("[loadUserByUsername] username:{}, {}", username, ErrorCode.MEMBER_NOT_FOUND);
+                    return new BusinessException(ErrorCode.MEMBER_NOT_FOUND, HttpStatus.NOT_FOUND);
                 });
         return new MemberDetails(member);
     }

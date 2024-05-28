@@ -40,7 +40,7 @@ public class JwtProvider {
     public String generateAccessToken(Member member) {
         String token = Jwts.builder()
                 .issuer(ISS)
-                .audience().add(member.getId().toString()).and()
+                .audience().add(member.getEmail()).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + ACCESS_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
@@ -52,7 +52,7 @@ public class JwtProvider {
     public String generateAccessToken(MemberDTO memberDTO) {
         String token = Jwts.builder()
                 .issuer(ISS)
-                .audience().add(memberDTO.id().toString()).and()
+                .audience().add(memberDTO.email()).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + ACCESS_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
@@ -65,7 +65,7 @@ public class JwtProvider {
     public String generateRefreshToken(Member member) {
         String token = Jwts.builder()
                 .issuer(ISS)
-                .audience().add(member.getId().toString()).and()
+                .audience().add(member.getEmail()).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + REFRESH_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
@@ -77,7 +77,7 @@ public class JwtProvider {
     public String generateRefreshToken(MemberDTO memberDTO) {
         String token = Jwts.builder()
                 .issuer(ISS)
-                .audience().add(memberDTO.id().toString()).and()
+                .audience().add(memberDTO.email()).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + REFRESH_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
@@ -87,7 +87,7 @@ public class JwtProvider {
         return token;
     }
 
-    public Long parseAudience(String token) {
+    public String parseAudience(String token) {
         try {
             Jws<Claims> claims = Jwts.parser()
                     .verifyWith(SECRET_KEY)
@@ -105,7 +105,7 @@ public class JwtProvider {
                     .iterator()
                     .next();
 
-            return Long.parseLong(aud);
+            return aud;
         } catch (JwtException | IllegalArgumentException e) {
             LOGGER.warn("[parseAudience] {} :{}", ErrorCode.INVALID_TOKEN, token);
             throw new BusinessException(ErrorCode.INVALID_TOKEN, HttpStatus.UNAUTHORIZED);
