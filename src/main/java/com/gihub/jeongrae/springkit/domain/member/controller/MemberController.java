@@ -41,14 +41,15 @@ public class MemberController {
         accessToken.setHttpOnly(true);
         accessToken.setSecure(true);
         accessToken.setPath("/");
-        accessToken.setMaxAge(60 * 60 * 24);
+        accessToken.setMaxAge(jwtProvider.getACCESS_VALIDITY_TIME().intValue());
         httpServletResponse.addCookie(accessToken);
-    }private void addRefreshTokenToCookie(TokenResponse tokenResponse, HttpServletResponse httpServletResponse) {
+    }
+    private void addRefreshTokenToCookie(TokenResponse tokenResponse, HttpServletResponse httpServletResponse) {
         Cookie refreshCookie = new Cookie("REFRESH_TOKEN", tokenResponse.refreshToken());
         refreshCookie.setHttpOnly(true);
         refreshCookie.setSecure(true);
         refreshCookie.setPath("/");
-        refreshCookie.setMaxAge(60 * 60 * 24);
+        refreshCookie.setMaxAge(jwtProvider.getREFRESH_VALIDITY_TIME().intValue());
         httpServletResponse.addCookie(refreshCookie);
     }
 }

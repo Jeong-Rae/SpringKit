@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
 
-@Getter @ToString
+@Getter @ToString(exclude = {"password"})
 @Table
 @Entity
 public class Member extends BaseTimeEntity {
