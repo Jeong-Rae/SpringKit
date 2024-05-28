@@ -8,6 +8,9 @@ build/
 application-db.properties
 application-host.properties
 application-security.properties
+application-db.yaml
+application-host.yaml
+application-security.yaml
 
 ### STS ###
 .apt_generated
