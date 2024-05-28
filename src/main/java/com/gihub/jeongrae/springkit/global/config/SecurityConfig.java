@@ -44,6 +44,7 @@ public class SecurityConfig {
                         defaultAuthenticationFilter(authenticationManager(http.getSharedObject(AuthenticationConfiguration.class))),
                         UsernamePasswordAuthenticationFilter.class)
 
+
                 .authorizeHttpRequests((authorize) -> authorize
                 .requestMatchers("/", "/home/**", "/index/**", "/index.js", "/favicon.ico", "/swagger-ui/**", "/v3/**").permitAll()
                 .requestMatchers("/api/auth/**", "/api/member/register").permitAll()

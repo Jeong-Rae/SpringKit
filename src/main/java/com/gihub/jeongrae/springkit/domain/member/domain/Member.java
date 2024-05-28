@@ -7,6 +7,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Getter @ToString(exclude = {"password"})
 @Table
 @Entity
@@ -20,6 +23,9 @@ public class Member extends BaseTimeEntity {
 
     @Column(name = "password") @NotNull
     private String password;
+
+    @OneToMany(mappedBy = "member")
+    private List<MemberOAuth> memberOAuths = new ArrayList<>();
 
     @Builder
     public Member(Long id, String email, String password) {
