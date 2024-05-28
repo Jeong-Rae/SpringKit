@@ -2,6 +2,7 @@ package com.gihub.jeongrae.springkit.domain.member.domain;
 
 import com.gihub.jeongrae.springkit.global.util.BaseTimeEntity;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
@@ -14,10 +15,10 @@ public class Member extends BaseTimeEntity {
     @Column(name = "member_id")
     private Long id;
 
-    @Column(name = "email", unique = true)
+    @Column(name = "email", unique = true) @NotNull
     private String email;
 
-    @Column(name = "password")
+    @Column(name = "password") @NotNull
     private String password;
 
     @Builder

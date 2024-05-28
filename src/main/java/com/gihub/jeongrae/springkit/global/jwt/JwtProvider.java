@@ -1,6 +1,7 @@
 package com.gihub.jeongrae.springkit.global.jwt;
 
 import com.gihub.jeongrae.springkit.domain.member.domain.Member;
+import com.gihub.jeongrae.springkit.domain.member.dto.MemberDTO;
 import com.gihub.jeongrae.springkit.global.exception.BusinessException;
 import com.gihub.jeongrae.springkit.global.exception.ErrorCode;
 import io.jsonwebtoken.*;
@@ -46,11 +47,35 @@ public class JwtProvider {
         LOGGER.info("[generateAccessToken] {}", token);
         return token;
     }
+    public String generateAccessToken(MemberDTO memberDTO) {
+        String token = Jwts.builder()
+                .issuer(ISS)
+                .audience().add(memberDTO.id().toString()).and()
+                .issuedAt(new Date())
+                .expiration(new Date(new Date().getTime() + ACCESS_VALIDITY_TIME))
+                .signWith(SECRET_KEY)
+                .compact();
+
+        LOGGER.info("[generateAccessToken] {}", token);
+        return token;
+    }
 
     public String generateRefreshToken(Member member) {
         String token = Jwts.builder()
                 .issuer(ISS)
                 .audience().add(member.getId().toString()).and()
+                .issuedAt(new Date())
+                .expiration(new Date(new Date().getTime() + REFRESH_VALIDITY_TIME))
+                .signWith(SECRET_KEY)
+                .compact();
+
+        LOGGER.info("[generateRefreshToken] {}", token);
+        return token;
+    }
+    public String generateRefreshToken(MemberDTO memberDTO) {
+        String token = Jwts.builder()
+                .issuer(ISS)
+                .audience().add(memberDTO.id().toString()).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + REFRESH_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
