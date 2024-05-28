@@ -1,9 +1,13 @@
 package com.gihub.jeongrae.springkit.global.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gihub.jeongrae.springkit.global.exception.BusinessException;
+import com.gihub.jeongrae.springkit.global.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -39,6 +43,11 @@ public class DefaultAuthenticationFilter extends UsernamePasswordAuthenticationF
                 return this.getAuthenticationManager().authenticate(authToken);
             } catch (IOException e) {
                 throw new RuntimeException(e);
+            } catch (InternalAuthenticationServiceException e) {
+                if (e.getCause() instanceof BusinessException) {
+                    throw new BusinessException(ErrorCode.INVALID_EMAIL_OR_PASSWORD, HttpStatus.BAD_REQUEST);
+                }
+                throw new BusinessException(ErrorCode.FAIL_PROCEED, HttpStatus.INTERNAL_SERVER_ERROR);
             }
         } else {
             return super.attemptAuthentication(request, response);

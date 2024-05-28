@@ -2,9 +2,7 @@ package com.gihub.jeongrae.springkit.global.config;
 
 import com.gihub.jeongrae.springkit.domain.auth.handler.DefaultAuthenticationFailureHandler;
 import com.gihub.jeongrae.springkit.domain.auth.handler.DefaultAuthenticationSuccessHandler;
-import com.gihub.jeongrae.springkit.global.filter.DefaultAuthenticationFilter;
-import com.gihub.jeongrae.springkit.global.filter.DefaultCorsFilter;
-import com.gihub.jeongrae.springkit.global.filter.DefaultServletFilter;
+import com.gihub.jeongrae.springkit.global.filter.*;
 import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +25,8 @@ import org.springframework.web.filter.CorsFilter;
 public class SecurityConfig {
     private final DefaultCorsFilter defaultCorsFilter;
     private final DefaultServletFilter defaultServletFilter;
+    private final AuthenticationTokenFilter authenticationTokenFilter;
+    private final BusinessExceptionHandlerFilter businessExceptionHandlerFilter;
     private final JwtProvider jwtProvider;
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -49,7 +49,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests((authorize) -> authorize
                 .requestMatchers("/", "/home/**", "/index/**", "/index.js", "/favicon.ico", "/swagger-ui/**", "/v3/**").permitAll()
                 .requestMatchers("/api/auth/**", "/api/member/register").permitAll()
-                .anyRequest().authenticated());
+                .anyRequest().authenticated())
+
+
+                .addFilterBefore(authenticationTokenFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(businessExceptionHandlerFilter, AuthenticationTokenFilter.class);
 
         return http.build();
     }
