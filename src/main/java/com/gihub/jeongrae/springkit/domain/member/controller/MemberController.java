@@ -1,9 +1,7 @@
 package com.gihub.jeongrae.springkit.domain.member.controller;
 
-import com.gihub.jeongrae.springkit.domain.member.domain.Member;
 import com.gihub.jeongrae.springkit.domain.member.dto.MemberDTO;
-import com.gihub.jeongrae.springkit.domain.member.dto.RegisterRequest;
-import com.gihub.jeongrae.springkit.domain.member.service.MemberDetailsService;
+import com.gihub.jeongrae.springkit.domain.member.dto.MemberRegisterRequestDto;
 import com.gihub.jeongrae.springkit.domain.member.service.MemberService;
 import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
 import com.gihub.jeongrae.springkit.global.jwt.TokenResponse;
@@ -24,7 +22,7 @@ public class MemberController {
     private final JwtProvider jwtProvider;
 
     @PostMapping("register")
-    public ResponseEntity<TokenResponse> resister(@RequestBody RegisterRequest request, HttpServletResponse httpServletResponse) {
+    public ResponseEntity<TokenResponse> resister(@RequestBody MemberRegisterRequestDto request, HttpServletResponse httpServletResponse) {
         MemberDTO memberDTO = memberService.createMember(request);
 
         String accessToken = jwtProvider.generateAccessToken(memberDTO);

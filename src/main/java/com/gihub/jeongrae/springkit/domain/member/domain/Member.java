@@ -1,5 +1,7 @@
 package com.gihub.jeongrae.springkit.domain.member.domain;
 
+import com.gihub.jeongrae.springkit.domain.member.converter.EncodedPasswordAttributeConverter;
+import com.gihub.jeongrae.springkit.domain.member.vo.EncodedPassword;
 import com.gihub.jeongrae.springkit.global.util.BaseTimeEntity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
@@ -18,20 +20,21 @@ public class Member extends BaseTimeEntity {
     @Column(name = "member_id")
     private Long id;
 
-    @Column(name = "email", unique = true) @NotNull
+    @Column(name = "email", length = 64, unique = true) @NotNull
     private String email;
 
-    @Column(name = "password") @NotNull
-    private String password;
+    @Column(name = "password", length = 32) @NotNull
+    @Convert(converter = EncodedPasswordAttributeConverter.class)
+    private EncodedPassword encodedPassword;
 
     @OneToMany(mappedBy = "member")
     private List<MemberOAuth> memberOAuths = new ArrayList<>();
 
     @Builder
-    public Member(Long id, String email, String password) {
+    public Member(Long id, String email, EncodedPassword encodedPassword) {
         this.id = id;
         this.email = email;
-        this.password = password;
+        this.encodedPassword = encodedPassword;
     }
 
     public Member() {

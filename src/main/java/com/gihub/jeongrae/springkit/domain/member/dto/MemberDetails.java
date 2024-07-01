@@ -1,5 +1,6 @@
-package com.gihub.jeongrae.springkit.domain.member.domain;
+package com.gihub.jeongrae.springkit.domain.member.dto;
 
+import com.gihub.jeongrae.springkit.domain.member.domain.Member;
 import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,7 +22,7 @@ public class MemberDetails implements UserDetails {
 
     @Override
     public String getPassword() {
-        return member.getPassword();
+        return member.getEncodedPassword().password();
     }
 
     @Override

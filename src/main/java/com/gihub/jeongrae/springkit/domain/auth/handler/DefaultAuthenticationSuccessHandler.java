@@ -1,7 +1,7 @@
 package com.gihub.jeongrae.springkit.domain.auth.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.gihub.jeongrae.springkit.domain.member.domain.MemberDetails;
+import com.gihub.jeongrae.springkit.domain.member.dto.MemberDetails;
 import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
 import com.gihub.jeongrae.springkit.global.jwt.TokenResponse;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,7 +1,7 @@
 package com.gihub.jeongrae.springkit.domain.member.service;
 
 import com.gihub.jeongrae.springkit.domain.member.domain.Member;
-import com.gihub.jeongrae.springkit.domain.member.domain.MemberDetails;
+import com.gihub.jeongrae.springkit.domain.member.dto.MemberDetails;
 import com.gihub.jeongrae.springkit.domain.member.repository.MemberRepository;
 import com.gihub.jeongrae.springkit.global.exception.BusinessException;
 import com.gihub.jeongrae.springkit.global.exception.ErrorCode;

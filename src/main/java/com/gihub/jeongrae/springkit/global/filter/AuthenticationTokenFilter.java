@@ -1,6 +1,5 @@
 package com.gihub.jeongrae.springkit.global.filter;
 
-import com.gihub.jeongrae.springkit.domain.member.domain.MemberDetails;
 import com.gihub.jeongrae.springkit.domain.member.service.MemberDetailsService;
 import com.gihub.jeongrae.springkit.global.exception.BusinessException;
 import com.gihub.jeongrae.springkit.global.exception.ErrorCode;
@@ -17,7 +16,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 

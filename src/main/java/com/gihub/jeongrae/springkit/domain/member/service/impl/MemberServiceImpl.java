@@ -1,10 +1,11 @@
 package com.gihub.jeongrae.springkit.domain.member.service.impl;
 
 import com.gihub.jeongrae.springkit.domain.member.converter.MemberConverter;
+import com.gihub.jeongrae.springkit.domain.member.vo.EncodedPassword;
 import com.gihub.jeongrae.springkit.domain.member.domain.Member;
 import com.gihub.jeongrae.springkit.domain.member.domain.OAuthProviderType;
 import com.gihub.jeongrae.springkit.domain.member.dto.MemberDTO;
-import com.gihub.jeongrae.springkit.domain.member.dto.RegisterRequest;
+import com.gihub.jeongrae.springkit.domain.member.dto.MemberRegisterRequestDto;
 import com.gihub.jeongrae.springkit.domain.member.repository.MemberRepository;
 import com.gihub.jeongrae.springkit.domain.member.service.MemberService;
 import com.gihub.jeongrae.springkit.global.exception.BusinessException;
@@ -22,13 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class MemberServiceImpl implements MemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
-    private final Logger LOGGER = LoggerFactory.getLogger(MemberServiceImpl.class);
+    private final Logger LOGGER = LoggerFactory.getLogger(getClass());
     @Override
     @Transactional
-    public MemberDTO createMember(RegisterRequest request) {
+    public MemberDTO createMember(MemberRegisterRequestDto request) {
         Member member = Member.builder()
                 .email(request.email())
-                .password(passwordEncoder.encode(request.password()))
+                .encodedPassword(new EncodedPassword(passwordEncoder.encode(request.rawPassword().password())))
                 .build();
 
         member = memberRepository.save(member);
