@@ -1,4 +1,4 @@
-package com.gihub.jeongrae.springkit.global.jwt;
+package com.gihub.jeongrae.springkit.domain.auth.jwt;
 
 import com.gihub.jeongrae.springkit.domain.member.domain.Member;
 import com.gihub.jeongrae.springkit.domain.member.dto.MemberDTO;
@@ -18,7 +18,6 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
-import java.util.Set;
 
 @Getter
 @RequiredArgsConstructor

@@ -5,7 +5,7 @@ import com.gihub.jeongrae.springkit.domain.auth.handler.DefaultAuthenticationSuc
 import com.gihub.jeongrae.springkit.domain.auth.handler.OAuthFailureHandler;
 import com.gihub.jeongrae.springkit.domain.auth.handler.OAuthSuccessHandler;
 import com.gihub.jeongrae.springkit.global.filter.*;
-import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
+import com.gihub.jeongrae.springkit.domain.auth.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -1,4 +1,4 @@
-package com.gihub.jeongrae.springkit.global.jwt;
+package com.gihub.jeongrae.springkit.domain.auth.jwt;
 
 public record TokenResponse(
         String accessToken,

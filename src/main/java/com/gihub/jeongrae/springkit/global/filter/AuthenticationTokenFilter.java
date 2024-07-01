@@ -3,7 +3,7 @@ package com.gihub.jeongrae.springkit.global.filter;
 import com.gihub.jeongrae.springkit.domain.member.service.MemberDetailsService;
 import com.gihub.jeongrae.springkit.global.exception.BusinessException;
 import com.gihub.jeongrae.springkit.global.exception.ErrorCode;
-import com.gihub.jeongrae.springkit.global.jwt.JwtProvider;
+import com.gihub.jeongrae.springkit.domain.auth.jwt.JwtProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
