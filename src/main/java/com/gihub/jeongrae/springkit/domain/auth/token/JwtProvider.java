@@ -1,5 +1,7 @@
-package com.gihub.jeongrae.springkit.domain.auth.jwt;
+package com.gihub.jeongrae.springkit.domain.auth.token;
 
+import com.gihub.jeongrae.springkit.domain.auth.token.vo.AccessToken;
+import com.gihub.jeongrae.springkit.domain.auth.token.vo.RefreshToken;
 import com.gihub.jeongrae.springkit.domain.member.domain.Member;
 import com.gihub.jeongrae.springkit.domain.member.dto.MemberDTO;
 import com.gihub.jeongrae.springkit.global.exception.BusinessException;
@@ -22,68 +24,72 @@ import java.util.Date;
 @Getter
 @RequiredArgsConstructor
 @Component
-public class JwtProvider {
+public class JwtProvider implements TokenProvider {
     @Value("${jwt.secret}")
     private String JWT_SECRET = "";
     private SecretKey SECRET_KEY;
     private final String ISS = "github.com/jeongrae";
     private final Long ACCESS_VALIDITY_TIME = 60 * 60 * 1000L;
     private final Long REFRESH_VALIDITY_TIME = 7 * 24 * 60 * 60 * 1000L;
-    private final Logger LOGGER = LoggerFactory.getLogger(JwtProvider.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(JwtProvider.class);
 
     @PostConstruct
     protected void init() {
         this.SECRET_KEY = Keys.hmacShaKeyFor(Decoders.BASE64.decode(JWT_SECRET));
     }
 
-    public String generateAccessToken(Member member) {
+    public AccessToken generateAccessToken(Member member) {
+        if (member.getEmail() == null || member.getEmail().isBlank()) {
+            return AccessToken.of("");
+        }
+        return this.generateAccessToken(member.getEmail());
+    }
+    public AccessToken generateAccessToken(MemberDTO memberDTO) {
+        if (memberDTO.email() == null || memberDTO.email().isBlank()) {
+            return AccessToken.of("");
+        }
+        return this.generateAccessToken(memberDTO.email());
+    }
+
+    private AccessToken generateAccessToken(String email) {
         String token = Jwts.builder()
+                .claim("type", "access")
                 .issuer(ISS)
-                .audience().add(member.getEmail()).and()
+                .audience().add(email).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + ACCESS_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
                 .compact();
 
         LOGGER.info("[generateAccessToken] {}", token);
-        return token;
-    }
-    public String generateAccessToken(MemberDTO memberDTO) {
-        String token = Jwts.builder()
-                .issuer(ISS)
-                .audience().add(memberDTO.email()).and()
-                .issuedAt(new Date())
-                .expiration(new Date(new Date().getTime() + ACCESS_VALIDITY_TIME))
-                .signWith(SECRET_KEY)
-                .compact();
-
-        LOGGER.info("[generateAccessToken] {}", token);
-        return token;
+        return AccessToken.of(token);
     }
 
-    public String generateRefreshToken(Member member) {
-        String token = Jwts.builder()
-                .issuer(ISS)
-                .audience().add(member.getEmail()).and()
-                .issuedAt(new Date())
-                .expiration(new Date(new Date().getTime() + REFRESH_VALIDITY_TIME))
-                .signWith(SECRET_KEY)
-                .compact();
-
-        LOGGER.info("[generateRefreshToken] {}", token);
-        return token;
+    public RefreshToken generateRefreshToken(Member member) {
+        if (member.getEmail() == null || member.getEmail().isBlank()) {
+            return RefreshToken.of("");
+        }
+        return this.generateRefreshToken(member.getEmail());
     }
-    public String generateRefreshToken(MemberDTO memberDTO) {
+    public RefreshToken generateRefreshToken(MemberDTO memberDTO) {
+        if (memberDTO.email() == null || memberDTO.email().isBlank()) {
+            return RefreshToken.of("");
+        }
+        return this.generateRefreshToken(memberDTO.email());
+    }
+
+    private RefreshToken generateRefreshToken(String email) {
         String token = Jwts.builder()
+                .claim("type", "refresh")
                 .issuer(ISS)
-                .audience().add(memberDTO.email()).and()
+                .audience().add(email).and()
                 .issuedAt(new Date())
                 .expiration(new Date(new Date().getTime() + REFRESH_VALIDITY_TIME))
                 .signWith(SECRET_KEY)
                 .compact();
 
         LOGGER.info("[generateRefreshToken] {}", token);
-        return token;
+        return RefreshToken.of(token);
     }
 
     public String parseAudience(String token) {

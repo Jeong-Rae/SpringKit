@@ -1,12 +1,13 @@
 package com.gihub.jeongrae.springkit.domain.auth.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gihub.jeongrae.springkit.domain.auth.token.JwtProvider;
+import com.gihub.jeongrae.springkit.domain.auth.token.TokenResponse;
+import com.gihub.jeongrae.springkit.domain.auth.token.vo.AccessToken;
+import com.gihub.jeongrae.springkit.domain.auth.token.vo.RefreshToken;
 import com.gihub.jeongrae.springkit.domain.member.domain.Member;
 import com.gihub.jeongrae.springkit.domain.member.domain.OAuthProviderType;
 import com.gihub.jeongrae.springkit.domain.member.service.MemberService;
-import com.gihub.jeongrae.springkit.domain.auth.jwt.JwtProvider;
-import com.gihub.jeongrae.springkit.domain.auth.jwt.TokenResponse;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class OAuthSuccessHandler implements AuthenticationSuccessHandler {
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
-                                        Authentication authentication) throws IOException, ServletException {
+                                        Authentication authentication) throws IOException {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
         Map<String, Object> attributes = oAuth2User.getAttributes();
 
@@ -42,8 +43,8 @@ public class OAuthSuccessHandler implements AuthenticationSuccessHandler {
 
         Member member = memberService.findMemberByOAuthId(oauthId, oAuthProviderType);
 
-        String accessToken = jwtProvider.generateAccessToken(member);
-        String refreshToken = jwtProvider.generateRefreshToken(member);
+        AccessToken accessToken = jwtProvider.generateAccessToken(member);
+        RefreshToken refreshToken = jwtProvider.generateRefreshToken(member);
         TokenResponse tokenResponse = TokenResponse.of(accessToken, refreshToken);
 
         response.setContentType("application/json");

@@ -1,9 +1,11 @@
 package com.gihub.jeongrae.springkit.domain.auth.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gihub.jeongrae.springkit.domain.auth.token.vo.AccessToken;
+import com.gihub.jeongrae.springkit.domain.auth.token.vo.RefreshToken;
 import com.gihub.jeongrae.springkit.domain.member.dto.MemberDetails;
-import com.gihub.jeongrae.springkit.domain.auth.jwt.JwtProvider;
-import com.gihub.jeongrae.springkit.domain.auth.jwt.TokenResponse;
+import com.gihub.jeongrae.springkit.domain.auth.token.JwtProvider;
+import com.gihub.jeongrae.springkit.domain.auth.token.TokenResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +26,8 @@ public class DefaultAuthenticationSuccessHandler implements AuthenticationSucces
                                         Authentication authentication) throws IOException {
         MemberDetails memberDetails = (MemberDetails) authentication.getPrincipal();
 
-        String accessToken = jwtProvider.generateAccessToken(memberDetails.getMember());
-        String refreshToken = jwtProvider.generateRefreshToken(memberDetails.getMember());
+        AccessToken accessToken = jwtProvider.generateAccessToken(memberDetails.getMember());
+        RefreshToken refreshToken = jwtProvider.generateRefreshToken(memberDetails.getMember());
         TokenResponse tokenResponse = TokenResponse.of(accessToken, refreshToken);
 
         response.setContentType("application/json");
