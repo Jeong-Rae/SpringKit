@@ -1,5 +1,3 @@
 spring:
-  application:
-    name: springkit
   profiles:
     include: db,security,host
