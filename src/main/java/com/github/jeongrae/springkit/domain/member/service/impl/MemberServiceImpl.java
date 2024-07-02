@@ -23,10 +23,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class MemberServiceImpl implements MemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
-    private final Logger LOGGER = LoggerFactory.getLogger(getClass());
+    private static final Logger LOGGER = LoggerFactory.getLogger(MemberServiceImpl.class);
     @Override
     @Transactional
     public MemberDTO createMember(MemberRegisterRequestDto request) {
+        if (memberRepository.existsByEmail(request.email())) {
+            LOGGER.warn("[createMember] email: {}, {}", request.email(), ErrorCode.EMAIL_ALREADY_EXISTS);
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS, HttpStatus.BAD_REQUEST);
+        }
+
         Member member = Member.builder()
                 .email(request.email())
                 .encodedPassword(new EncodedPassword(passwordEncoder.encode(request.rawPassword().password())))
