@@ -18,10 +18,10 @@ class ProjectDirectoryFactoryTest {
     fun `creates a project root at an empty output location`(@TempDir temporaryDirectory: Path) {
         val projectRoot = temporaryDirectory.resolve("project")
 
-        val createdProjectRoot = defaultProjectDirectoryFactory.create(projectRoot)
+        val createdProjectRoot = fileSystemProjectDirectoryCreator.create(projectRoot)
 
-        assertEquals(projectRoot, createdProjectRoot)
-        assertTrue(createdProjectRoot.exists())
+        assertEquals(projectRoot, createdProjectRoot.path)
+        assertTrue(createdProjectRoot.path.exists())
     }
 
     @Test
@@ -29,7 +29,7 @@ class ProjectDirectoryFactoryTest {
         val projectRoot = temporaryDirectory.resolve("project").createDirectory()
 
         assertFailsWith<FileAlreadyExistsException> {
-            defaultProjectDirectoryFactory.create(projectRoot)
+            fileSystemProjectDirectoryCreator.create(projectRoot)
         }
     }
 
@@ -38,7 +38,7 @@ class ProjectDirectoryFactoryTest {
         val projectRoot = temporaryDirectory.resolve("project").createFile()
 
         assertFailsWith<FileAlreadyExistsException> {
-            defaultProjectDirectoryFactory.create(projectRoot)
+            fileSystemProjectDirectoryCreator.create(projectRoot)
         }
     }
 
@@ -48,7 +48,7 @@ class ProjectDirectoryFactoryTest {
         val projectRoot = parentFile.resolve("project")
 
         assertFailsWith<IOException> {
-            defaultProjectDirectoryFactory.create(projectRoot)
+            fileSystemProjectDirectoryCreator.create(projectRoot)
         }
         assertTrue(Files.isRegularFile(parentFile))
     }

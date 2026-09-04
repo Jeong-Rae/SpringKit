@@ -3,9 +3,9 @@ package me.jeongrae.springkit
 import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.io.path.writeText
-import me.jeongrae.springkit.generation.GenerationAction
-import me.jeongrae.springkit.generation.GenerationActionRunner
-import me.jeongrae.springkit.project.defaultProjectDirectoryFactory
+import me.jeongrae.springkit.kit.core.generation.GenerationAction
+import me.jeongrae.springkit.kit.core.generation.GenerationActionRunner
+import me.jeongrae.springkit.project.fileSystemProjectDirectoryCreator
 
 internal const val APPLICATION_NAME = "SpringKit"
 internal const val FIXED_README_CONTENT = """# SpringKit Starter
@@ -16,15 +16,15 @@ Domain: jeongrae.me
 
 private val generateReadme =
     GenerationAction { projectRoot ->
-        projectRoot.resolve("README.md").writeText(FIXED_README_CONTENT)
+        projectRoot.path.resolve("README.md").writeText(FIXED_README_CONTENT)
     }
 
 private val fixedProjectRunner = GenerationActionRunner(listOf(generateReadme))
 
 fun generateFixedProject(outputPath: Path): Path {
-    val projectRoot = defaultProjectDirectoryFactory.create(outputPath)
+    val projectRoot = fileSystemProjectDirectoryCreator.create(outputPath)
     fixedProjectRunner.run(projectRoot)
-    return projectRoot
+    return projectRoot.path
 }
 
 fun main(args: Array<String>) {

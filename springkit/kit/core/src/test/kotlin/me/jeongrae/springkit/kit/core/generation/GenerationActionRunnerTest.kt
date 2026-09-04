@@ -1,17 +1,17 @@
-package me.jeongrae.springkit.generation
+package me.jeongrae.springkit.kit.core.generation
 
-import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
+import me.jeongrae.springkit.kit.core.project.ProjectRoot
 
 class GenerationActionRunnerTest {
     @Test
-    fun `executes actions in order with the same project root`() {
-        val projectRoot = Path("project")
-        val invocations = mutableListOf<Pair<String, Path>>()
+    fun `동일한 프로젝트 루트로 생성 작업을 순서대로 실행한다`() {
+        val projectRoot = ProjectRoot(Path("project"))
+        val invocations = mutableListOf<Pair<String, ProjectRoot>>()
         val runner =
             GenerationActionRunner(
                 listOf(
@@ -29,24 +29,24 @@ class GenerationActionRunnerTest {
     }
 
     @Test
-    fun `copies the action order when the runner is created`() {
+    fun `실행기를 만들 때 생성 작업 순서를 복사한다`() {
         val invocations = mutableListOf<String>()
         val actions = mutableListOf(GenerationAction { invocations += "first" })
         val runner = GenerationActionRunner(actions)
         actions += GenerationAction { invocations += "late" }
 
-        runner.run(Path("project"))
+        runner.run(ProjectRoot(Path("project")))
 
         assertEquals(listOf("first"), invocations)
     }
 
     @Test
-    fun `accepts an empty action list`() {
-        GenerationActionRunner(emptyList()).run(Path("project"))
+    fun `빈 생성 작업 목록을 허용한다`() {
+        GenerationActionRunner(emptyList()).run(ProjectRoot(Path("project")))
     }
 
     @Test
-    fun `propagates a failure and skips later actions`() {
+    fun `실패를 전파하고 이후 생성 작업을 실행하지 않는다`() {
         val expectedFailure = IllegalStateException("generation failed")
         var laterActionExecuted = false
         val runner =
@@ -59,7 +59,7 @@ class GenerationActionRunnerTest {
 
         val actualFailure =
             assertFailsWith<IllegalStateException> {
-                runner.run(Path("project"))
+                runner.run(ProjectRoot(Path("project")))
             }
 
         assertSame(expectedFailure, actualFailure)

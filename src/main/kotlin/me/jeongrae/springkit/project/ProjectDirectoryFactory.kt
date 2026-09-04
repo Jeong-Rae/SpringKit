@@ -1,11 +1,8 @@
 package me.jeongrae.springkit.project
 
 import java.nio.file.Files
-import java.nio.file.Path
+import me.jeongrae.springkit.kit.core.project.ProjectDirectoryCreator
+import me.jeongrae.springkit.kit.core.project.ProjectRoot
 
-fun interface ProjectDirectoryFactory {
-    fun create(projectRoot: Path): Path
-}
-
-val defaultProjectDirectoryFactory: ProjectDirectoryFactory =
-    ProjectDirectoryFactory { projectRoot -> Files.createDirectory(projectRoot) }
+val fileSystemProjectDirectoryCreator: ProjectDirectoryCreator =
+    ProjectDirectoryCreator { outputPath -> ProjectRoot(Files.createDirectory(outputPath)) }

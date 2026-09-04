@@ -1,11 +1,11 @@
-package me.jeongrae.springkit.generation
+package me.jeongrae.springkit.kit.core.generation
 
-import java.nio.file.Path
+import me.jeongrae.springkit.kit.core.project.ProjectRoot
 
 class GenerationActionRunner(actions: Iterable<GenerationAction>) {
     private val actions = actions.toList()
 
-    fun run(projectRoot: Path) {
+    fun run(projectRoot: ProjectRoot) {
         actions.forEach { action -> action.execute(projectRoot) }
     }
 }

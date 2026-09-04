@@ -11,6 +11,7 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":springkit:kit:core"))
     testImplementation(kotlin("test"))
 }
 
