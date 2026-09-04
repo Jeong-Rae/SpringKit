@@ -254,16 +254,30 @@ fun finish(taskId: String) {
     requireCleanTrackedFiles()
 
     val branch = "feature/$taskId"
-    require(branchExists(branch)) { "로컬 feature 브랜치를 찾을 수 없습니다: $branch" }
-
-    val localFeature = commandOutput(repositoryRoot, "git", "rev-parse", branch)
+    val pullRequestUrl = commandOutput(
+        repositoryRoot,
+        "gh",
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "all",
+        "--limit",
+        "1",
+        "--json",
+        "url",
+        "--jq",
+        ".[0].url // \"\"",
+    )
+    require(pullRequestUrl.isNotBlank()) { "feature의 PR을 찾을 수 없습니다: $branch" }
 
     var pr = commandOutput(
         repositoryRoot,
         "gh",
         "pr",
         "view",
-        branch,
+        pullRequestUrl,
         "--json",
         "state,baseRefName,isDraft,headRefOid,mergeCommit,url",
         "--jq",
@@ -279,20 +293,35 @@ fun finish(taskId: String) {
     var prUrl = pr[5]
     require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
     require(state == "OPEN" || state == "MERGED") { "병합할 수 없는 PR 상태입니다: $prUrl ($state)" }
-    require(localFeature == headCommit) {
-        "로컬 $branch 에 게시되지 않은 커밋이 있습니다. update를 먼저 실행하세요."
+
+    if (branchExists(branch)) {
+        val localFeature = commandOutput(repositoryRoot, "git", "rev-parse", branch)
+        require(localFeature == headCommit) {
+            "로컬 $branch 에 게시되지 않은 커밋이 있습니다. update를 먼저 실행하세요."
+        }
     }
 
     if (state == "OPEN") {
+        require(branchExists(branch)) { "병합할 로컬 feature 브랜치를 찾을 수 없습니다: $branch" }
         require(isDraft == "false") { "초안 PR은 병합할 수 없습니다. ready 명령을 먼저 실행하세요: $prUrl" }
-        execute(repositoryRoot, "gh", "pr", "merge", branch, "--squash")
+        execute(
+            repositoryRoot,
+            "gh",
+            "pr",
+            "merge",
+            prUrl,
+            "--squash",
+            "--delete-branch",
+            "--match-head-commit",
+            headCommit,
+        )
 
         pr = commandOutput(
             repositoryRoot,
             "gh",
             "pr",
             "view",
-            branch,
+            prUrl,
             "--json",
             "state,baseRefName,isDraft,headRefOid,mergeCommit,url",
             "--jq",
@@ -335,7 +364,9 @@ fun finish(taskId: String) {
     if (remoteBranchExists(branch)) {
         execute(repositoryRoot, "git", "push", "origin", "--delete", branch)
     }
-    execute(repositoryRoot, "git", "branch", "-D", branch)
+    if (branchExists(branch)) {
+        execute(repositoryRoot, "git", "branch", "-D", branch)
+    }
 }
 
 fun usage(): Nothing = error(
