@@ -11,7 +11,9 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":springkit:kit:client"))
     implementation(project(":springkit:kit:core"))
+    implementation(project(":springkit:kit:service"))
     testImplementation(kotlin("test"))
 }
 

@@ -1,4 +1,4 @@
-package me.jeongrae.springkit.project
+package me.jeongrae.springkit.kit.client.project
 
 import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
@@ -13,42 +13,44 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.io.TempDir
 
-class ProjectDirectoryFactoryTest {
+class FileSystemProjectDirectoryCreatorTest {
+    private val projectDirectoryCreator = FileSystemProjectDirectoryCreator()
+
     @Test
-    fun `creates a project root at an empty output location`(@TempDir temporaryDirectory: Path) {
+    fun `빈 출력 위치에 프로젝트 루트를 생성한다`(@TempDir temporaryDirectory: Path) {
         val projectRoot = temporaryDirectory.resolve("project")
 
-        val createdProjectRoot = fileSystemProjectDirectoryCreator.create(projectRoot)
+        val createdProjectRoot = projectDirectoryCreator.create(projectRoot)
 
         assertEquals(projectRoot, createdProjectRoot.path)
         assertTrue(createdProjectRoot.path.exists())
     }
 
     @Test
-    fun `rejects an existing directory`(@TempDir temporaryDirectory: Path) {
+    fun `기존 디렉터리를 거부한다`(@TempDir temporaryDirectory: Path) {
         val projectRoot = temporaryDirectory.resolve("project").createDirectory()
 
         assertFailsWith<FileAlreadyExistsException> {
-            fileSystemProjectDirectoryCreator.create(projectRoot)
+            projectDirectoryCreator.create(projectRoot)
         }
     }
 
     @Test
-    fun `rejects an existing file`(@TempDir temporaryDirectory: Path) {
+    fun `기존 파일을 거부한다`(@TempDir temporaryDirectory: Path) {
         val projectRoot = temporaryDirectory.resolve("project").createFile()
 
         assertFailsWith<FileAlreadyExistsException> {
-            fileSystemProjectDirectoryCreator.create(projectRoot)
+            projectDirectoryCreator.create(projectRoot)
         }
     }
 
     @Test
-    fun `propagates an error when the project root cannot be created`(@TempDir temporaryDirectory: Path) {
+    fun `프로젝트 루트를 생성할 수 없으면 오류를 전파한다`(@TempDir temporaryDirectory: Path) {
         val parentFile = temporaryDirectory.resolve("parent").createFile()
         val projectRoot = parentFile.resolve("project")
 
         assertFailsWith<IOException> {
-            fileSystemProjectDirectoryCreator.create(projectRoot)
+            projectDirectoryCreator.create(projectRoot)
         }
         assertTrue(Files.isRegularFile(parentFile))
     }
