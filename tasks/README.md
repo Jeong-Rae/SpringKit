@@ -9,7 +9,8 @@
 - 후속 Task는 모든 선행 Task가 완료된 뒤 시작한다.
 - 서로 독립적인 Task를 병렬 수행할 때는 `.worktree` 아래의 별도 worktree를 사용한다.
 - feature와 PR에는 각 문서에 적힌 Task ID를 그대로 사용한다.
-- 커밋 제목과 본문은 유형 keyword 없이 한글로 작성한다. 코드 식별자와 고유명사는 예외다.
+- 커밋 제목은 `<Type>: <한글 설명>` 형식으로 작성한다. 영문 유형 키워드는 허용하고 설명과 본문은 한글로 작성한다.
+- `keyword`는 `키워드`, `dependency`는 `의존성`처럼 가능한 한글 음차와 번역을 우선하고, `EC2`와 같은 대체 불가능한 고유명사와 코드 식별자만 영문으로 작성한다.
 
 ## Kotlin-first 구현 원칙
 
@@ -49,7 +50,7 @@ graph TD
 | [sk-3](sk-3.md) | sparse input을 완전한 description으로 확장 | sk-2 |
 | [sk-4](sk-4.md) | 최종 description으로 결정적인 generation plan 구성 | sk-3 |
 | [sk-5](sk-5.md) | 실제로 빌드 가능한 프로젝트 파일 생성 | sk-4 |
-| [sk-6](sk-6.md) | dependency 식별자 해석과 호환성 정책 중앙화 | sk-5 |
+| [sk-6](sk-6.md) | 의존성 식별자 해석과 호환성 정책 중앙화 | sk-5 |
 | [sk-7](sk-7.md) | 생성 요청별 상태와 수명주기 격리 | sk-4 |
 | [sk-8](sk-8.md) | 생성 코어를 CLI 사용자 인터페이스로 제공 | sk-6, sk-7 |
 | [sk-9](sk-9.md) | 생성 결과를 재현 가능한 ZIP archive로 제공 | sk-8 |
