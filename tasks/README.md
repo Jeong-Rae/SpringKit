@@ -2,24 +2,6 @@
 
 이 디렉터리는 `spring-initializr-init-internals.md`에서 추출한 개인용 initializer 구현을 배포 가능한 Task로 나눈다.
 
-## 실행 원칙
-
-- 각 Task는 하나의 Goal만 가진다.
-- 각 Step은 구현 직후 독립적으로 검증하고 커밋한다.
-- 후속 Task는 모든 선행 Task가 완료된 뒤 시작한다.
-- 서로 독립적인 Task를 병렬 수행할 때는 `.worktree` 아래의 별도 worktree를 사용한다.
-- feature와 PR에는 각 문서에 적힌 Task ID를 그대로 사용한다.
-- 커밋 제목은 `<Type>: <한글 설명>` 형식으로 작성한다. 영문 유형 키워드는 허용하고 설명과 본문은 한글로 작성한다.
-- `keyword`는 `키워드`, `dependency`는 `의존성`처럼 가능한 한글 음차와 번역을 우선하고, `EC2`와 같은 대체 불가능한 고유명사와 코드 식별자만 영문으로 작성한다.
-
-## Kotlin-first 구현 원칙
-
-- SpringKit의 내부 구현 언어는 Kotlin으로 고정한다.
-- 참고 자료나 기존 spec이 Java 형태의 class, interface, static utility를 제시하더라도 동일한 contract와 행동을 보존할 수 있다면 Kotlin-native 형태를 우선한다.
-- 대체가 가능한 경우 `data class`, `value class`, `fun interface`, `sealed interface`, top-level function, extension function과 불변 collection을 사용한다.
-- Kotlin-native 변환은 기존 spec의 검증 가능한 행동과 경계를 바꾸지 않는다. Java interoperability나 framework contract로 Java 형태가 필수인 경우에만 예외를 허용한다.
-- 이 원칙은 Java 중심으로 작성된 기존 Task spec의 구현 형태보다 우선한다.
-
 ## Namespace 원칙
 
 - 소유 도메인과 사용자 표시 주소의 기본값은 `jeongrae.me`다.
