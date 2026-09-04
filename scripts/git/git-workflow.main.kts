@@ -4,6 +4,12 @@ import java.io.File
 
 data class CommandResult(val exitCode: Int, val output: String)
 
+data class PullRequestStatus(
+    val branch: String,
+    val isDraft: Boolean,
+    val url: String,
+)
+
 fun execute(
     workingDirectory: File,
     vararg command: String,
@@ -75,6 +81,9 @@ fun branchExists(branch: String): Boolean =
         captureOutput = true,
         check = false,
     ).exitCode == 0
+
+fun remoteBranchExists(branch: String): Boolean =
+    commandOutput(repositoryRoot, "git", "ls-remote", "--heads", "origin", branch).isNotBlank()
 
 fun isAncestor(ancestor: String, descendant: String): Boolean =
     execute(
@@ -192,14 +201,11 @@ fun update() {
     execute(repositoryRoot, "git", "flow", "feature", "publish", taskId)
 }
 
-fun finish(taskId: String) {
-    requireTaskId(taskId)
-    requireCommand("git-flow")
-    requireCommand("gh")
-    requireCleanTrackedFiles()
-
-    val branch = "feature/$taskId"
-    require(branchExists(branch)) { "로컬 feature 브랜치를 찾을 수 없습니다: $branch" }
+fun currentFeaturePullRequest(commandName: String): PullRequestStatus {
+    val branch = currentBranch()
+    require(branch.startsWith("feature/") && branch.length > "feature/".length) {
+        "$commandName 명령은 feature/<task-id> 브랜치에서만 실행할 수 있습니다."
+    }
 
     val pr = commandOutput(
         repositoryRoot,
@@ -208,22 +214,106 @@ fun finish(taskId: String) {
         "view",
         branch,
         "--json",
-        "state,baseRefName,mergeCommit,url",
+        "state,baseRefName,isDraft,url",
         "--jq",
-        "[.state, .baseRefName, (.mergeCommit.oid // \"\"), .url] | @tsv",
+        "[.state, .baseRefName, (.isDraft | tostring), .url] | @tsv",
     ).split('\t')
 
     require(pr.size == 4) { "PR 상태 응답을 해석할 수 없습니다." }
-    val (state, baseBranch, mergeCommit, prUrl) = pr
-    require(state == "MERGED") { "PR이 아직 MERGED 상태가 아닙니다: $prUrl ($state)" }
+    val (state, baseBranch, isDraft, prUrl) = pr
+    require(state == "OPEN") { "PR이 OPEN 상태가 아닙니다: $prUrl ($state)" }
     require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
-    require(mergeCommit.isNotBlank()) { "PR의 merge commit을 확인할 수 없습니다: $prUrl" }
+    require(isDraft == "true" || isDraft == "false") { "PR 초안 상태를 해석할 수 없습니다: $isDraft" }
+
+    return PullRequestStatus(branch, isDraft.toBoolean(), prUrl)
+}
+
+fun markReady() {
+    requireCommand("gh")
+    requireCleanTrackedFiles()
+
+    val pr = currentFeaturePullRequest("ready")
+    require(pr.isDraft) { "PR이 이미 초안 해제 상태입니다: ${pr.url}" }
+
+    execute(repositoryRoot, "gh", "pr", "ready", pr.branch)
+}
+
+fun markDraft() {
+    requireCommand("gh")
+    requireCleanTrackedFiles()
+
+    val pr = currentFeaturePullRequest("draft")
+    require(!pr.isDraft) { "PR이 이미 초안 상태입니다: ${pr.url}" }
+
+    execute(repositoryRoot, "gh", "pr", "ready", "--undo", pr.branch)
+}
+
+fun finish(taskId: String) {
+    requireTaskId(taskId)
+    requireCommand("gh")
+    requireCleanTrackedFiles()
+
+    val branch = "feature/$taskId"
+    require(branchExists(branch)) { "로컬 feature 브랜치를 찾을 수 없습니다: $branch" }
+
+    val localFeature = commandOutput(repositoryRoot, "git", "rev-parse", branch)
+
+    var pr = commandOutput(
+        repositoryRoot,
+        "gh",
+        "pr",
+        "view",
+        branch,
+        "--json",
+        "state,baseRefName,isDraft,headRefOid,mergeCommit,url",
+        "--jq",
+        "[.state, .baseRefName, (.isDraft | tostring), .headRefOid, (.mergeCommit.oid // \"\"), .url] | @tsv",
+    ).split('\t')
+
+    require(pr.size == 6) { "PR 상태 응답을 해석할 수 없습니다." }
+    var state = pr[0]
+    var baseBranch = pr[1]
+    val isDraft = pr[2]
+    val headCommit = pr[3]
+    var mergeCommit = pr[4]
+    var prUrl = pr[5]
+    require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
+    require(state == "OPEN" || state == "MERGED") { "병합할 수 없는 PR 상태입니다: $prUrl ($state)" }
+    require(localFeature == headCommit) {
+        "로컬 $branch 에 게시되지 않은 커밋이 있습니다. update를 먼저 실행하세요."
+    }
+
+    if (state == "OPEN") {
+        require(isDraft == "false") { "초안 PR은 병합할 수 없습니다. ready 명령을 먼저 실행하세요: $prUrl" }
+        execute(repositoryRoot, "gh", "pr", "merge", branch, "--squash")
+
+        pr = commandOutput(
+            repositoryRoot,
+            "gh",
+            "pr",
+            "view",
+            branch,
+            "--json",
+            "state,baseRefName,isDraft,headRefOid,mergeCommit,url",
+            "--jq",
+            "[.state, .baseRefName, (.isDraft | tostring), .headRefOid, (.mergeCommit.oid // \"\"), .url] | @tsv",
+        ).split('\t')
+        require(pr.size == 6) { "병합 후 PR 상태 응답을 해석할 수 없습니다." }
+        state = pr[0]
+        baseBranch = pr[1]
+        mergeCommit = pr[4]
+        prUrl = pr[5]
+    }
+
+    require(state == "MERGED") { "PR squash 병합이 완료되지 않았습니다: $prUrl ($state)" }
+    require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
+    require(mergeCommit.isNotBlank()) { "PR의 squash commit을 확인할 수 없습니다: $prUrl" }
 
     execute(repositoryRoot, "git", "switch", "develop")
     execute(repositoryRoot, "git", "pull", "--ff-only", "origin", "develop")
 
     require(isAncestor(mergeCommit, "develop")) {
-        "원격 PR의 merge commit이 로컬 develop에 포함되지 않았습니다: $mergeCommit"
+        "원격 PR의 squash commit이 로컬 develop에 포함되지 않았습니다: $mergeCommit"
     }
     val mergeCommitFields = commandOutput(
         repositoryRoot,
@@ -234,18 +324,18 @@ fun finish(taskId: String) {
         "1",
         mergeCommit,
     ).split(' ')
-    require(mergeCommitFields.size >= 3) {
-        "PR이 merge commit 방식으로 병합되지 않았습니다. 로컬 feature를 정리하지 않습니다: $prUrl"
-    }
-    require(isAncestor(branch, "develop")) {
-        "로컬 $branch 에 원격 PR에 병합되지 않은 커밋이 있습니다. feature를 정리하지 않습니다."
+    require(mergeCommitFields.size == 2) {
+        "PR이 squash 방식으로 병합되지 않았습니다. 로컬 feature를 정리하지 않습니다: $prUrl"
     }
 
     val gradleWrapper = File(repositoryRoot, "gradlew")
     require(gradleWrapper.isFile) { "Gradle wrapper를 찾을 수 없습니다: ${gradleWrapper.path}" }
     execute(repositoryRoot, gradleWrapper.absolutePath, "build")
 
-    execute(repositoryRoot, "git", "flow", "feature", "finish", taskId)
+    if (remoteBranchExists(branch)) {
+        execute(repositoryRoot, "git", "push", "origin", "--delete", branch)
+    }
+    execute(repositoryRoot, "git", "branch", "-D", branch)
 }
 
 fun usage(): Nothing = error(
@@ -254,6 +344,8 @@ fun usage(): Nothing = error(
       kotlin scripts/git/git-workflow.main.kts start <task-id>
       kotlin scripts/git/git-workflow.main.kts publish "[<task-id>] Feature: <description>" --body-file <path>
       kotlin scripts/git/git-workflow.main.kts update
+      kotlin scripts/git/git-workflow.main.kts ready
+      kotlin scripts/git/git-workflow.main.kts draft
       kotlin scripts/git/git-workflow.main.kts finish <task-id>
     """.trimIndent(),
 )
@@ -270,6 +362,14 @@ when (args.firstOrNull()) {
     "update" -> {
         if (args.size != 1) usage()
         update()
+    }
+    "ready" -> {
+        if (args.size != 1) usage()
+        markReady()
+    }
+    "draft" -> {
+        if (args.size != 1) usage()
+        markDraft()
     }
     "finish" -> {
         if (args.size != 2) usage()
