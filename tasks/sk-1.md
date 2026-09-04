@@ -12,44 +12,49 @@
 
 - SpringKit 애플리케이션과 테스트는 Kotlin으로 구현한다.
 - JVM group은 `me.jeongrae`, package root는 `me.jeongrae.springkit`을 사용한다.
-- Java식 SAM interface는 contract를 보존할 수 있다면 Kotlin `fun interface`로 표현한다.
-- Java static utility나 불필요한 holder class 대신 Kotlin top-level function과 함수 참조를 우선한다.
-- Java API와 연동할 때도 Kotlin의 null-safety, 불변 값, 표준 library extension을 사용해 경계를 명시한다.
+- `springkit/kit/` 아래에 `core`, `api`, `client`, `service`, `common` 멀티 모듈을 둔다.
+- 도메인 객체는 데이터 클래스와 열거형으로 표현하고, 상태·속성 파일과 행위 파일을 분리한다.
+- Java식 SAM 인터페이스는 규약을 보존할 수 있다면 Kotlin `fun interface`로 표현한다.
+- Java 정적 유틸리티나 불필요한 보유 클래스 대신 Kotlin 최상위 함수와 함수 참조를 우선한다.
+- 유스케이스는 파일당 하나를 두고 `operator fun invoke`와 필요한 중첩 `Command`, `Query`, `Result` 데이터 클래스로 구성한다.
+- `SpringKit.kt`는 인수 확인, 객체 조립, 유스케이스 실행, 결과 출력만 담당한다.
 
 ## Step
 
-### 1. Gradle 애플리케이션 기반 구성
+### 1. Gradle 멀티 모듈 기반 구성
 
-- Kotlin/JVM 소스와 테스트 source set을 구성한다.
-- `me.jeongrae.springkit`에 Kotlin top-level 애플리케이션 진입점을 추가한다.
+- Kotlin/JVM 소스와 테스트 소스 모음을 구성한다.
+- `springkit/kit/` 아래에 키트 멀티 모듈을 구성한다.
 - 검증: `./gradlew build`와 애플리케이션 실행이 성공한다.
-- 커밋: `Build: Kotlin 실행 애플리케이션 기반 구성`
+- 커밋: `Build: SpringKit 키트 멀티 모듈 구성`
 
-### 2. Project root 생성 contract 구현
+### 2. 핵심 도메인과 생성 행위 분리
 
-- 명시된 출력 경로에 project root를 준비하는 책임을 분리한다.
+- `ProjectRoot`를 상태만 가진 핵심 도메인으로 정의한다.
+- 명시된 출력 경로에 프로젝트 루트를 준비하는 규약을 분리한다.
 - 기존 파일을 암묵적으로 덮어쓰지 않는 실패 규칙을 둔다.
 - 검증: 빈 경로, 기존 경로, 생성 불가능한 경로의 단위 테스트가 통과한다.
-- 커밋: `Feature: 프로젝트 루트 생성 추가`
+- 커밋: `Refactor: 핵심 도메인과 생성 행위 분리`
 
-### 3. 최소 GenerationAction과 runner 구현
+### 3. 클라이언트 구현과 생성 유스케이스 분리
 
-- `projectRoot`에 한 가지 변경을 적용하는 action contract를 Kotlin `fun interface`로 정의한다.
-- 여러 action을 정해진 순서로 실행하는 runner를 구현한다.
-- 검증: action 호출 순서와 실패 전파 단위 테스트가 통과한다.
-- 커밋: `Feature: 생성 작업 실행기 추가`
+- 파일 시스템 디렉터리 생성과 파일 쓰기를 `client`에 배치한다.
+- 프로젝트 생성을 `GenerateFixedProject` 유스케이스로 분리한다.
+- 검증: 클라이언트의 실패 규칙과 유스케이스의 실행 순서 테스트가 통과한다.
+- 커밋: `Refactor: 클라이언트 구현과 프로젝트 생성 유스케이스 분리`
 
-### 4. 고정 프로젝트 생성 연결
+### 4. API 진입점으로 고정 프로젝트 생성 연결
 
-- 기본 파일 하나를 쓰는 action을 애플리케이션 진입점에 연결한다.
+- `SpringKit.kt`를 `api` 모듈에 배치하고 실행과 종합 책임만 남긴다.
+- 기본 파일 하나를 쓰는 생성 작업을 유스케이스에 연결한다.
 - 검증: 실행 후 예상 디렉터리와 파일이 존재하고 내용이 일치한다.
-- 커밋: `Feature: 고정 시작 프로젝트 생성`
+- 커밋: `Refactor: API 진입점 책임 축소`
 
 ## 완료 조건
 
 - `./gradlew build`가 성공한다.
-- 독립된 임시 경로에서 명령을 실행해 고정 프로젝트를 생성할 수 있다.
-- 생성 실패는 non-zero 종료 또는 명시적 예외로 관찰할 수 있다.
+- 독립된 임시 경로에서 `./gradlew :springkit:kit:api:run`을 실행해 고정 프로젝트를 생성할 수 있다.
+- 생성 실패는 0이 아닌 종료 코드 또는 명시적 예외로 관찰할 수 있다.
 
 ## 비범위
 

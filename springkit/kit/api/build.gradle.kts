@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm")
+    application
 }
 
 repositories {
@@ -16,6 +17,10 @@ dependencies {
 
 kotlin {
     jvmToolchain(21)
+}
+
+application {
+    mainClass = "me.jeongrae.springkit.kit.api.SpringKitKt"
 }
 
 tasks.test {

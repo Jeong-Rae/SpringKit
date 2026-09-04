@@ -1,4 +1,4 @@
-package me.jeongrae.springkit
+package me.jeongrae.springkit.kit.api
 
 import kotlin.io.path.Path
 import me.jeongrae.springkit.kit.client.generation.ReadmeGenerationAction
@@ -6,7 +6,7 @@ import me.jeongrae.springkit.kit.client.project.FileSystemProjectDirectoryCreato
 import me.jeongrae.springkit.kit.core.generation.GenerationActionRunner
 import me.jeongrae.springkit.kit.service.project.GenerateFixedProject
 
-internal const val APPLICATION_NAME = "SpringKit"
+private const val APPLICATION_NAME = "SpringKit"
 
 fun main(args: Array<String>) {
     require(args.size == 1) { "Usage: springkit <output-path>" }
