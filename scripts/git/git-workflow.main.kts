@@ -369,6 +369,59 @@ fun finish(taskId: String) {
     }
 }
 
+data class InteractiveCommand(
+    val name: String,
+    val description: String,
+)
+
+val interactiveCommands = listOf(
+    InteractiveCommand("start", "새 기능 브랜치 시작"),
+    InteractiveCommand("publish", "기능 브랜치 게시 및 초안 PR 생성"),
+    InteractiveCommand("update", "리뷰 반영 커밋 게시"),
+    InteractiveCommand("ready", "PR을 리뷰 준비 상태로 전환"),
+    InteractiveCommand("draft", "PR을 초안 상태로 전환"),
+    InteractiveCommand("finish", "PR 스쿼시 병합 및 기능 브랜치 정리"),
+    InteractiveCommand("exit", "종료"),
+)
+
+fun prompt(question: String): String {
+    print("? $question ")
+    System.out.flush()
+    val answer = readlnOrNull()?.trim()
+    require(!answer.isNullOrBlank()) { "입력이 필요합니다: $question" }
+    return answer
+}
+
+fun chooseInteractiveCommand(): String {
+    println("? 실행할 작업을 선택하세요")
+    interactiveCommands.forEachIndexed { index, command ->
+        println("  ${index + 1}) ${command.name} - ${command.description}")
+    }
+
+    while (true) {
+        val selection = prompt("선택")
+        val selectedByNumber = selection.toIntOrNull()?.let { interactiveCommands.getOrNull(it - 1) }
+        val selectedByName = interactiveCommands.firstOrNull { command -> command.name == selection.lowercase() }
+        val selected = selectedByNumber ?: selectedByName
+        if (selected != null) {
+            return selected.name
+        }
+        println("! 번호 또는 명령 이름을 입력하세요.")
+    }
+}
+
+fun interactive() {
+    when (chooseInteractiveCommand()) {
+        "start" -> start(prompt("Task 식별자"))
+        "publish" -> publish(prompt("PR 제목"), prompt("PR 본문 파일 경로"))
+        "update" -> update()
+        "ready" -> markReady()
+        "draft" -> markDraft()
+        "finish" -> finish(prompt("Task 식별자"))
+        "exit" -> Unit
+    }
+}
+
 fun usage(): Nothing = error(
     """
     사용법:
@@ -382,6 +435,7 @@ fun usage(): Nothing = error(
 )
 
 when (args.firstOrNull()) {
+    null -> interactive()
     "start" -> {
         if (args.size != 2) usage()
         start(args[1])
