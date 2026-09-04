@@ -14,31 +14,31 @@
 
 - `.gitignore`와 최소 `README.md`를 생성한다.
 - 검증: contributor별 경로와 파일 내용 테스트가 통과한다.
-- 커밋: `Feature: generate basic project files`
+- 커밋: `기본 프로젝트 파일 생성`
 
 ### 2. Gradle build contributor 구현
 
 - settings와 build script를 생성한다.
 - 검증: description 값이 정확한 Gradle 설정으로 렌더링되는지 테스트한다.
-- 커밋: `Feature: generate Gradle build files`
+- 커밋: `Gradle 빌드 파일 생성`
 
 ### 3. Source contributor 구현
 
 - package 경로와 application class를 생성한다.
 - 검증: package/name 조합별 경로와 소스 내용 테스트가 통과한다.
-- 커밋: `Feature: generate application source`
+- 커밋: `애플리케이션 소스 생성`
 
 ### 4. Resource contributor 구현
 
 - 표준 resource 디렉터리와 기본 설정 파일을 생성한다.
 - 검증: 예상 경로와 설정 내용 테스트가 통과한다.
-- 커밋: `Feature: generate application resources`
+- 커밋: `애플리케이션 리소스 생성`
 
 ### 5. 생성 프로젝트 build 검증
 
 - 임시 디렉터리에 생성한 프로젝트의 Gradle build를 실행하는 통합 테스트를 추가한다.
 - 검증: 생성된 프로젝트에서 clean 없이 Gradle build가 성공한다.
-- 커밋: `Test: verify generated project build`
+- 커밋: `생성된 프로젝트 빌드 검증`
 
 ## 완료 조건
 

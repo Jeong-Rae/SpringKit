@@ -14,37 +14,37 @@
 
 - ID, module 좌표, 지원 platform 범위, 선택적 BOM/repository를 표현한다.
 - 검증: metadata 불변 조건과 버전 범위 경계 테스트가 통과한다.
-- 커밋: `Feature: define dependency metadata`
+- 커밋: `의존성 메타데이터 정의`
 
 ### 2. Dependency catalogue 구현
 
 - 지원 dependency를 ID로 조회하는 중앙 catalogue를 추가한다.
 - 검증: 알려진 ID 조회와 중복 ID 거부 테스트가 통과한다.
-- 커밋: `Feature: add dependency catalogue`
+- 커밋: `의존성 카탈로그 추가`
 
 ### 3. Dependency resolver 구현
 
 - 외부 ID 목록을 canonical dependency collection으로 변환한다.
 - 검증: 알 수 없는 ID, 중복 선택, 정상 복수 선택 테스트가 통과한다.
-- 커밋: `Feature: resolve project dependencies`
+- 커밋: `프로젝트 의존성 해결`
 
 ### 4. Platform 호환성 검증
 
 - 선택한 platform version과 dependency 지원 범위를 비교한다.
 - 검증: 하한, 상한, 범위 밖 버전 테스트가 통과한다.
-- 커밋: `Feature: validate dependency compatibility`
+- 커밋: `의존성 호환성 검증`
 
 ### 5. BOM과 repository 정책 적용
 
 - dependency metadata에서 필요한 BOM과 repository를 최종 description에 집계한다.
 - 검증: 중복 제거와 안정된 정렬 테스트가 통과한다.
-- 커밋: `Feature: resolve dependency build metadata`
+- 커밋: `의존성 빌드 메타데이터 해결`
 
 ### 6. Gradle contributor 연결
 
 - canonical dependency, BOM, repository 정보를 build script에 반영한다.
 - 검증: 대표 dependency 조합으로 생성된 프로젝트의 Gradle build가 성공한다.
-- 커밋: `Feature: generate dependency configuration`
+- 커밋: `의존성 설정 생성`
 
 ## 완료 조건
 

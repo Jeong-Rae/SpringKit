@@ -23,27 +23,27 @@
 - Kotlin/JVM 소스와 테스트 source set을 구성한다.
 - `me.jeongrae.springkit`에 Kotlin top-level 애플리케이션 진입점을 추가한다.
 - 검증: `./gradlew build`와 애플리케이션 실행이 성공한다.
-- 커밋: `Build: configure executable Kotlin application`
+- 커밋: `Kotlin 실행 애플리케이션 기반 구성`
 
 ### 2. Project root 생성 contract 구현
 
 - 명시된 출력 경로에 project root를 준비하는 책임을 분리한다.
 - 기존 파일을 암묵적으로 덮어쓰지 않는 실패 규칙을 둔다.
 - 검증: 빈 경로, 기존 경로, 생성 불가능한 경로의 단위 테스트가 통과한다.
-- 커밋: `Feature: add project root creation`
+- 커밋: `프로젝트 루트 생성 추가`
 
 ### 3. 최소 GenerationAction과 runner 구현
 
 - `projectRoot`에 한 가지 변경을 적용하는 action contract를 Kotlin `fun interface`로 정의한다.
 - 여러 action을 정해진 순서로 실행하는 runner를 구현한다.
 - 검증: action 호출 순서와 실패 전파 단위 테스트가 통과한다.
-- 커밋: `Feature: add generation action runner`
+- 커밋: `생성 작업 실행기 추가`
 
 ### 4. 고정 프로젝트 생성 연결
 
 - 기본 파일 하나를 쓰는 action을 애플리케이션 진입점에 연결한다.
 - 검증: 실행 후 예상 디렉터리와 파일이 존재하고 내용이 일치한다.
-- 커밋: `Feature: generate fixed starter project`
+- 커밋: `고정 시작 프로젝트 생성`
 
 ## 완료 조건
 

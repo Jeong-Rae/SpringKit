@@ -9,6 +9,7 @@
 - 후속 Task는 모든 선행 Task가 완료된 뒤 시작한다.
 - 서로 독립적인 Task를 병렬 수행할 때는 `.worktree` 아래의 별도 worktree를 사용한다.
 - feature와 PR에는 각 문서에 적힌 Task ID를 그대로 사용한다.
+- 커밋 제목과 본문은 유형 keyword 없이 한글로 작성한다. 코드 식별자와 고유명사는 예외다.
 
 ## Kotlin-first 구현 원칙
 

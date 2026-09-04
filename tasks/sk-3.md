@@ -14,32 +14,32 @@
 
 - 사용자가 생략할 수 있는 값과 반드시 제공해야 하는 값을 명시한다.
 - 검증: 최소 입력과 완전 입력의 변환 테스트가 통과한다.
-- 커밋: `Feature: support sparse project input`
+- 커밋: `희소 프로젝트 입력 지원`
 
 ### 2. DescriptionPolicy contract 구현
 
 - description 후보에 한 가지 정책을 적용하는 contract를 정의한다.
 - 검증: policy가 명시된 필드만 변경하는 단위 테스트가 통과한다.
-- 커밋: `Feature: add description policy contract`
+- 커밋: `설명 정책 계약 추가`
 
 ### 3. 기본값 정책 추가
 
 - language, build system, group, artifact, version 등 도구 소유 기본값을 적용한다.
 - 사용자가 제공한 값을 기본값이 덮어쓰지 않게 한다.
 - 검증: 필드별 생략/명시 조합 테스트가 통과한다.
-- 커밋: `Feature: apply project defaults`
+- 커밋: `프로젝트 기본값 적용`
 
 ### 4. 파생값 정책 추가
 
 - artifact/name에서 package와 application name을 파생한다.
 - 검증: 정상 이름과 정규화가 필요한 이름의 결과를 테스트한다.
-- 커밋: `Feature: derive project conventions`
+- 커밋: `프로젝트 관례 파생`
 
 ### 5. Policy ordering 고정
 
 - 기본값 적용 후 파생값이 계산되도록 order를 명시한다.
 - 검증: 등록 순서와 무관하게 동일한 최종 description이 만들어진다.
-- 커밋: `Feature: order description policies`
+- 커밋: `설명 정책 순서 고정`
 
 ## 완료 조건
 
