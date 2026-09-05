@@ -53,43 +53,10 @@ stricter branch, commit, build, or authorization rules.
 
 4. Write the PR body to a temporary Markdown file:
 
-   ```markdown
-   ## 요약
-
-   <변경 내용, 이유, 영향 범위>
-
-   ## 검토 사항
-
-   - <주의 깊게 검토할 위험, 불확실성 또는 비자명한 설계 결정>
-   - <안전하게 훑어봐도 되는 기계적 변경>
-
-   ## 검증
-
-   - `<검증한 동작 또는 조건>`
-   - `<리뷰어가 그대로 실행할 수 있는 command>`
-   - 실행하지 않음: `<command>` (`<사유>`)
-
-   ## 배포 메모
-
-   - <마이그레이션, 배포 순서, 호환성 변경 또는 후속 작업>
-   ```
-
-   Apply `$writing-guide` to the pull request body. In the opening paragraph,
-   state what changed, why it changed, and what it affects. Omit investigation
-   history, commit logs, and file-by-file summaries that the diff already
-   shows.
-
-   Direct review attention to non-obvious risks, uncertainties, and design
-   decisions. Distinguish meaningful changes from mechanical ones when that
-   helps the reviewer. State verified and unverified behavior separately, and
-   do not imply coverage beyond the checks that ran.
-
-   Include migration, rollout, compatibility, visual evidence, or deliberate
-   follow-up details only when the reviewer cannot infer them from the diff.
-   Omit empty optional sections and keep the body proportional to the change.
-   Include a command only when a reviewer can run it exactly as written; omit
-   environment-specific commands and absolute paths. Explain any relevant
-   verification that was not run.
+   Read [references/pr-description.md](references/pr-description.md) fully and
+   apply it to the current diff and verification results. Apply
+   `$writing-guide` to every Korean sentence. Write the finished body to a
+   temporary file so commands, code spans, and line breaks remain unchanged.
 
 5. Publish the feature and create the draft PR through the workflow script:
 
