@@ -36,28 +36,29 @@ or deployment.
 
 ## Default Shape
 
-Use `## 요약` and `## 검증` by default. Add `## 검토 사항` or `## 배포 메모`
-only when they contain information that changes review or deployment.
+Use the repository's template and the language requested by the user. If
+neither specifies a format, use `## Summary` and `## Verification`. Add review
+or deployment sections only when they change how the pull request is assessed.
 
 ```markdown
-## 요약
+## Summary
 
-<변경 내용, 이유, 영향 범위>
+<what changed, why, and affected scope>
 
-## 검토 사항
+## Review Focus
 
-- <위험, 불확실성, 주의 깊게 볼 결정>
-- <안전하게 훑어봐도 되는 기계적 변경>
+- <risk, uncertainty, or decision that needs close review>
+- <mechanical change that is safe to skim>
 
-## 검증
+## Verification
 
-- `<검증한 동작 또는 조건>`
-- `<그대로 실행할 수 있는 명령>`
-- 실행하지 않음: `<명령>` (`<사유>`)
+- `<verified behavior or condition>`
+- `<command that can be run unchanged>`
+- Not run: `<command>` (`<reason>`)
 
-## 배포 메모
+## Deployment Notes
 
-- <마이그레이션, 배포 순서, 호환성 변경, 후속 작업>
+- <migration, rollout order, compatibility change, or follow-up>
 ```
 
 Omit empty optional sections and keep the body proportional to the change.
