@@ -37,7 +37,7 @@ steps:
       - docs/task-spec.md
   - id: sk-5-2
     title: Task ID 발급 구현
-    status: pending
+    status: done
     objective: 기존 Task ID를 재사용하지 않고 다음 Task ID를 계산할 수 있다.
     work:
       - Task Card의 최대 순번을 기준으로 다음 ID를 출력하는 스크립트와 테스트를 구현한다.
