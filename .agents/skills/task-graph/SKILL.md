@@ -9,8 +9,9 @@ Create and manage canonical JSON Task Cards in `tasks/`.
 
 ## Core Model
 
-- A Task has exactly one outcome-oriented Goal. It must be independently deployable after its direct prerequisites are complete.
-- A Step is a sequential, independently verifiable part of one Task. It is not a commit, branch, pull request, or DAG node.
+- A Goal is the single outcome that defines why a Task exists and what completion means.
+- A Task is a deployable unit of work organized around exactly one Goal. It must be independently deployable after its direct prerequisites are complete.
+- A Step is a sequential, independently verifiable unit of work within one Task. It is not a commit, branch, pull request, or DAG node.
 - The Task Graph contains only Tasks. `depends_on` contains direct prerequisites only and must not contain cycles, self-references, duplicates, or transitive dependencies.
 
 Every Task and Step needs at least one Verification. Do not start a later Step until the preceding Step is verified and marked `done`. A Task can be marked `done` only after all Steps and Task-level Verification succeed.
