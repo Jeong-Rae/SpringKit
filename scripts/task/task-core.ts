@@ -99,7 +99,17 @@ export function validateTaskCard(value: unknown, source = "Task Card"): string[]
   if (!taskTypes.includes(value.type as TaskType)) errors.push(`${source}.type: 허용되지 않은 Task Type입니다.`);
   if (!statuses.includes(value.status as Status)) errors.push(`${source}.status: 허용되지 않은 상태입니다.`);
   checkString(value.goal, `${source}.goal`, errors);
-  checkStringArray(value.depends_on, `${source}.depends_on`, errors);
+  if (checkStringArray(value.depends_on, `${source}.depends_on`, errors)) {
+    const dependencies = value.depends_on as string[];
+    dependencies.forEach((dependency, index) => {
+      if (!taskIdPattern.test(dependency)) {
+        errors.push(`${source}.depends_on[${index}]: sk-<양의 정수> 형식이어야 합니다.`);
+      }
+    });
+    if (new Set(dependencies).size !== dependencies.length) {
+      errors.push(`${source}.depends_on: 같은 Task ID를 중복하여 기록할 수 없습니다.`);
+    }
+  }
   checkStringArray(value.spec_refs, `${source}.spec_refs`, errors);
 
   if ((value.type === "feature" || value.type === "fix") && Array.isArray(value.spec_refs) && value.spec_refs.length === 0) {

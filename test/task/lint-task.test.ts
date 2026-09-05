@@ -54,3 +54,14 @@ test("canonical YAML 형식이 아니면 거부한다", async () => {
   assert.equal(result.code, 1);
   assert.match(result.stderr, /canonical YAML/);
 });
+
+test("dependency의 Task ID 형식과 중복을 검증한다", async () => {
+  const card = validCard("sk-5", ["invalid", "invalid"]);
+  const { tasksDir } = await temporaryTasks();
+  const file = join(tasksDir, "sk-5.yaml");
+  await writeCard(file, card);
+  const result = await runScript("lint-task.ts", [file]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /sk-<양의 정수>/);
+  assert.match(result.stderr, /중복/);
+});
