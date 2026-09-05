@@ -128,7 +128,5 @@ default.
 
 This guidance adapts the review principles from
 [`arjunprabhulal/agent-skills`' `pr-descriptions` at `5223b745`](https://github.com/arjunprabhulal/agent-skills/blob/5223b745/skills/docs/pr-descriptions/SKILL.md),
-which is published under the MIT License. The original copyright and permission
-notice are preserved in
-[`LICENSE-pr-descriptions`](../LICENSE-pr-descriptions). Repository-specific
-workflow, template, and authorization requirements remain authoritative.
+which is published under the MIT License. Repository-specific workflow,
+template, and authorization requirements remain authoritative.
