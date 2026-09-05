@@ -1,104 +1,24 @@
 ---
 name: create-pr
 description: >
-  Create a validated draft pull request in a Kotlin/Gradle repository that uses
-  the PR First Git Flow workflow. Use when starting a feature, committing its
-  changes, publishing it, opening a draft PR, or recovering from PR creation
-  failures. Follow AGENTS.md for review updates and post-merge completion.
+  Create a reviewable, validated draft pull request in a software repository.
+  Use when preparing a branch, committing changes, writing a PR title or body,
+  publishing a draft PR, updating it after review, or recovering from a failed
+  publication. Follow repository instructions for tools and workflow.
 metadata:
   internal: true
 ---
 
 # Create PR
 
-Use this skill to turn one feature's verified changes into a draft pull request.
-Follow the repository's `AGENTS.md` when it defines stricter branch, commit,
-build, or authorization rules.
+Turn one verified change into a reviewable draft pull request. Follow repository
+instructions for branch, commit, validation, publication, and authorization
+rules.
 
-## Workflow
+## References
 
-1. Inspect the current state before changing Git:
-
-   ```bash
-   rtk git status --short
-   rtk git branch --show-current
-   rtk git diff -- <paths>
-   ```
-
-   Preserve unrelated user changes and operate only on files in the requested Task.
-
-2. Start a feature only when one does not already exist for the Task:
-
-   ```bash
-   rtk kotlin scripts/git/git-workflow.main.kts start <task-id>
-   ```
-
-   Task identifiers are used exactly as supplied. The script verifies the
-   `develop` base before creating `feature/<task-id>`.
-
-3. Validate and commit:
-
-   ```bash
-   rtk ./gradlew test --tests "<related-test-pattern>"
-   rtk git add <paths>
-   rtk git diff --cached --check
-   rtk git commit -m "<Type>: <한글 설명>"
-   ```
-
-   Select the narrowest meaningful Gradle verification. Stage only Task files.
-   Apply `$writing-guide` to the commit message, and include only
-   repository-required commit footers.
-
-4. Write the PR body to a temporary Markdown file:
-
-   ```markdown
-   ## 요약
-
-   <변경 내용과 이유>
-
-   ## 검증
-
-   - `<검증한 동작 또는 조건>`
-   - `<리뷰어가 그대로 실행할 수 있는 command>`
-   - 실행하지 않음: `<command>` (`<사유>`)
-   ```
-
-   Apply `$writing-guide` to the pull request body. Summarize the behavior or
-   condition that was verified. Include a command only when a reviewer can run
-   it exactly as written; omit environment-specific commands and absolute
-   paths. Explain any relevant verification that was not run.
-
-5. Publish the feature and create the draft PR through the workflow script:
-
-   ```bash
-   rtk kotlin scripts/git/git-workflow.main.kts publish \
-     "[<task-id>] Feature: <description>" \
-     --body-file <pr-body-path>
-   ```
-
-   The script enforces the current feature branch, clean tracked state, title
-   format, unique head PR, `develop` base, and draft state. The user owns the
-   ready transition and merge decision.
-
-## Recovery
-
-- Inspect the branch PR before retrying publication:
-
-  ```bash
-  rtk gh pr view <branch> --json url,isDraft,title,baseRefName,state
-  ```
-
-- If the feature was published but PR creation failed, report the completed
-  state and the failing command. Retry only after identifying whether a PR
-  already exists.
-- If GitHub authentication fails, ask the user to restore the configured
-  authentication provider before continuing.
-
-## After PR Creation
-
-- Follow the PR review workflow in `AGENTS.md` after the draft PR exists.
-- Publish committed review changes through the workflow script:
-
-  ```bash
-  rtk kotlin scripts/git/git-workflow.main.kts update
-  ```
+- For branch setup, validation, publication, review updates, and recovery, read
+  [references/pr-workflow.md](references/pr-workflow.md) fully.
+- When writing or updating the pull request body, read
+  [references/pr-description.md](references/pr-description.md) fully and apply
+  the repository's or user's writing rules.
