@@ -1,0 +1,77 @@
+id: sk-5
+title: Task DAG 관리 스크립트 제공
+type: feature
+status: running
+goal: 작업자는 TypeScript 스크립트를 Node.js로 직접 실행하여 Task Card와 Task DAG를 일관되게 관리할 수 있다.
+depends_on: []
+spec_refs:
+  - SPEC
+scope:
+  in:
+    - Task ID 발급과 Task Card 등록
+    - 단일 Task Card와 전체 DAG 검증
+    - 자동화된 테스트와 전체 관리 시나리오
+  out:
+    - Task 실행 스케줄러
+    - 자동 상태 전환
+    - 사용자 인터페이스
+verification:
+  - 네 스크립트를 Node.js로 직접 실행할 수 있다.
+  - 유효한 Task 등록 흐름은 성공하고 유효하지 않은 변경은 원본을 보존한 채 실패한다.
+  - 단일 Card와 전체 DAG 검증 테스트가 모두 통과한다.
+issues: []
+references:
+  - docs/task-spec.md
+steps:
+  - id: sk-5-1
+    title: 단일 Task Card 검증 구현
+    status: done
+    objective: Task Card 한 개가 명세의 구조와 상태 규칙을 충족하는지 판정할 수 있다.
+    work:
+      - 공통 Task Card 모델과 lint 스크립트를 구현한다.
+      - 정상과 오류 Card 테스트 세트를 추가한다.
+    verification:
+      - 유효한 Card는 성공하고 구조와 상태가 잘못된 Card는 구체적인 오류와 함께 실패한다.
+    issues: []
+    references:
+      - docs/task-spec.md
+  - id: sk-5-2
+    title: Task ID 발급 구현
+    status: pending
+    objective: 기존 Task ID를 재사용하지 않고 다음 Task ID를 계산할 수 있다.
+    work:
+      - Task Card의 최대 순번을 기준으로 다음 ID를 출력하는 스크립트와 테스트를 구현한다.
+    verification:
+      - 순번에 공백이 있어도 가장 큰 순번 다음의 ID를 출력한다.
+    issues: []
+    references: []
+  - id: sk-5-3
+    title: Task 등록과 dependency 추가 구현
+    status: pending
+    objective: Task와 직접 dependency를 검증한 뒤 원자적으로 기록할 수 있다.
+    work:
+      - Task 등록과 기존 Task dependency 추가 명령 및 무변경 실패 테스트를 구현한다.
+    verification:
+      - 정상 변경만 저장되며 유효하지 않은 변경은 기존 파일을 변경하지 않는다.
+    issues: []
+    references: []
+  - id: sk-5-4
+    title: 전체 Task DAG 검증 구현
+    status: pending
+    objective: 저장된 모든 Task Card와 직접 선행 관계의 유효성을 한 번에 판정할 수 있다.
+    work:
+      - 참조, cycle과 전이 dependency를 검사하는 스크립트와 테스트를 구현한다.
+    verification:
+      - 정상 DAG는 성공하고 누락 참조, cycle과 전이 dependency는 실패한다.
+    issues: []
+    references: []
+  - id: sk-5-5
+    title: 전체 관리 시나리오 검증
+    status: pending
+    objective: 네 스크립트를 연결한 실제 Task 관리 흐름을 검증할 수 있다.
+    work:
+      - ID 발급부터 전체 DAG 재검증까지 수행하는 종단 간 테스트를 구현한다.
+    verification:
+      - 정상 흐름은 완료되고 실패 흐름은 기존 DAG를 변경하지 않는다.
+    issues: []
+    references: []
