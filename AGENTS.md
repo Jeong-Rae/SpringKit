@@ -7,7 +7,7 @@
 
 # Git: PR 우선
 
-`develop` 반영의 SoT(Single source of truth, 단일 기준 정보)는 원격 GitHub PR의 병합 커밋입니다. 원격에서 병합한 feature 브랜치는 로컬에서 `git flow feature finish`로만 정리해야 합니다.
+`develop` 반영에는 원격 GitHub PR의 병합 커밋만 SoT(Single source of truth, 단일 기준 정보)로 사용해야 합니다. 원격에서 병합한 feature 브랜치는 로컬에서 `git flow feature finish`로만 정리해야 합니다.
 
 ## Task 식별자
 

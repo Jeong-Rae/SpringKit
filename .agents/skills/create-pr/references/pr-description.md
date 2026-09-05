@@ -81,9 +81,10 @@ or user-visible information by reading the code.
 
 ## Body Shape
 
-Keep the repository's required `## 요약` and `## 검증` sections. Add optional
-sections only when they contain information that changes how the pull request
-should be reviewed or deployed.
+Use `## 요약` and `## 검증` as the `create-pr` default sections. If the
+repository's `AGENTS.md` or pull request template requires another shape, use
+the repository's shape instead. Add optional sections only when they contain
+information that changes how the pull request should be reviewed or deployed.
 
 ```markdown
 ## 요약
@@ -126,6 +127,8 @@ default.
 ## Source
 
 This guidance adapts the review principles from
-[`arjunprabhulal/agent-skills`' `pr-descriptions`](https://github.com/arjunprabhulal/agent-skills/blob/main/skills/docs/pr-descriptions/SKILL.md),
-which is published under the MIT License. Repository-specific workflow,
-template, and authorization requirements remain authoritative.
+[`arjunprabhulal/agent-skills`' `pr-descriptions` at `5223b745`](https://github.com/arjunprabhulal/agent-skills/blob/5223b745/skills/docs/pr-descriptions/SKILL.md),
+which is published under the MIT License. The original copyright and permission
+notice are preserved in
+[`LICENSE-pr-descriptions`](../LICENSE-pr-descriptions). Repository-specific
+workflow, template, and authorization requirements remain authoritative.
