@@ -57,7 +57,7 @@ steps:
     references: []
   - id: sk-5-4
     title: 전체 Task DAG 검증 구현
-    status: pending
+    status: done
     objective: 저장된 모든 Task Card와 직접 선행 관계의 유효성을 한 번에 판정할 수 있다.
     work:
       - 참조, cycle과 전이 dependency를 검사하는 스크립트와 테스트를 구현한다.
