@@ -46,26 +46,27 @@ build, or authorization rules.
    ```
 
    Select the narrowest meaningful Gradle verification. Stage only Task files.
-   Keep the type keyword in English, write the title description and optional
-   body in Korean, and include only repository-required commit footers. Prefer
-   Korean transliterations or translations for general technical terms; keep
-   English only for irreplaceable proper nouns and code identifiers.
+   Apply `$writing-guide` to the commit message, and include only
+   repository-required commit footers.
 
 4. Write the PR body to a temporary Markdown file:
 
    ```markdown
-   ## Summary
+   ## 요약
 
-   <what changed and why>
+   <변경 내용과 이유>
 
-   ## Verification
+   ## 검증
 
-   - `<command that passed>`
-   - Not run: `<command>` (`<reason>`)
+   - `<검증한 동작 또는 조건>`
+   - `<리뷰어가 그대로 실행할 수 있는 command>`
+   - 실행하지 않음: `<command>` (`<사유>`)
    ```
 
-   Describe the observable change and its motivation. Record meaningful local
-   verification and explain any relevant verification that was not run.
+   Apply `$writing-guide` to the pull request body. Summarize the behavior or
+   condition that was verified. Include a command only when a reviewer can run
+   it exactly as written; omit environment-specific commands and absolute
+   paths. Explain any relevant verification that was not run.
 
 5. Publish the feature and create the draft PR through the workflow script:
 

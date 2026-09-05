@@ -17,8 +17,6 @@
 - [Must] 브랜치 이름은 `<type>/<task-id>` 형식만 사용해야 합니다.
 - [Must] PR 제목은 `[<task-id>] <Type>: <description>` 형식만 사용해야 합니다.
 - [Must] 커밋 제목은 `<Type>: <description>` 형식을 사용해야 합니다. `Feature`, `Build`, `Fix`, `Refactor`, `Test`, `Docs`, `Chore`와 같은 영문 유형 키워드는 허용합니다.
-- [Must] 커밋 제목의 설명과 본문은 한글로 작성해야 합니다.
-- [Must] 작성 시 `keyword`는 `키워드`, `dependency`는 `의존성`처럼 가능한 한글 음차와 번역을 우선해야 합니다. `EC2`와 같이 대체할 수 없는 고유명사와 코드 식별자만 영문으로 작성합니다.
 
 ## Git Command
 
@@ -52,11 +50,12 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 1. [Must] PR 리뷰는 draft PR의 diff, CI 결과, 리뷰 의견을 기준으로 수행해야 합니다.
 2. [Must] 에이전트는 리뷰 요청을 받으면 `gh pr view`, `gh pr diff`, `gh pr checks`로 현재 상태를 조회하고 결과를 사용자에게 보고해야 합니다.
-3. [Must] 에이전트의 코드 변경은 사용자가 리뷰 의견 반영을 요청한 범위에서만 수행해야 합니다.
-4. [Must] 리뷰 반영은 동일한 feature 브랜치에서 구현, 관련 Gradle 검증, 커밋 순서로 수행해야 합니다.
-5. [Must] 에이전트가 리뷰 반영 커밋을 원격에 게시할 때는 `update` 명령만 사용해야 합니다.
-6. [Must] 승인과 CI 통과 여부 확인은 변경 게시 후 다시 수행해야 합니다.
-7. [Must] draft PR의 ready 전환과 최종 merge는 사용자만 결정해야 합니다.
+3. [Must] 에이전트가 작성하는 PR 리뷰 댓글과 답글은 `[Agent]` 접두사로 시작해야 합니다.
+4. [Must] 에이전트의 코드 변경은 사용자가 리뷰 의견 반영을 요청한 범위에서만 수행해야 합니다.
+5. [Must] 리뷰 반영은 동일한 feature 브랜치에서 구현, 관련 Gradle 검증, 커밋 순서로 수행해야 합니다.
+6. [Must] 에이전트가 리뷰 반영 커밋을 원격에 게시할 때는 `update` 명령만 사용해야 합니다.
+7. [Must] 승인과 CI 통과 여부 확인은 변경 게시 후 다시 수행해야 합니다.
+8. [Must] draft PR의 ready 전환과 최종 merge는 사용자만 결정해야 합니다.
 
 ### 3. 원격 병합 및 종료
 
@@ -69,10 +68,6 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 # Commit and PR Style
 
 - [Must] 커밋과 PR footer에는 프로젝트에서 명시적으로 요구한 항목만 포함해야 합니다.
-- [Must] 커밋 제목은 영문 유형 키워드와 한글 설명으로, 본문은 한글로 작성해야 합니다.
-- [Must] 일반 용어는 한글 음차와 번역을 우선하고, 대체할 수 없는 고유명사와 코드 식별자만 영문으로 작성해야 합니다.
-- [Should] 커밋 메시지는 간결하고 변경 내용을 명확하게 설명해야 합니다.
-- [Must] PR 본문은 무엇을 변경했고 왜 변경했는지에 집중해야 합니다.
 - [Must] PR 생성 상태는 draft만 사용해야 하며, ready 전환은 사용자만 수행해야 합니다.
 - [Must] 에이전트의 원격 PR 병합은 사용자가 명시적으로 요청한 경우에만 수행해야 합니다.
 
@@ -94,4 +89,5 @@ Not yet written
 
 # Specialized Skills
 
+- [Must] 모든 응답과 작성하는 글에는 `$writing-guide`를 사용해야 합니다. 기술 문서를 작성, 수정, 검토할 때는 스킬이 지정한 문서 작성 기준도 적용해야 합니다.
 - `$create-pr`: 작업을 검증하고 커밋한 뒤 draft PR을 생성할 때 사용할 수 있습니다.
