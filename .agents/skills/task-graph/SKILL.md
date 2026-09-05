@@ -7,9 +7,12 @@ description: Decompose a SPEC and project context into deployable Tasks, sequent
 
 Create and manage canonical JSON Task Cards in `tasks/`.
 
+## Goal
+
+Turn a SPEC and project context into a validated Task Graph of independently deployable Tasks and sequential, verifiable Steps.
+
 ## Core Model
 
-- A Goal is the single outcome that defines why a Task exists and what completion means.
 - A Task is a deployable unit of work organized around exactly one Goal. It must be independently deployable after its direct prerequisites are complete.
 - A Step is a sequential, independently verifiable unit of work within one Task. It is not a commit, branch, pull request, or DAG node.
 - The Task Graph contains only Tasks. `depends_on` contains direct prerequisites only and must not contain cycles, self-references, duplicates, or transitive dependencies.
