@@ -1,4 +1,4 @@
-import { readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { link, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { parseDocument, stringify } from "yaml";
 
@@ -265,6 +265,18 @@ export async function writeTaskCardAtomically(file: string, card: TaskCard): Pro
   } catch (error) {
     await unlink(temporary).catch(() => undefined);
     throw new TaskToolError(`${file}: Task Card를 기록할 수 없습니다. ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export async function createTaskCardAtomically(file: string, card: TaskCard): Promise<void> {
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await writeFile(temporary, serializeTaskCard(card), { encoding: "utf8", flag: "wx" });
+    await link(temporary, file);
+    await unlink(temporary);
+  } catch (error) {
+    await unlink(temporary).catch(() => undefined);
+    throw new TaskToolError(`${file}: 새 Task Card를 기록할 수 없습니다. ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

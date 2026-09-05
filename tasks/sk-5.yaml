@@ -47,7 +47,7 @@ steps:
     references: []
   - id: sk-5-3
     title: Task 등록과 dependency 추가 구현
-    status: pending
+    status: done
     objective: Task와 직접 dependency를 검증한 뒤 원자적으로 기록할 수 있다.
     work:
       - Task 등록과 기존 Task dependency 추가 명령 및 무변경 실패 테스트를 구현한다.
