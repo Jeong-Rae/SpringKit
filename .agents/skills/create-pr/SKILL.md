@@ -58,12 +58,15 @@ build, or authorization rules.
 
    ## 검증
 
-   - `<통과한 명령>`
-   - 실행하지 않음: `<명령>` (`<사유>`)
+   - `<검증한 동작 또는 조건>`
+   - `<리뷰어가 그대로 실행할 수 있는 command>`
+   - 실행하지 않음: `<command>` (`<사유>`)
    ```
 
-   Apply `$writing-guide` to the pull request body. Record meaningful local
-   verification and explain any relevant verification that was not run.
+   Apply `$writing-guide` to the pull request body. Summarize the behavior or
+   condition that was verified. Include a command only when a reviewer can run
+   it exactly as written; omit environment-specific commands and absolute
+   paths. Explain any relevant verification that was not run.
 
 5. Publish the feature and create the draft PR through the workflow script:
 

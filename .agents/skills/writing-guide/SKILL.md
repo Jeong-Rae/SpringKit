@@ -1,10 +1,9 @@
 ---
 name: writing-guide
 description: >
-  Apply SpringKit's Korean writing conventions to every response and authored
-  text, including technical documents, commit messages, and pull request
-  descriptions. Use whenever writing, editing, or reviewing prose in this
-  repository.
+  Apply consistent Korean writing conventions to responses and authored text,
+  including technical documents, commit messages, and pull request
+  descriptions. Use whenever writing, editing, or reviewing Korean prose.
 metadata:
   internal: true
 ---
