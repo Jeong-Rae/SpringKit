@@ -50,11 +50,12 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 1. [Must] PR 리뷰는 draft PR의 diff, CI 결과, 리뷰 의견을 기준으로 수행해야 합니다.
 2. [Must] 에이전트는 리뷰 요청을 받으면 `gh pr view`, `gh pr diff`, `gh pr checks`로 현재 상태를 조회하고 결과를 사용자에게 보고해야 합니다.
-3. [Must] 에이전트의 코드 변경은 사용자가 리뷰 의견 반영을 요청한 범위에서만 수행해야 합니다.
-4. [Must] 리뷰 반영은 동일한 feature 브랜치에서 구현, 관련 Gradle 검증, 커밋 순서로 수행해야 합니다.
-5. [Must] 에이전트가 리뷰 반영 커밋을 원격에 게시할 때는 `update` 명령만 사용해야 합니다.
-6. [Must] 승인과 CI 통과 여부 확인은 변경 게시 후 다시 수행해야 합니다.
-7. [Must] draft PR의 ready 전환과 최종 merge는 사용자만 결정해야 합니다.
+3. [Must] 에이전트가 작성하는 PR 리뷰 댓글과 답글은 `[Agent]` 접두사로 시작해야 합니다.
+4. [Must] 에이전트의 코드 변경은 사용자가 리뷰 의견 반영을 요청한 범위에서만 수행해야 합니다.
+5. [Must] 리뷰 반영은 동일한 feature 브랜치에서 구현, 관련 Gradle 검증, 커밋 순서로 수행해야 합니다.
+6. [Must] 에이전트가 리뷰 반영 커밋을 원격에 게시할 때는 `update` 명령만 사용해야 합니다.
+7. [Must] 승인과 CI 통과 여부 확인은 변경 게시 후 다시 수행해야 합니다.
+8. [Must] draft PR의 ready 전환과 최종 merge는 사용자만 결정해야 합니다.
 
 ### 3. 원격 병합 및 종료
 
