@@ -1,7 +1,7 @@
 id: sk-5
 title: Task DAG 관리 스크립트 제공
 type: feature
-status: running
+status: done
 goal: 작업자는 TypeScript 스크립트를 Node.js로 직접 실행하여 Task Card와 Task DAG를 일관되게 관리할 수 있다.
 depends_on: []
 spec_refs:
@@ -67,7 +67,7 @@ steps:
     references: []
   - id: sk-5-5
     title: 전체 관리 시나리오 검증
-    status: pending
+    status: done
     objective: 네 스크립트를 연결한 실제 Task 관리 흐름을 검증할 수 있다.
     work:
       - ID 발급부터 전체 DAG 재검증까지 수행하는 종단 간 테스트를 구현한다.

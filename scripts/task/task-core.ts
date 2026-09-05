@@ -157,7 +157,11 @@ export function validateTaskCard(value: unknown, source = "Task Card"): string[]
   return errors;
 }
 
-export async function readTaskCard(file: string, requireMatchingFilename = false): Promise<TaskCard> {
+export async function readTaskCard(
+  file: string,
+  requireMatchingFilename = false,
+  requireCanonicalFormat = false,
+): Promise<TaskCard> {
   let text: string;
   try {
     text = await readFile(file, "utf8");
@@ -173,6 +177,9 @@ export async function readTaskCard(file: string, requireMatchingFilename = false
   if (requireMatchingFilename && isRecord(value) && typeof value.id === "string") {
     const expected = `${value.id}.yaml`;
     if (basename(file) !== expected) errors.push(`${file}: 파일명은 ${expected}이어야 합니다.`);
+  }
+  if (requireCanonicalFormat && errors.length === 0 && text !== serializeTaskCard(value as TaskCard)) {
+    errors.push(`${file}: canonical YAML 형식이 아닙니다. add-task.ts가 생성하는 형식을 사용해야 합니다.`);
   }
   if (errors.length > 0) throw new TaskToolError(errors.join("\n"));
   return value as TaskCard;
@@ -190,7 +197,7 @@ export async function loadTaskCards(tasksDir: string): Promise<Map<string, { car
   for (const name of names) {
     const file = join(tasksDir, name);
     try {
-      const card = await readTaskCard(file, true);
+      const card = await readTaskCard(file, true, true);
       if (cards.has(card.id)) errors.push(`${file}: 중복 Task ID입니다: ${card.id}`);
       else cards.set(card.id, { card, file });
     } catch (error) {

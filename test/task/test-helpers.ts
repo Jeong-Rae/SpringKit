@@ -36,12 +36,12 @@ export async function temporaryTasks(cards: ReturnType<typeof validCard>[] = [])
   const root = await mkdtemp(join(tmpdir(), "springkit-task-test-"));
   const tasksDir = join(root, "tasks");
   await mkdir(tasksDir);
-  for (const card of cards) await writeFile(join(tasksDir, `${card.id}.yaml`), stringify(card));
+  for (const card of cards) await writeFile(join(tasksDir, `${card.id}.yaml`), stringify(card, { indent: 2, lineWidth: 0 }));
   return { root, tasksDir };
 }
 
 export async function writeCard(file: string, card: unknown): Promise<void> {
-  await writeFile(file, stringify(card));
+  await writeFile(file, stringify(card, { indent: 2, lineWidth: 0 }));
 }
 
 export function runScript(script: string, args: string[] = []): Promise<{ code: number | null; stdout: string; stderr: string }> {

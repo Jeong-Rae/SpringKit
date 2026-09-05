@@ -41,3 +41,16 @@ test("잘못된 명령 사용은 종료 코드 2를 반환한다", async () => {
   assert.equal(result.code, 2);
   assert.match(result.stderr, /사용법/);
 });
+
+test("canonical YAML 형식이 아니면 거부한다", async () => {
+  const { tasksDir } = await temporaryTasks();
+  const file = join(tasksDir, "sk-5.yaml");
+  const card = validCard("sk-5");
+  await writeCard(file, card);
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const canonical = await readFile(file, "utf8");
+  await writeFile(file, `# canonical 형식을 깨는 주석\n${canonical}`);
+  const result = await runScript("lint-task.ts", [file]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /canonical YAML/);
+});
