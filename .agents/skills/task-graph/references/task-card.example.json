@@ -7,7 +7,7 @@
   "depends_on": [
     "sk-12"
   ],
-  "spec_refs": [
+  "requirements": [
     "REQ-003"
   ],
   "scope": {

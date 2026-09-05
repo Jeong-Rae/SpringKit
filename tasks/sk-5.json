@@ -5,8 +5,8 @@
   "status": "done",
   "goal": "작업자는 Skill의 ECMAScript 스크립트를 Node.js로 직접 실행하여 JSON Task Card와 Task DAG를 일관되게 관리할 수 있다.",
   "depends_on": [],
-  "spec_refs": [
-    "SPEC"
+  "requirements": [
+    "Task Graph Skill과 의존성 없는 Node.js 관리 스크립트를 제공한다."
   ],
   "scope": {
     "in": [

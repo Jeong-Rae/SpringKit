@@ -29,7 +29,7 @@ const taskKeys = [
     "status",
     "goal",
     "depends_on",
-    "spec_refs",
+    "requirements",
     "scope",
     "verification",
     "issues",
@@ -101,9 +101,9 @@ export function validateTaskCard(value, source = "Task Card") {
             errors.push(`${source}.depends_on: 같은 Task ID를 중복하여 기록할 수 없습니다.`);
         }
     }
-    requireStringArray(value.spec_refs, `${source}.spec_refs`, errors);
-    if ((value.type === "feature" || value.type === "fix") && Array.isArray(value.spec_refs) && value.spec_refs.length === 0) {
-        errors.push(`${source}.spec_refs: feature와 fix Task에는 한 개 이상의 SPEC 참조가 필요합니다.`);
+    requireStringArray(value.requirements, `${source}.requirements`, errors);
+    if ((value.type === "feature" || value.type === "fix") && Array.isArray(value.requirements) && value.requirements.length === 0) {
+        errors.push(`${source}.requirements: feature와 fix Task에는 한 개 이상의 요구 사항이 필요합니다.`);
     }
     if (!isRecord(value.scope)) {
         errors.push(`${source}.scope: in과 out을 가진 객체여야 합니다.`);
@@ -318,4 +318,3 @@ export function runCli(main) {
         process.exitCode = error instanceof TaskToolError ? error.exitCode : 1;
     });
 }
-

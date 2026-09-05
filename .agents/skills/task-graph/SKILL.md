@@ -1,6 +1,6 @@
 ---
 name: task-graph
-description: Decompose a SPEC and project context into deployable Tasks, sequential Steps, and a valid Task DAG. Use when creating or validating Task Cards, issuing a SpringKit Task ID, adding direct Task dependencies, or checking Task state.
+description: Turn product requirements and project context into deployable Tasks, sequential Steps, and a valid Task DAG. Use when creating or validating Task Cards, issuing a SpringKit Task ID, adding direct Task dependencies, or checking Task state.
 ---
 
 # Task Graph
@@ -9,7 +9,7 @@ Create and manage canonical JSON Task Cards in `tasks/`.
 
 ## Goal
 
-Turn a SPEC and project context into a validated Task Graph of independently deployable Tasks and sequential, verifiable Steps.
+Turn product requirements and project context into a validated Task Graph of independently deployable Tasks and sequential, verifiable Steps.
 
 ## Core Model
 
@@ -19,7 +19,7 @@ Turn a SPEC and project context into a validated Task Graph of independently dep
 
 Every Task and Step needs at least one Verification. Do not start a later Step until the preceding Step is verified and marked `done`. A Task can be marked `done` only after all Steps and Task-level Verification succeed.
 
-Use [the canonical Task Card example](references/task-card.example.json) when creating or editing a Card. Preserve a user-provided Task ID. Use `SPEC` in `spec_refs` only when the source SPEC has no Requirement IDs.
+Use [the canonical Task Card example](references/task-card.example.json) when creating or editing a Card. Preserve a user-provided Task ID.
 
 ## Scripts
 
