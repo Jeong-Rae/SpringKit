@@ -1,5 +1,3 @@
-@/home/codespace/.codex/RTK.md
-
 # Task와 Step
 
 - [Def] `Task`는 하나의 Goal을 가진 작업 단위이며, 배포 가능성을 보장합니다.
