@@ -22,6 +22,8 @@ dependencies {
 
 kotlin {
     compilerOptions {
+        // 참고: https://kotlinlang.org/docs/java-interop.html#jsr-305-support
+        // 참고: https://kotlinlang.org/docs/whatsnew22.html#new-defaulting-rules-for-use-site-annotation-targets
         freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
     }
 }
