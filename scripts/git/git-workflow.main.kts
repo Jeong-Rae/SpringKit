@@ -10,6 +10,11 @@ data class PullRequestStatus(
     val url: String,
 )
 
+data class GitWorktree(
+    val directory: File,
+    val branch: String?,
+)
+
 fun execute(
     workingDirectory: File,
     vararg command: String,
@@ -60,6 +65,26 @@ fun requireTaskId(taskId: String) {
 }
 
 fun currentBranch(): String = commandOutput(repositoryRoot, "git", "branch", "--show-current")
+
+fun gitWorktrees(): List<GitWorktree> =
+    commandOutput(repositoryRoot, "git", "worktree", "list", "--porcelain")
+        .split("\n\n")
+        .filter { it.isNotBlank() }
+        .map { record ->
+            val fields = record.lineSequence().associate { line ->
+                val parts = line.split(' ', limit = 2)
+                parts[0] to parts.getOrElse(1) { "" }
+            }
+            val directory = fields["worktree"]
+            require(!directory.isNullOrBlank()) { "Git worktree 경로를 해석할 수 없습니다.\n$record" }
+            GitWorktree(
+                File(directory),
+                fields["branch"]?.removePrefix("refs/heads/"),
+            )
+        }
+
+fun worktreeForBranch(branch: String): GitWorktree? =
+    gitWorktrees().singleOrNull { it.branch == branch }
 
 fun requireDevelop() {
     require(currentBranch() == "develop") { "현재 브랜치가 develop이어야 합니다." }
@@ -338,8 +363,14 @@ fun finish(taskId: String) {
     require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
     require(mergeCommit.isNotBlank()) { "PR의 squash commit을 확인할 수 없습니다: $prUrl" }
 
-    execute(repositoryRoot, "git", "switch", "develop")
-    execute(repositoryRoot, "git", "pull", "--ff-only", "origin", "develop")
+    val developWorktree = worktreeForBranch("develop")
+    val developDirectory = if (developWorktree == null) {
+        execute(repositoryRoot, "git", "switch", "develop")
+        repositoryRoot
+    } else {
+        developWorktree.directory
+    }
+    execute(developDirectory, "git", "pull", "--ff-only", "origin", "develop")
 
     require(isAncestor(mergeCommit, "develop")) {
         "원격 PR의 squash commit이 로컬 develop에 포함되지 않았습니다: $mergeCommit"
@@ -357,15 +388,18 @@ fun finish(taskId: String) {
         "PR이 squash 방식으로 병합되지 않았습니다. 로컬 feature를 정리하지 않습니다: $prUrl"
     }
 
-    val gradleWrapper = File(repositoryRoot, "gradlew")
+    val gradleWrapper = File(developDirectory, "gradlew")
     require(gradleWrapper.isFile) { "Gradle wrapper를 찾을 수 없습니다: ${gradleWrapper.path}" }
-    execute(repositoryRoot, gradleWrapper.absolutePath, "build")
+    execute(developDirectory, gradleWrapper.absolutePath, "build")
 
     if (remoteBranchExists(branch)) {
         execute(repositoryRoot, "git", "push", "origin", "--delete", branch)
     }
     if (branchExists(branch)) {
-        execute(repositoryRoot, "git", "branch", "-D", branch)
+        worktreeForBranch(branch)?.let { featureWorktree ->
+            execute(featureWorktree.directory, "git", "switch", "--detach", "develop")
+        }
+        execute(developDirectory, "git", "branch", "-D", branch)
     }
 }
 
