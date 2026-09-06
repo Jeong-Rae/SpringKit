@@ -27,10 +27,14 @@ function statusesEqual(left, right) {
 
 export function validateConfig(config) {
   for (const key of ["list_id", "source_id_field_id", "source_type_field_id"]) {
-    if (typeof config[key] !== "string" || config[key].trim() === "") throw new Error(`config.${key} 값이 필요합니다.`);
+    if (typeof config[key] !== "string" || config[key].trim() === "") {
+      throw new Error(`config.${key} 값이 필요합니다.`);
+    }
   }
   const statuses = ["pending", "running", "verifying", "blocked", "done", "cancelled"];
-  if (typeof config.status_map !== "object" || config.status_map === null) throw new Error("config.status_map 값이 필요합니다.");
+  if (typeof config.status_map !== "object" || config.status_map === null) {
+    throw new Error("config.status_map 값이 필요합니다.");
+  }
   for (const status of statuses) {
     if (typeof config.status_map[status] !== "string" || config.status_map[status].trim() === "") {
       throw new Error(`config.status_map.${status} 값이 필요합니다.`);
@@ -40,7 +44,9 @@ export function validateConfig(config) {
 }
 
 export function validateClickUpMetadata(config, list, fields) {
-  const availableStatuses = new Set((list.statuses ?? []).map((status) => String(status.status).trim().toLowerCase()));
+  const availableStatuses = new Set(
+    (list.statuses ?? []).map((status) => String(status.status).trim().toLowerCase()),
+  );
   for (const [source, target] of Object.entries(config.status_map)) {
     if (!availableStatuses.has(target.trim().toLowerCase())) {
       throw new Error(`ClickUp List에 ${source} 상태의 매핑 대상이 없습니다: ${target}`);
@@ -76,7 +82,9 @@ export function buildRemoteIndex(remoteTasks, sourceIdFieldId) {
     byRemoteId.set(String(task.id), task);
     const sourceId = customFieldValue(task, sourceIdFieldId);
     if (!sourceId) continue;
-    if (bySourceId.has(sourceId)) throw new Error(`ClickUp source ID가 중복되었습니다: ${sourceId}`);
+    if (bySourceId.has(sourceId)) {
+      throw new Error(`ClickUp source ID가 중복되었습니다: ${sourceId}`);
+    }
     bySourceId.set(sourceId, task);
   }
 
@@ -93,9 +101,15 @@ function checkHierarchy(workItems, remoteIndex) {
     }
     if (item.kind === "step") {
       const remoteParent = remoteIndex.bySourceId.get(item.parentId);
-      if (!remoteParent) throw new Error(`${item.id}: source parent ${item.parentId}에 대응하는 ClickUp Task가 없습니다.`);
+      if (!remoteParent) {
+        throw new Error(
+          `${item.id}: source parent ${item.parentId}에 대응하는 ClickUp Task가 없습니다.`,
+        );
+      }
       if (String(parentId) !== String(remoteParent.id)) {
-        throw new Error(`${item.id}: ClickUp parent가 source parent ${item.parentId}와 일치하지 않습니다.`);
+        throw new Error(
+          `${item.id}: ClickUp parent가 source parent ${item.parentId}와 일치하지 않습니다.`,
+        );
       }
     }
   }
@@ -121,24 +135,36 @@ export function createSyncPlan(workItems, remoteTasks, config) {
     const remote = remoteIndex.bySourceId.get(item.id);
     const desiredStatus = config.status_map[item.status];
     if (!remote) {
-      operations.push({ type: item.kind === "task" ? "CREATE_TASK" : "CREATE_SUBTASK", sourceId: item.id });
+      operations.push({
+        type: item.kind === "task" ? "CREATE_TASK" : "CREATE_SUBTASK",
+        sourceId: item.id,
+      });
       continue;
     }
 
     const changes = {};
-    if (remote.name !== item.displayTitle) changes.name = { before: remote.name, after: item.displayTitle };
+    if (remote.name !== item.displayTitle) {
+      changes.name = { before: remote.name, after: item.displayTitle };
+    }
     if (!statusesEqual(remoteStatus(remote), desiredStatus)) {
       changes.status = { before: remoteStatus(remote), after: desiredStatus };
     }
     if (remoteMarkdown(remote) !== item.markdown) {
       changes.markdown_content = { before: remoteMarkdown(remote), after: item.markdown };
     }
-    if (Object.keys(changes).length > 0) operations.push({ type: "UPDATE_TASK", sourceId: item.id, changes });
+    if (Object.keys(changes).length > 0) {
+      operations.push({ type: "UPDATE_TASK", sourceId: item.id, changes });
+    }
 
     if (item.kind === "task") {
       const remoteType = customFieldValue(remote, config.source_type_field_id);
       if (remoteType !== item.type) {
-        operations.push({ type: "SET_TYPE", sourceId: item.id, before: remoteType, after: item.type });
+        operations.push({
+          type: "SET_TYPE",
+          sourceId: item.id,
+          before: remoteType,
+          after: item.type,
+        });
       }
     }
   }
@@ -147,7 +173,13 @@ export function createSyncPlan(workItems, remoteTasks, config) {
     const remote = remoteIndex.bySourceId.get(item.id);
     const desired = new Set(item.dependencies);
     if (!remote) {
-      for (const dependency of desired) operations.push({ type: "ADD_DEPENDENCY", sourceId: item.id, dependencySourceId: dependency });
+      for (const dependency of desired) {
+        operations.push({
+          type: "ADD_DEPENDENCY",
+          sourceId: item.id,
+          dependencySourceId: dependency,
+        });
+      }
       continue;
     }
 
@@ -157,17 +189,27 @@ export function createSyncPlan(workItems, remoteTasks, config) {
       const target = remoteIndex.byRemoteId.get(remoteTargetId);
       if (!target) continue;
       const sourceId = customFieldValue(target, config.source_id_field_id);
-      if (sourceId && sourceById.get(sourceId)?.kind === "task") existingManaged.set(sourceId, remoteTargetId);
+      if (sourceId && sourceById.get(sourceId)?.kind === "task") {
+        existingManaged.set(sourceId, remoteTargetId);
+      }
     }
 
     for (const dependency of desired) {
       if (!existingManaged.has(dependency)) {
-        operations.push({ type: "ADD_DEPENDENCY", sourceId: item.id, dependencySourceId: dependency });
+        operations.push({
+          type: "ADD_DEPENDENCY",
+          sourceId: item.id,
+          dependencySourceId: dependency,
+        });
       }
     }
     for (const dependency of existingManaged.keys()) {
       if (!desired.has(dependency)) {
-        operations.push({ type: "REMOVE_DEPENDENCY", sourceId: item.id, dependencySourceId: dependency });
+        operations.push({
+          type: "REMOVE_DEPENDENCY",
+          sourceId: item.id,
+          dependencySourceId: dependency,
+        });
       }
     }
   }
@@ -182,10 +224,19 @@ export function createSyncPlan(workItems, remoteTasks, config) {
   }
 
   const rank = new Map([
-    ["CREATE_TASK", 10], ["CREATE_SUBTASK", 20], ["UPDATE_TASK", 30], ["SET_TYPE", 40],
-    ["ADD_DEPENDENCY", 50], ["REMOVE_DEPENDENCY", 60], ["REMOTE_ONLY", 70], ["NO_CHANGE", 80],
+    ["CREATE_TASK", 10],
+    ["CREATE_SUBTASK", 20],
+    ["UPDATE_TASK", 30],
+    ["SET_TYPE", 40],
+    ["ADD_DEPENDENCY", 50],
+    ["REMOVE_DEPENDENCY", 60],
+    ["REMOTE_ONLY", 70],
+    ["NO_CHANGE", 80],
   ]);
-  operations.sort((left, right) => compareWorkItemIds(left.sourceId, right.sourceId) || rank.get(left.type) - rank.get(right.type));
+  operations.sort(
+    (left, right) =>
+      compareWorkItemIds(left.sourceId, right.sourceId) || rank.get(left.type) - rank.get(right.type),
+  );
   return { operations, remoteIndex };
 }
 
@@ -200,7 +251,11 @@ function createBody(item, config, remoteIndex) {
     body.custom_fields.push({ id: config.source_type_field_id, value: item.type });
   } else {
     const parent = remoteIndex.bySourceId.get(item.parentId);
-    if (!parent) throw new Error(`${item.id}: source parent ${item.parentId}에 대응하는 ClickUp Task를 찾을 수 없습니다.`);
+    if (!parent) {
+      throw new Error(
+        `${item.id}: source parent ${item.parentId}에 대응하는 ClickUp Task를 찾을 수 없습니다.`,
+      );
+    }
     body.parent = String(parent.id);
   }
   return body;
@@ -221,8 +276,15 @@ export async function applySyncPlan(plan, workItems, config, client) {
     remoteIndex.byRemoteId.set(String(remote.id), remote);
   }
 
-  for (const operation of byType("UPDATE_TASK").filter((op) => sourceById.get(op.sourceId)?.kind === "task")) {
-    await client.updateTask(remoteIndex.bySourceId.get(operation.sourceId).id, Object.fromEntries(Object.entries(operation.changes).map(([key, value]) => [key, value.after])));
+  for (const operation of byType("UPDATE_TASK").filter(
+    (candidate) => sourceById.get(candidate.sourceId)?.kind === "task",
+  )) {
+    await client.updateTask(
+      remoteIndex.bySourceId.get(operation.sourceId).id,
+      Object.fromEntries(
+        Object.entries(operation.changes).map(([key, value]) => [key, value.after]),
+      ),
+    );
   }
 
   for (const operation of byType("CREATE_SUBTASK")) {
@@ -234,8 +296,15 @@ export async function applySyncPlan(plan, workItems, config, client) {
     remoteIndex.byRemoteId.set(String(remote.id), remote);
   }
 
-  for (const operation of byType("UPDATE_TASK").filter((op) => sourceById.get(op.sourceId)?.kind === "step")) {
-    await client.updateTask(remoteIndex.bySourceId.get(operation.sourceId).id, Object.fromEntries(Object.entries(operation.changes).map(([key, value]) => [key, value.after])));
+  for (const operation of byType("UPDATE_TASK").filter(
+    (candidate) => sourceById.get(candidate.sourceId)?.kind === "step",
+  )) {
+    await client.updateTask(
+      remoteIndex.bySourceId.get(operation.sourceId).id,
+      Object.fromEntries(
+        Object.entries(operation.changes).map(([key, value]) => [key, value.after]),
+      ),
+    );
   }
 
   for (const operation of byType("SET_TYPE")) {
@@ -246,23 +315,46 @@ export async function applySyncPlan(plan, workItems, config, client) {
   for (const operation of [...byType("ADD_DEPENDENCY"), ...byType("REMOVE_DEPENDENCY")]) {
     const remote = remoteIndex.bySourceId.get(operation.sourceId);
     const dependency = remoteIndex.bySourceId.get(operation.dependencySourceId);
-    if (!remote || !dependency) throw new Error(`${operation.sourceId}: dependency ${operation.dependencySourceId}에 대응하는 ClickUp Task를 찾을 수 없습니다.`);
-    if (operation.type === "ADD_DEPENDENCY") await client.addDependency(remote.id, dependency.id);
-    else await client.removeDependency(remote.id, dependency.id);
+    if (!remote || !dependency) {
+      throw new Error(
+        `${operation.sourceId}: dependency ${operation.dependencySourceId}에 대응하는 ClickUp Task를 찾을 수 없습니다.`,
+      );
+    }
+    if (operation.type === "ADD_DEPENDENCY") {
+      await client.addDependency(remote.id, dependency.id);
+    } else {
+      await client.removeDependency(remote.id, dependency.id);
+    }
   }
+}
+
+export function clickUpResultUrl(plan, workItems) {
+  const root = workItems.find((item) => item.kind === "task");
+  if (!root) throw new Error("동기화 결과를 확인할 Task가 없습니다.");
+
+  const remote = plan.remoteIndex.bySourceId.get(root.id);
+  if (!remote) {
+    throw new Error(`${root.id}: 동기화 결과를 확인할 ClickUp Task를 찾을 수 없습니다.`);
+  }
+  if (typeof remote.url === "string" && remote.url.trim() !== "") return remote.url;
+  return `https://app.clickup.com/t/${encodeURIComponent(remote.id)}`;
 }
 
 export function formatPlan(plan) {
   const lines = [];
   for (const operation of plan.operations) {
     lines.push(`${operation.sourceId}  ${operation.type}`);
-    if (operation.dependencySourceId) lines.push(`  depends_on: ${operation.dependencySourceId}`);
+    if (operation.dependencySourceId) {
+      lines.push(`  depends_on: ${operation.dependencySourceId}`);
+    }
     for (const [name, value] of Object.entries(operation.changes ?? {})) {
       const before = name === "markdown_content" ? "<markdown>" : JSON.stringify(value.before);
       const after = name === "markdown_content" ? "<markdown>" : JSON.stringify(value.after);
       lines.push(`  ${name}: ${before} -> ${after}`);
     }
-    if (operation.type === "SET_TYPE") lines.push(`  type: ${JSON.stringify(operation.before)} -> ${JSON.stringify(operation.after)}`);
+    if (operation.type === "SET_TYPE") {
+      lines.push(`  type: ${JSON.stringify(operation.before)} -> ${JSON.stringify(operation.after)}`);
+    }
   }
   return `${lines.join("\n")}\n`;
 }
