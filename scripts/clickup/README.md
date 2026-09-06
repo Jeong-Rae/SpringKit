@@ -12,8 +12,8 @@ API token은 config에 저장하지 않고 `CLICKUP_TOKEN` 환경 변수로 전�
 ```sh
 cp scripts/clickup/clickup-sync.example.json /tmp/clickup-sync.json
 export CLICKUP_TOKEN=pk_...
-node scripts/clickup/sync-task-graph.mjs plan --config /tmp/clickup-sync.json
-node scripts/clickup/sync-task-graph.mjs apply --config /tmp/clickup-sync.json
+node scripts/clickup/sync-task-graph.mjs sync --dry --config /tmp/clickup-sync.json
+node scripts/clickup/sync-task-graph.mjs sync --config /tmp/clickup-sync.json
 ```
 
-`plan`은 변경 예정 사항만 출력합니다. `apply`는 해당 변경을 ClickUp에 반영합니다.
+`sync --dry`는 변경 예정 사항만 출력합니다. `sync`는 변경을 반영하고 성공하면 ClickUp 확인 URL만 출력합니다.
