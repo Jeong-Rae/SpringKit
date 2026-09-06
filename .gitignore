@@ -13,6 +13,9 @@ application-db.yaml
 application-host.yaml
 application-security.yaml
 
+# TODO: Remove after tasks are backed up on the web.
+/tasks/
+
 ### STS ###
 .apt_generated
 .classpath
