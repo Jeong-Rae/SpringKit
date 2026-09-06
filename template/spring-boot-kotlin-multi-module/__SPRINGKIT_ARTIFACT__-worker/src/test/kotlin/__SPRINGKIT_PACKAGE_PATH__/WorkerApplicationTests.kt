@@ -7,7 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import kotlin.test.assertEquals
 
 @SpringBootTest
-class ApplicationTests {
+class WorkerApplicationTests {
 
     @Autowired
     private lateinit var greetingService: GreetingService

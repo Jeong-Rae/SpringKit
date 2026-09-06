@@ -1,6 +1,6 @@
-package __SPRINGKIT_PACKAGE_NAME__.application
+package __SPRINGKIT_PACKAGE_NAME__.application.greeting
 
-import __SPRINGKIT_PACKAGE_NAME__.domain.Greeting
+import __SPRINGKIT_PACKAGE_NAME__.domain.greeting.Greeting
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
