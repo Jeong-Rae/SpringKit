@@ -21,6 +21,17 @@ function remoteMarkdown(task) {
   return task.markdown_description ?? task.markdown_content ?? task.description ?? "";
 }
 
+function normalizeMarkdown(markdown) {
+  return String(markdown)
+    .replace(/\r\n/g, "\n")
+    .replace(/^(\s*)[*+-]\s+/gm, "$1- ")
+    .trimEnd();
+}
+
+function markdownsEqual(left, right) {
+  return normalizeMarkdown(left) === normalizeMarkdown(right);
+}
+
 function statusesEqual(left, right) {
   return String(left).trim().toLowerCase() === String(right).trim().toLowerCase();
 }
@@ -149,7 +160,7 @@ export function createSyncPlan(workItems, remoteTasks, config) {
     if (!statusesEqual(remoteStatus(remote), desiredStatus)) {
       changes.status = { before: remoteStatus(remote), after: desiredStatus };
     }
-    if (remoteMarkdown(remote) !== item.markdown) {
+    if (!markdownsEqual(remoteMarkdown(remote), item.markdown)) {
       changes.markdown_content = { before: remoteMarkdown(remote), after: item.markdown };
     }
     if (Object.keys(changes).length > 0) {

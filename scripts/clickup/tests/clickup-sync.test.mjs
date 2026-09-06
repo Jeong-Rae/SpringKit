@@ -199,6 +199,24 @@ test("동일 remote state는 NO_CHANGE로 수렴한다", () => {
   ]);
 });
 
+test("ClickUp이 정규화한 Markdown 목록은 변경으로 처리하지 않는다", () => {
+  const [task] = projectTaskCard(card);
+  const clickUpMarkdown = task.markdown.replace(/^- /gm, "*   ").trimEnd();
+  const plan = createSyncPlan(
+    [task],
+    [
+      remoteTask("r1", "sk-5", {
+        name: task.displayTitle,
+        markdown: clickUpMarkdown,
+        type: "feature",
+      }),
+    ],
+    config,
+  );
+
+  assert.deepEqual(plan.operations, [{ type: "NO_CHANGE", sourceId: "sk-5" }]);
+});
+
 test("title 변경은 CREATE가 아니라 UPDATE가 된다", () => {
   const [task] = projectTaskCard(card);
   const remote = [
