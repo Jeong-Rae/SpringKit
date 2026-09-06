@@ -20,6 +20,9 @@ application-security.yaml
 # 로컬 Task 데이터
 /tasks/
 
+# 로컬 handoff 메모
+/docs/handoffs/
+
 ### STS 설정 ###
 .apt_generated
 .classpath
