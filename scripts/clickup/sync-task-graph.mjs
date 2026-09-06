@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
 import { ClickUpClient } from "./clickup-client.mjs";
 import {
   applySyncPlan,
@@ -12,59 +13,63 @@ import {
 } from "./reconciliation.mjs";
 import { loadWorkItems } from "./task-source.mjs";
 
-function usage() {
-  return "사용법: node scripts/clickup/sync-task-graph.mjs sync [--dry] --config <file> [--tasks-dir <path>]";
-}
+const CONFIG_FILE = fileURLToPath(new URL("../../.clickup-sync.json", import.meta.url));
+const ENV_FILE = fileURLToPath(new URL("../../.env", import.meta.url));
+const TASKS_DIR = fileURLToPath(new URL("../../tasks", import.meta.url));
 
-function nextArgument(args, index, name) {
-  const value = args[index + 1];
-  if (!value) throw new Error(`${name} 뒤에 값이 필요합니다.`);
-  return value;
+function usage() {
+  return "사용법: node scripts/clickup/sync-task-graph.mjs sync [--dry]";
 }
 
 function parseArgs(args) {
   if (args[0] !== "sync") throw new Error(usage());
 
   let dryRun = false;
-  let configFile;
-  let tasksDir = resolve(process.cwd(), "tasks");
-  for (let index = 1; index < args.length; index += 1) {
-    if (args[index] === "--dry") {
+  for (const argument of args.slice(1)) {
+    if (argument === "--dry") {
       dryRun = true;
-    } else if (args[index] === "--config") {
-      configFile = nextArgument(args, index, "--config");
-      index += 1;
-    } else if (args[index] === "--tasks-dir") {
-      tasksDir = resolve(nextArgument(args, index, "--tasks-dir"));
-      index += 1;
     } else {
-      throw new Error(`${usage()}\n알 수 없는 인수입니다: ${args[index]}`);
+      throw new Error(`${usage()}\n알 수 없는 인수입니다: ${argument}`);
     }
   }
-  if (!configFile) throw new Error(`${usage()}\n--config 값이 필요합니다.`);
-  return { dryRun, configFile: resolve(configFile), tasksDir };
+  return { dryRun };
 }
 
-async function readConfig(file) {
+function loadEnvironment() {
+  const explicitToken = process.env.CLICKUP_TOKEN;
+  try {
+    loadEnvFile(ENV_FILE);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+    const code = error && typeof error === "object" && "code" in error ? ` (${error.code})` : "";
+    throw new Error(`${ENV_FILE}: .env 파일을 읽을 수 없습니다${code}.`);
+  } finally {
+    if (explicitToken !== undefined) process.env.CLICKUP_TOKEN = explicitToken;
+  }
+}
+
+async function readConfig() {
   let text;
   try {
-    text = await readFile(file, "utf8");
+    text = await readFile(CONFIG_FILE, "utf8");
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? ` (${error.code})` : "";
-    throw new Error(`${file}: config 파일을 읽을 수 없습니다${code}.`);
+    throw new Error(`${CONFIG_FILE}: ClickUp 설정 파일을 읽을 수 없습니다${code}.`);
   }
 
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`${file}: config JSON을 해석할 수 없습니다.`);
+    throw new Error(`${CONFIG_FILE}: ClickUp 설정 JSON을 해석할 수 없습니다.`);
   }
 }
 
 async function main() {
-  const { dryRun, configFile, tasksDir } = parseArgs(process.argv.slice(2));
-  const config = validateConfig(await readConfig(configFile));
-  const workItems = await loadWorkItems(tasksDir);
+  const { dryRun } = parseArgs(process.argv.slice(2));
+  loadEnvironment();
+
+  const config = validateConfig(await readConfig());
+  const workItems = await loadWorkItems(TASKS_DIR);
   const client = new ClickUpClient(process.env.CLICKUP_TOKEN);
 
   const [list, fields, tasks] = await Promise.all([
