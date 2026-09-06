@@ -1,4 +1,4 @@
-package __SPRINGKIT_PACKAGE_NAME__.greeting.domain
+package __SPRINGKIT_PACKAGE_NAME__.domain.greeting
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
