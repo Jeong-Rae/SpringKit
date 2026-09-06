@@ -2,7 +2,7 @@
   "id": "sk-6",
   "title": "Spring Boot Kotlin 프로젝트 템플릿 제공",
   "type": "feature",
-  "status": "running",
+  "status": "done",
   "goal": "사용자는 단일 모듈 또는 고정된 4계층 멀티 모듈 구조의 Spring Boot Kotlin 프로젝트 템플릿을 선택할 수 있다.",
   "depends_on": [],
   "requirements": [
@@ -67,7 +67,7 @@
     {
       "id": "sk-6-3",
       "title": "멀티 모듈 실행과 계층 연결 검증",
-      "status": "running",
+      "status": "done",
       "objective": "presentation의 Application.kt에서 멀티 모듈 애플리케이션을 실행하고 전체 구성을 검증할 수 있다.",
       "work": [
         "각 모듈의 최소 Kotlin 소스와 테스트를 추가한다.",

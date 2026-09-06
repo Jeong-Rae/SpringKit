@@ -18,6 +18,7 @@ dependencyManagement {
 dependencies {
     implementation(project(":__SPRINGKIT_ARTIFACT__-application"))
     implementation(project(":__SPRINGKIT_ARTIFACT__-domain"))
+    implementation("org.springframework:spring-context")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

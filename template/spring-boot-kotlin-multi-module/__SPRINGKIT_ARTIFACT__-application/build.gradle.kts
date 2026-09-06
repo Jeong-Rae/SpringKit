@@ -1,4 +1,5 @@
 plugins {
+    `java-library`
     kotlin("jvm")
     id("io.spring.dependency-management")
 }
@@ -16,7 +17,7 @@ dependencyManagement {
 }
 
 dependencies {
-    implementation(project(":__SPRINGKIT_ARTIFACT__-domain"))
+    api(project(":__SPRINGKIT_ARTIFACT__-domain"))
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
