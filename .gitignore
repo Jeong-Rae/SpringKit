@@ -14,7 +14,6 @@ application-host.yaml
 application-security.yaml
 
 # Local ClickUp sync configuration
-/config/.env
 /config/.env.local
 /config/task-sync.config.json
 

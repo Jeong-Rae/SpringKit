@@ -9,10 +9,10 @@ mkdir -p config
 cp scripts/clickup/task-sync.config.example.json config/task-sync.config.json
 ```
 
-`config/.env.local`에 API token을 저장합니다. `config/.env`도 fallback으로 지원합니다.
+`config/.env.example`을 `config/.env.local`로 복사하고 API token을 설정합니다.
 
-```text
-CLICKUP_TOKEN=pk_...
+```sh
+cp config/.env.example config/.env.local
 ```
 
 셸에 이미 `CLICKUP_TOKEN`이 설정되어 있으면 파일의 값보다 우선 사용합니다.

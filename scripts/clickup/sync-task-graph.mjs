@@ -14,10 +14,7 @@ import {
 import { loadWorkItems } from "./task-source.mjs";
 
 const CONFIG_FILE = fileURLToPath(new URL("../../config/task-sync.config.json", import.meta.url));
-const ENV_FILES = [
-  fileURLToPath(new URL("../../config/.env.local", import.meta.url)),
-  fileURLToPath(new URL("../../config/.env", import.meta.url)),
-];
+const ENV_FILE = fileURLToPath(new URL("../../config/.env.local", import.meta.url));
 const TASKS_DIR = fileURLToPath(new URL("../../tasks", import.meta.url));
 
 function usage() {
@@ -41,15 +38,11 @@ function parseArgs(args) {
 function loadEnvironment() {
   const explicitToken = process.env.CLICKUP_TOKEN;
   try {
-    for (const envFile of ENV_FILES) {
-      try {
-      loadEnvFile(envFile);
-      } catch (error) {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") continue;
-        const code = error && typeof error === "object" && "code" in error ? ` (${error.code})` : "";
-        throw new Error(`${envFile}: 환경 변수 파일을 읽을 수 없습니다${code}.`);
-      }
-    }
+    loadEnvFile(ENV_FILE);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+    const code = error && typeof error === "object" && "code" in error ? ` (${error.code})` : "";
+    throw new Error(`${ENV_FILE}: 환경 변수 파일을 읽을 수 없습니다${code}.`);
   } finally {
     if (explicitToken !== undefined) process.env.CLICKUP_TOKEN = explicitToken;
   }
