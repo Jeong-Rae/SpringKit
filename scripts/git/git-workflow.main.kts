@@ -1,6 +1,7 @@
 #!/usr/bin/env kotlin
 
 import java.io.File
+import kotlin.system.exitProcess
 
 data class CommandResult(val exitCode: Int, val output: String)
 
@@ -10,10 +11,109 @@ data class PullRequestStatus(
     val url: String,
 )
 
+data class FinishPullRequest(
+    val state: String,
+    val baseBranch: String,
+    val isDraft: Boolean,
+    val headCommit: String,
+    val mergeCommit: String,
+    val url: String,
+)
+
 data class GitWorktree(
     val directory: File,
     val branch: String?,
 )
+
+enum class FinishPhase {
+    DISCOVER,
+    PREFLIGHT,
+    MERGE,
+    RECONCILE,
+    SYNC_DEVELOP,
+    BUILD,
+    CLEANUP,
+    VERIFY,
+    SUCCEEDED,
+}
+
+enum class WorkflowResult {
+    FAILED,
+    RECOVERY_REQUIRED,
+    SUCCEEDED,
+}
+
+data class WorkflowPayload(
+    val result: WorkflowResult,
+    val command: String,
+    val phase: String,
+    val message: String,
+    val recovery: String? = null,
+) {
+    fun render(): String = buildList {
+        add("result: $result")
+        add("command: $command")
+        add("phase: $phase")
+        add("message: $message")
+        recovery?.let { add("recovery: $it") }
+    }.joinToString("\n")
+}
+
+class WorkflowException(val payload: WorkflowPayload) : RuntimeException(payload.message)
+
+class FinishStateMachine(private val taskId: String) {
+    var phase = FinishPhase.DISCOVER
+        private set
+    private var remoteMerged = false
+    private var mergeOutcomeUnknown = false
+
+    fun transition(next: FinishPhase) {
+        val allowed = when (phase) {
+            FinishPhase.DISCOVER -> setOf(FinishPhase.PREFLIGHT)
+            FinishPhase.PREFLIGHT -> setOf(FinishPhase.MERGE, FinishPhase.RECONCILE)
+            FinishPhase.MERGE -> setOf(FinishPhase.RECONCILE)
+            FinishPhase.RECONCILE -> setOf(FinishPhase.SYNC_DEVELOP)
+            FinishPhase.SYNC_DEVELOP -> setOf(FinishPhase.BUILD)
+            FinishPhase.BUILD -> setOf(FinishPhase.CLEANUP)
+            FinishPhase.CLEANUP -> setOf(FinishPhase.VERIFY)
+            FinishPhase.VERIFY -> setOf(FinishPhase.SUCCEEDED)
+            FinishPhase.SUCCEEDED -> emptySet()
+        }
+        if (next !in allowed) {
+            fail("허용되지 않은 상태 전이입니다: $phase -> $next")
+        }
+        phase = next
+    }
+
+    fun markMergeAttempted() {
+        mergeOutcomeUnknown = true
+    }
+
+    fun markMergeNotApplied() {
+        mergeOutcomeUnknown = false
+    }
+
+    fun markRemoteMerged() {
+        remoteMerged = true
+        mergeOutcomeUnknown = false
+    }
+
+    fun fail(message: String, recovery: String? = null): Nothing {
+        val result = if (remoteMerged || mergeOutcomeUnknown) {
+            WorkflowResult.RECOVERY_REQUIRED
+        } else {
+            WorkflowResult.FAILED
+        }
+        throw WorkflowException(
+            WorkflowPayload(result, "finish $taskId", phase.name, message, recovery),
+        )
+    }
+
+    fun wrap(exception: Exception): Nothing {
+        if (exception is WorkflowException) throw exception
+        fail(exception.message ?: exception::class.simpleName.orEmpty())
+    }
+}
 
 fun execute(
     workingDirectory: File,
@@ -21,18 +121,20 @@ fun execute(
     captureOutput: Boolean = false,
     check: Boolean = true,
 ): CommandResult {
-    val builder = ProcessBuilder(*command).directory(workingDirectory)
-    val process = if (captureOutput) {
-        builder.redirectErrorStream(true).start()
-    } else {
-        builder.inheritIO().start()
-    }
-    val output = if (captureOutput) process.inputStream.bufferedReader().use { it.readText() } else ""
+    val process = ProcessBuilder(*command)
+        .directory(workingDirectory)
+        .redirectInput(ProcessBuilder.Redirect.INHERIT)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText() }
     val exitCode = process.waitFor()
 
     if (check && exitCode != 0) {
         val detail = output.trim().takeIf { it.isNotEmpty() }?.let { "\n$it" }.orEmpty()
         error("명령 실행에 실패했습니다 (${command.joinToString(" ")}).$detail")
+    }
+    if (!captureOutput && output.isNotBlank()) {
+        println(output.trimEnd())
     }
     return CommandResult(exitCode, output.trim())
 }
@@ -41,7 +143,9 @@ fun commandOutput(workingDirectory: File, vararg command: String): String =
     execute(workingDirectory, *command, captureOutput = true).output
 
 val invocationDirectory = File(System.getProperty("user.dir"))
-val repositoryRoot = File(commandOutput(invocationDirectory, "git", "rev-parse", "--show-toplevel"))
+val repositoryRoot: File by lazy {
+    File(commandOutput(invocationDirectory, "git", "rev-parse", "--show-toplevel"))
+}
 
 fun requireCommand(name: String) {
     val result = execute(
@@ -90,8 +194,8 @@ fun requireDevelop() {
     require(currentBranch() == "develop") { "현재 브랜치가 develop이어야 합니다." }
 }
 
-fun requireCleanTrackedFiles() {
-    val changed = commandOutput(repositoryRoot, "git", "status", "--short", "--untracked-files=no")
+fun requireCleanTrackedFiles(workingDirectory: File = repositoryRoot) {
+    val changed = commandOutput(workingDirectory, "git", "status", "--short", "--untracked-files=no")
     require(changed.isBlank()) { "추적 중인 파일에 커밋되지 않은 변경이 있습니다. 먼저 정리하거나 커밋하세요.\n$changed" }
 }
 
@@ -107,8 +211,12 @@ fun branchExists(branch: String): Boolean =
         check = false,
     ).exitCode == 0
 
-fun remoteBranchExists(branch: String): Boolean =
-    commandOutput(repositoryRoot, "git", "ls-remote", "--heads", "origin", branch).isNotBlank()
+fun remoteBranchCommit(branch: String): String? =
+    commandOutput(repositoryRoot, "git", "ls-remote", "--heads", "origin", branch)
+        .takeIf { it.isNotBlank() }
+        ?.substringBefore('\t')
+
+fun remoteBranchExists(branch: String): Boolean = remoteBranchCommit(branch) != null
 
 fun isAncestor(ancestor: String, descendant: String): Boolean =
     execute(
@@ -273,31 +381,8 @@ fun markDraft() {
     execute(repositoryRoot, "gh", "pr", "ready", "--undo", pr.branch)
 }
 
-fun finish(taskId: String) {
-    requireTaskId(taskId)
-    requireCommand("gh")
-    requireCleanTrackedFiles()
-
-    val branch = "feature/$taskId"
-    val pullRequestUrl = commandOutput(
-        repositoryRoot,
-        "gh",
-        "pr",
-        "list",
-        "--head",
-        branch,
-        "--state",
-        "all",
-        "--limit",
-        "1",
-        "--json",
-        "url",
-        "--jq",
-        ".[0].url // \"\"",
-    )
-    require(pullRequestUrl.isNotBlank()) { "feature의 PR을 찾을 수 없습니다: $branch" }
-
-    var pr = commandOutput(
+fun readFinishPullRequest(pullRequestUrl: String): FinishPullRequest {
+    val fields = commandOutput(
         repositoryRoot,
         "gh",
         "pr",
@@ -308,98 +393,220 @@ fun finish(taskId: String) {
         "--jq",
         "[.state, .baseRefName, (.isDraft | tostring), .headRefOid, (.mergeCommit.oid // \"\"), .url] | @tsv",
     ).split('\t')
-
-    require(pr.size == 6) { "PR 상태 응답을 해석할 수 없습니다." }
-    var state = pr[0]
-    var baseBranch = pr[1]
-    val isDraft = pr[2]
-    val headCommit = pr[3]
-    var mergeCommit = pr[4]
-    var prUrl = pr[5]
-    require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
-    require(state == "OPEN" || state == "MERGED") { "병합할 수 없는 PR 상태입니다: $prUrl ($state)" }
-
-    if (branchExists(branch)) {
-        val localFeature = commandOutput(repositoryRoot, "git", "rev-parse", branch)
-        require(localFeature == headCommit) {
-            "로컬 $branch 에 게시되지 않은 커밋이 있습니다. update를 먼저 실행하세요."
-        }
+    require(fields.size == 6) { "PR 상태 응답을 해석할 수 없습니다." }
+    require(fields[2] == "true" || fields[2] == "false") {
+        "PR 초안 상태를 해석할 수 없습니다: ${fields[2]}"
     }
+    return FinishPullRequest(
+        state = fields[0],
+        baseBranch = fields[1],
+        isDraft = fields[2].toBoolean(),
+        headCommit = fields[3],
+        mergeCommit = fields[4],
+        url = fields[5],
+    )
+}
 
-    if (state == "OPEN") {
-        require(branchExists(branch)) { "병합할 로컬 feature 브랜치를 찾을 수 없습니다: $branch" }
-        require(isDraft == "false") { "초안 PR은 병합할 수 없습니다. ready 명령을 먼저 실행하세요: $prUrl" }
-        execute(
+fun finish(taskId: String) {
+    val machine = FinishStateMachine(taskId)
+    try {
+        requireTaskId(taskId)
+        requireCommand("gh")
+
+        val branch = "feature/$taskId"
+        val pullRequestUrl = commandOutput(
             repositoryRoot,
             "gh",
             "pr",
-            "merge",
-            prUrl,
-            "--squash",
-            "--delete-branch",
-            "--match-head-commit",
-            headCommit,
-        )
-
-        pr = commandOutput(
-            repositoryRoot,
-            "gh",
-            "pr",
-            "view",
-            prUrl,
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "all",
+            "--limit",
+            "1",
             "--json",
-            "state,baseRefName,isDraft,headRefOid,mergeCommit,url",
+            "url",
             "--jq",
-            "[.state, .baseRefName, (.isDraft | tostring), .headRefOid, (.mergeCommit.oid // \"\"), .url] | @tsv",
-        ).split('\t')
-        require(pr.size == 6) { "병합 후 PR 상태 응답을 해석할 수 없습니다." }
-        state = pr[0]
-        baseBranch = pr[1]
-        mergeCommit = pr[4]
-        prUrl = pr[5]
-    }
-
-    require(state == "MERGED") { "PR squash 병합이 완료되지 않았습니다: $prUrl ($state)" }
-    require(baseBranch == "develop") { "PR 대상 브랜치가 develop이 아닙니다: $baseBranch" }
-    require(mergeCommit.isNotBlank()) { "PR의 squash commit을 확인할 수 없습니다: $prUrl" }
-
-    val developWorktree = worktreeForBranch("develop")
-    val developDirectory = if (developWorktree == null) {
-        execute(repositoryRoot, "git", "switch", "develop")
-        repositoryRoot
-    } else {
-        developWorktree.directory
-    }
-    execute(developDirectory, "git", "pull", "--ff-only", "origin", "develop")
-
-    require(isAncestor(mergeCommit, "develop")) {
-        "원격 PR의 squash commit이 로컬 develop에 포함되지 않았습니다: $mergeCommit"
-    }
-    val mergeCommitFields = commandOutput(
-        repositoryRoot,
-        "git",
-        "rev-list",
-        "--parents",
-        "-n",
-        "1",
-        mergeCommit,
-    ).split(' ')
-    require(mergeCommitFields.size == 2) {
-        "PR이 squash 방식으로 병합되지 않았습니다. 로컬 feature를 정리하지 않습니다: $prUrl"
-    }
-
-    val gradleWrapper = File(developDirectory, "gradlew")
-    require(gradleWrapper.isFile) { "Gradle wrapper를 찾을 수 없습니다: ${gradleWrapper.path}" }
-    execute(developDirectory, gradleWrapper.absolutePath, "build")
-
-    if (remoteBranchExists(branch)) {
-        execute(repositoryRoot, "git", "push", "origin", "--delete", branch)
-    }
-    if (branchExists(branch)) {
-        worktreeForBranch(branch)?.let { featureWorktree ->
-            execute(featureWorktree.directory, "git", "switch", "--detach", "develop")
+            ".[0].url // \"\"",
+        )
+        if (pullRequestUrl.isBlank()) {
+            machine.fail("feature의 PR을 찾을 수 없습니다: $branch")
         }
-        execute(developDirectory, "git", "branch", "-D", branch)
+
+        var pr = readFinishPullRequest(pullRequestUrl)
+        if (pr.baseBranch != "develop") {
+            machine.fail("PR 대상 브랜치가 develop이 아닙니다: ${pr.baseBranch}")
+        }
+        if (pr.state != "OPEN" && pr.state != "MERGED") {
+            machine.fail("병합할 수 없는 PR 상태입니다: ${pr.url} (${pr.state})")
+        }
+        if (pr.state == "MERGED") {
+            machine.markRemoteMerged()
+        }
+
+        machine.transition(FinishPhase.PREFLIGHT)
+        requireCleanTrackedFiles()
+        val developWorktree = worktreeForBranch("develop")
+        val developDirectory = developWorktree?.directory ?: repositoryRoot
+        if (developWorktree != null) {
+            requireCleanTrackedFiles(developDirectory)
+        }
+        worktreeForBranch(branch)?.directory?.let(::requireCleanTrackedFiles)
+
+        val gradleWrapper = File(developDirectory, "gradlew")
+        if (!gradleWrapper.isFile) {
+            machine.fail("Gradle wrapper를 찾을 수 없습니다: ${gradleWrapper.path}")
+        }
+
+        val localFeature = if (branchExists(branch)) {
+            commandOutput(repositoryRoot, "git", "rev-parse", branch)
+        } else {
+            null
+        }
+        val remoteFeature = remoteBranchCommit(branch)
+        if (pr.state == "OPEN") {
+            if (localFeature == null) {
+                machine.fail("병합할 로컬 feature 브랜치를 찾을 수 없습니다: $branch")
+            }
+            if (pr.isDraft) {
+                machine.fail("초안 PR은 병합할 수 없습니다. ready 명령을 먼저 실행하세요: ${pr.url}")
+            }
+            if (localFeature != pr.headCommit || remoteFeature != pr.headCommit) {
+                machine.fail(
+                    "로컬과 원격 $branch 가 PR HEAD와 일치하지 않습니다.",
+                    "PR이 OPEN 상태일 때 update를 실행한 뒤 다시 시도하세요.",
+                )
+            }
+        } else {
+            if (localFeature != null && localFeature != pr.headCommit) {
+                machine.fail(
+                    "병합된 PR에 포함되지 않은 로컬 커밋이 있어 $branch 를 정리할 수 없습니다.",
+                    "추가 커밋을 새 Task 브랜치로 옮긴 뒤 finish를 다시 실행하세요.",
+                )
+            }
+            if (remoteFeature != null && remoteFeature != pr.headCommit) {
+                machine.fail(
+                    "병합된 PR에 포함되지 않은 원격 커밋이 있어 $branch 를 정리할 수 없습니다.",
+                    "추가 커밋을 새 Task 브랜치로 보존한 뒤 finish를 다시 실행하세요.",
+                )
+            }
+        }
+
+        if (pr.state == "OPEN") {
+            machine.transition(FinishPhase.MERGE)
+            machine.markMergeAttempted()
+            val mergeResult = execute(
+                repositoryRoot,
+                "gh",
+                "pr",
+                "merge",
+                pr.url,
+                "--squash",
+                "--match-head-commit",
+                pr.headCommit,
+                captureOutput = true,
+                check = false,
+            )
+            pr = readFinishPullRequest(pr.url)
+            if (pr.state != "MERGED") {
+                machine.markMergeNotApplied()
+                val detail = mergeResult.output.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty()
+                machine.fail("PR 병합이 완료되지 않았습니다: ${pr.url} (${pr.state}).$detail")
+            }
+            machine.markRemoteMerged()
+            machine.transition(FinishPhase.RECONCILE)
+        } else {
+            machine.transition(FinishPhase.RECONCILE)
+        }
+
+        if (pr.baseBranch != "develop") {
+            machine.fail("PR 대상 브랜치가 develop이 아닙니다: ${pr.baseBranch}")
+        }
+        if (pr.mergeCommit.isBlank()) {
+            machine.fail("PR의 squash commit을 확인할 수 없습니다: ${pr.url}")
+        }
+
+        machine.transition(FinishPhase.SYNC_DEVELOP)
+        if (developWorktree == null) {
+            execute(repositoryRoot, "git", "switch", "develop")
+        }
+        execute(developDirectory, "git", "pull", "--ff-only", "origin", "develop")
+        if (!isAncestor(pr.mergeCommit, "develop")) {
+            machine.fail("원격 PR의 squash commit이 로컬 develop에 포함되지 않았습니다: ${pr.mergeCommit}")
+        }
+        val mergeCommitFields = commandOutput(
+            repositoryRoot,
+            "git",
+            "rev-list",
+            "--parents",
+            "-n",
+            "1",
+            pr.mergeCommit,
+        ).split(' ')
+        if (mergeCommitFields.size != 2) {
+            machine.fail("PR이 squash 방식으로 병합되지 않았습니다: ${pr.url}")
+        }
+
+        machine.transition(FinishPhase.BUILD)
+        execute(developDirectory, gradleWrapper.absolutePath, "build")
+
+        machine.transition(FinishPhase.CLEANUP)
+        remoteBranchCommit(branch)?.let { remoteCommit ->
+            if (remoteCommit != pr.headCommit) {
+                machine.fail(
+                    "병합 후 원격 $branch 에 새 커밋이 추가되어 삭제하지 않습니다.",
+                    "추가 커밋을 새 Task 브랜치로 보존한 뒤 finish를 다시 실행하세요.",
+                )
+            }
+            val deleteResult = execute(
+                repositoryRoot,
+                "git",
+                "push",
+                "origin",
+                "--delete",
+                branch,
+                captureOutput = true,
+                check = false,
+            )
+            if (remoteBranchExists(branch)) {
+                machine.fail("원격 $branch 삭제에 실패했습니다. ${deleteResult.output}")
+            }
+        }
+        if (branchExists(branch)) {
+            val currentLocalFeature = commandOutput(repositoryRoot, "git", "rev-parse", branch)
+            if (currentLocalFeature != pr.headCommit) {
+                machine.fail(
+                    "병합 후 로컬 $branch 에 새 커밋이 추가되어 삭제하지 않습니다.",
+                    "추가 커밋을 새 Task 브랜치로 옮긴 뒤 finish를 다시 실행하세요.",
+                )
+            }
+            worktreeForBranch(branch)?.let { featureWorktree ->
+                execute(featureWorktree.directory, "git", "switch", "--detach", "develop")
+            }
+            execute(developDirectory, "git", "branch", "-D", branch)
+        }
+
+        machine.transition(FinishPhase.VERIFY)
+        if (!isAncestor(pr.mergeCommit, "develop")) {
+            machine.fail("완료 검증에서 develop의 병합 커밋을 확인하지 못했습니다: ${pr.mergeCommit}")
+        }
+        if (remoteBranchExists(branch) || branchExists(branch)) {
+            machine.fail("완료 검증에서 feature 브랜치가 남아 있습니다: $branch")
+        }
+        requireCleanTrackedFiles(developDirectory)
+
+        machine.transition(FinishPhase.SUCCEEDED)
+        println(
+            WorkflowPayload(
+                WorkflowResult.SUCCEEDED,
+                "finish $taskId",
+                machine.phase.name,
+                "PR 병합과 로컬 정리를 모두 완료했습니다: ${pr.url}",
+            ).render(),
+        )
+    } catch (exception: Exception) {
+        machine.wrap(exception)
     }
 }
 
@@ -468,31 +675,50 @@ fun usage(): Nothing = error(
     """.trimIndent(),
 )
 
-when (args.firstOrNull()) {
-    null -> interactive()
-    "start" -> {
-        if (args.size != 2) usage()
-        start(args[1])
+fun dispatch(arguments: Array<String>) {
+    when (arguments.firstOrNull()) {
+        null -> interactive()
+        "start" -> {
+            if (arguments.size != 2) usage()
+            start(arguments[1])
+        }
+        "publish" -> {
+            if (arguments.size != 4 || arguments[2] != "--body-file") usage()
+            publish(arguments[1], arguments[3])
+        }
+        "update" -> {
+            if (arguments.size != 1) usage()
+            update()
+        }
+        "ready" -> {
+            if (arguments.size != 1) usage()
+            markReady()
+        }
+        "draft" -> {
+            if (arguments.size != 1) usage()
+            markDraft()
+        }
+        "finish" -> {
+            if (arguments.size != 2) usage()
+            finish(arguments[1])
+        }
+        else -> usage()
     }
-    "publish" -> {
-        if (args.size != 4 || args[2] != "--body-file") usage()
-        publish(args[1], args[3])
-    }
-    "update" -> {
-        if (args.size != 1) usage()
-        update()
-    }
-    "ready" -> {
-        if (args.size != 1) usage()
-        markReady()
-    }
-    "draft" -> {
-        if (args.size != 1) usage()
-        markDraft()
-    }
-    "finish" -> {
-        if (args.size != 2) usage()
-        finish(args[1])
-    }
-    else -> usage()
+}
+
+try {
+    dispatch(args)
+} catch (exception: WorkflowException) {
+    System.err.println(exception.payload.render())
+    exitProcess(if (exception.payload.result == WorkflowResult.RECOVERY_REQUIRED) 2 else 1)
+} catch (exception: Exception) {
+    System.err.println(
+        WorkflowPayload(
+            WorkflowResult.FAILED,
+            args.firstOrNull() ?: "interactive",
+            "COMMAND",
+            exception.message ?: exception::class.simpleName.orEmpty(),
+        ).render(),
+    )
+    exitProcess(1)
 }
