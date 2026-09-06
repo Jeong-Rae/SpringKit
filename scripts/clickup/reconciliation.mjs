@@ -27,13 +27,13 @@ function statusesEqual(left, right) {
 
 export function validateConfig(config) {
   for (const key of ["list_id", "source_id_field_id", "source_type_field_id"]) {
-    if (typeof config[key] !== "string" || config[key].trim() === "") throw new Error(`config.${key} is required`);
+    if (typeof config[key] !== "string" || config[key].trim() === "") throw new Error(`config.${key} 값이 필요합니다.`);
   }
   const statuses = ["pending", "running", "verifying", "blocked", "done", "cancelled"];
-  if (typeof config.status_map !== "object" || config.status_map === null) throw new Error("config.status_map is required");
+  if (typeof config.status_map !== "object" || config.status_map === null) throw new Error("config.status_map 값이 필요합니다.");
   for (const status of statuses) {
     if (typeof config.status_map[status] !== "string" || config.status_map[status].trim() === "") {
-      throw new Error(`config.status_map.${status} is required`);
+      throw new Error(`config.status_map.${status} 값이 필요합니다.`);
     }
   }
   return config;
@@ -43,7 +43,7 @@ export function validateClickUpMetadata(config, list, fields) {
   const availableStatuses = new Set((list.statuses ?? []).map((status) => String(status.status).trim().toLowerCase()));
   for (const [source, target] of Object.entries(config.status_map)) {
     if (!availableStatuses.has(target.trim().toLowerCase())) {
-      throw new Error(`ClickUp List does not provide mapped status for ${source}: ${target}`);
+      throw new Error(`ClickUp List에 ${source} 상태의 매핑 대상이 없습니다: ${target}`);
     }
   }
 
@@ -53,16 +53,16 @@ export function validateClickUpMetadata(config, list, fields) {
     ["source_type_field_id", config.source_type_field_id],
   ]) {
     const field = fieldList.find((candidate) => candidate.id === id);
-    if (!field) throw new Error(`ClickUp List does not provide config.${name}: ${id}`);
+    if (!field) throw new Error(`ClickUp List에 config.${name} Custom Field가 없습니다: ${id}`);
     if (!new Set(["short_text", "text"]).has(field.type)) {
-      throw new Error(`config.${name} must reference a text field, got ${field.type}`);
+      throw new Error(`config.${name}은 text Custom Field여야 합니다. 현재 type: ${field.type}`);
     }
     if (Array.isArray(field.applied_objects) && field.applied_objects.length > 0) {
       const appliesToStandardTask = field.applied_objects.some(
         (applied) => Number(applied.object_type) === 19 && Number(applied.object_id) === 0,
       );
       if (!appliesToStandardTask) {
-        throw new Error(`config.${name} is not applicable to the standard ClickUp Task type`);
+        throw new Error(`config.${name} Custom Field는 기본 ClickUp Task type에 적용되지 않습니다.`);
       }
     }
   }
@@ -76,7 +76,7 @@ export function buildRemoteIndex(remoteTasks, sourceIdFieldId) {
     byRemoteId.set(String(task.id), task);
     const sourceId = customFieldValue(task, sourceIdFieldId);
     if (!sourceId) continue;
-    if (bySourceId.has(sourceId)) throw new Error(`duplicate ClickUp source identity: ${sourceId}`);
+    if (bySourceId.has(sourceId)) throw new Error(`ClickUp source ID가 중복되었습니다: ${sourceId}`);
     bySourceId.set(sourceId, task);
   }
 
@@ -84,25 +84,20 @@ export function buildRemoteIndex(remoteTasks, sourceIdFieldId) {
 }
 
 function checkHierarchy(workItems, remoteIndex) {
-  const sourceById = new Map(workItems.map((item) => [item.id, item]));
   for (const item of workItems) {
     const remote = remoteIndex.bySourceId.get(item.id);
     if (!remote) continue;
     const parentId = remoteParentId(remote);
     if (item.kind === "task" && parentId !== null) {
-      throw new Error(`${item.id}: source Task is a ClickUp subtask`);
+      throw new Error(`${item.id}: source Task가 ClickUp Subtask로 존재합니다.`);
     }
     if (item.kind === "step") {
       const remoteParent = remoteIndex.bySourceId.get(item.parentId);
-      if (!remoteParent) throw new Error(`${item.id}: existing Step has no managed remote parent ${item.parentId}`);
+      if (!remoteParent) throw new Error(`${item.id}: source parent ${item.parentId}에 대응하는 ClickUp Task가 없습니다.`);
       if (String(parentId) !== String(remoteParent.id)) {
-        throw new Error(`${item.id}: ClickUp parent does not match source parent ${item.parentId}`);
+        throw new Error(`${item.id}: ClickUp parent가 source parent ${item.parentId}와 일치하지 않습니다.`);
       }
     }
-  }
-
-  for (const sourceId of remoteIndex.bySourceId.keys()) {
-    if (!sourceById.has(sourceId)) continue;
   }
 }
 
@@ -205,7 +200,7 @@ function createBody(item, config, remoteIndex) {
     body.custom_fields.push({ id: config.source_type_field_id, value: item.type });
   } else {
     const parent = remoteIndex.bySourceId.get(item.parentId);
-    if (!parent) throw new Error(`${item.id}: remote parent is not available: ${item.parentId}`);
+    if (!parent) throw new Error(`${item.id}: source parent ${item.parentId}에 대응하는 ClickUp Task를 찾을 수 없습니다.`);
     body.parent = String(parent.id);
   }
   return body;
@@ -251,7 +246,7 @@ export async function applySyncPlan(plan, workItems, config, client) {
   for (const operation of [...byType("ADD_DEPENDENCY"), ...byType("REMOVE_DEPENDENCY")]) {
     const remote = remoteIndex.bySourceId.get(operation.sourceId);
     const dependency = remoteIndex.bySourceId.get(operation.dependencySourceId);
-    if (!remote || !dependency) throw new Error(`${operation.sourceId}: dependency remote identity is unavailable: ${operation.dependencySourceId}`);
+    if (!remote || !dependency) throw new Error(`${operation.sourceId}: dependency ${operation.dependencySourceId}에 대응하는 ClickUp Task를 찾을 수 없습니다.`);
     if (operation.type === "ADD_DEPENDENCY") await client.addDependency(remote.id, dependency.id);
     else await client.removeDependency(remote.id, dependency.id);
   }

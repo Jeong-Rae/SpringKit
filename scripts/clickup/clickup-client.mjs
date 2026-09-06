@@ -2,15 +2,15 @@ const BASE_URL = "https://api.clickup.com/api/v2";
 
 export class ClickUpApiError extends Error {
   constructor(method, path, status, body) {
-    super(`ClickUp ${method} ${path} failed (${status}): ${body}`);
+    super(`ClickUp ${method} ${path} 요청에 실패했습니다 (${status}): ${body}`);
     this.name = "ClickUpApiError";
   }
 }
 
 export class ClickUpClient {
   constructor(token, fetchImplementation = globalThis.fetch) {
-    if (!token) throw new Error("CLICKUP_TOKEN is required");
-    if (typeof fetchImplementation !== "function") throw new Error("fetch implementation is required");
+    if (!token) throw new Error("CLICKUP_TOKEN 환경 변수가 필요합니다.");
+    if (typeof fetchImplementation !== "function") throw new Error("fetch 구현이 필요합니다.");
     this.token = token;
     this.fetchImplementation = fetchImplementation;
   }
@@ -25,7 +25,7 @@ export class ClickUpClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await response.text();
-    if (!response.ok) throw new ClickUpApiError(method, path, response.status, text || "empty response");
+    if (!response.ok) throw new ClickUpApiError(method, path, response.status, text || "응답 본문 없음");
     if (!text) return null;
     return JSON.parse(text);
   }

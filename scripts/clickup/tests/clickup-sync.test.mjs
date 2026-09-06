@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderStepMarkdown, renderTaskMarkdown } from "../markdown.mjs";
-import { applySyncPlan, createSyncPlan } from "../reconciliation.mjs";
+import { applySyncPlan, createSyncPlan, validateClickUpMetadata } from "../reconciliation.mjs";
+import { loadWorkItems } from "../task-source.mjs";
 import { projectTaskCard } from "../work-item.mjs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const card = {
   id: "sk-5",
@@ -56,9 +59,9 @@ test("Task와 Step title 및 Markdown heading을 결정적으로 투영한다", 
   assert.deepEqual(step.dependencies, []);
 
   const taskHeadings = task.markdown.split("\n").filter((line) => line.startsWith("#"));
-  assert.deepEqual(taskHeadings, ["# Goal", "# Requirements", "# Scope", "## In", "## Out", "# Verification", "# Issues", "# References"]);
+  assert.deepEqual(taskHeadings, ["# 목표", "# 요구사항", "# 범위", "## 입력", "## 출력", "# 검증", "# 이슈", "# 참고자료"]);
   const stepHeadings = step.markdown.split("\n").filter((line) => line.startsWith("#"));
-  assert.deepEqual(stepHeadings, ["# Objective", "# Work", "# Verification", "# Issues", "# References"]);
+  assert.deepEqual(stepHeadings, ["# 목표", "# 작업", "# 검증", "# 이슈", "# 참고자료"]);
   for (const metadata of ["# ID", "# Title", "# Type", "# Status", "# Depends On", "# Steps"]) {
     assert.equal(task.markdown.includes(metadata), false);
   }
@@ -68,10 +71,10 @@ test("Task와 Step title 및 Markdown heading을 결정적으로 투영한다", 
 
 test("빈 배열도 heading은 유지하고 placeholder는 만들지 않는다", () => {
   const markdown = renderTaskMarkdown({ goal: "g", requirements: [], scope: { in: [], out: [] }, verification: [], issues: [], references: [] });
-  assert.match(markdown, /# Issues\n\n# References\n$/);
+  assert.match(markdown, /# 이슈\n\n# 참고자료\n$/);
   assert.equal(markdown.includes("없음"), false);
   const step = renderStepMarkdown({ objective: "o", work: [], verification: [], issues: [], references: [] });
-  assert.match(step, /# Issues\n\n# References\n$/);
+  assert.match(step, /# 이슈\n\n# 참고자료\n$/);
 });
 
 test("신규 Task와 Step을 parent 순서로 생성하고 source identity를 포함한다", async () => {
@@ -87,10 +90,10 @@ test("신규 Task와 Step을 parent 순서로 생성하고 source identity를 �
       sequence += 1;
       return { id: `remote-${sequence}`, name: body.name, parent: body.parent ?? null, custom_fields: [] };
     },
-    updateTask: async () => assert.fail("unexpected update"),
-    setCustomField: async () => assert.fail("unexpected field update"),
-    addDependency: async () => assert.fail("unexpected dependency"),
-    removeDependency: async () => assert.fail("unexpected dependency removal"),
+    updateTask: async () => assert.fail("예상하지 않은 Task 수정입니다."),
+    setCustomField: async () => assert.fail("예상하지 않은 Custom Field 수정입니다."),
+    addDependency: async () => assert.fail("예상하지 않은 dependency 추가입니다."),
+    removeDependency: async () => assert.fail("예상하지 않은 dependency 제거입니다."),
   };
 
   await applySyncPlan(plan, workItems, config, client);
@@ -147,17 +150,14 @@ test("duplicate source identity와 잘못된 hierarchy는 preflight에서 실패
   assert.throws(() => createSyncPlan([task], [
     remoteTask("r1", "sk-5", { name: task.displayTitle }),
     remoteTask("r2", "sk-5", { name: task.displayTitle }),
-  ], config), /duplicate ClickUp source identity/);
+  ], config), /ClickUp source ID가 중복되었습니다/);
 
   assert.throws(() => createSyncPlan([task, step], [
     remoteTask("r1", "sk-5", { name: task.displayTitle, parent: "unexpected" }),
-  ], config), /source Task is a ClickUp subtask/);
+  ], config), /source Task가 ClickUp Subtask로 존재합니다/);
 });
 
 test("repository Task Card 전체를 1 Task + 5 Steps로 읽는다", async () => {
-  const { fileURLToPath } = await import("node:url");
-  const { resolve } = await import("node:path");
-  const { loadWorkItems } = await import("../task-source.mjs");
   const tasksDir = resolve(fileURLToPath(new URL("../../../tasks", import.meta.url)));
   const items = await loadWorkItems(tasksDir);
   assert.equal(items.length, 6);
@@ -165,8 +165,7 @@ test("repository Task Card 전체를 1 Task + 5 Steps로 읽는다", async () =>
   assert.equal(items.filter((item) => item.kind === "step").length, 5);
 });
 
-test("Custom Field가 standard Task type에 적용되지 않으면 preflight가 실패한다", async () => {
-  const { validateClickUpMetadata } = await import("../reconciliation.mjs");
+test("Custom Field가 기본 Task type에 적용되지 않으면 preflight가 실패한다", () => {
   const list = { statuses: Object.values(config.status_map).map((status) => ({ status })) };
   const fields = {
     fields: [
@@ -174,5 +173,5 @@ test("Custom Field가 standard Task type에 적용되지 않으면 preflight가 
       { id: "source-type", type: "short_text" },
     ],
   };
-  assert.throws(() => validateClickUpMetadata(config, list, fields), /not applicable to the standard ClickUp Task type/);
+  assert.throws(() => validateClickUpMetadata(config, list, fields), /기본 ClickUp Task type에 적용되지 않습니다/);
 });
