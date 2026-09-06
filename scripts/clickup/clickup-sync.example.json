@@ -1,0 +1,13 @@
+{
+  "list_id": "123456789",
+  "source_id_field_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "source_type_field_id": "ffffffff-1111-2222-3333-444444444444",
+  "status_map": {
+    "pending": "TO DO",
+    "running": "IN PROGRESS",
+    "verifying": "VERIFYING",
+    "blocked": "BLOCKED",
+    "done": "COMPLETE",
+    "cancelled": "CANCELLED"
+  }
+}
