@@ -1,6 +1,6 @@
 package __SPRINGKIT_PACKAGE_NAME__
 
-import __SPRINGKIT_PACKAGE_NAME__.application.GreetingService
+import __SPRINGKIT_PACKAGE_NAME__.greeting.application.GreetingService
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest

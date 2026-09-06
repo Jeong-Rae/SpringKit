@@ -1,4 +1,4 @@
-package __SPRINGKIT_PACKAGE_NAME__.infrastructure
+package __SPRINGKIT_PACKAGE_NAME__.greeting.infrastructure
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

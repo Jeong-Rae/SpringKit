@@ -1,7 +1,7 @@
-package __SPRINGKIT_PACKAGE_NAME__.infrastructure
+package __SPRINGKIT_PACKAGE_NAME__.greeting.infrastructure
 
-import __SPRINGKIT_PACKAGE_NAME__.application.GreetingPort
-import __SPRINGKIT_PACKAGE_NAME__.application.GreetingService
+import __SPRINGKIT_PACKAGE_NAME__.greeting.application.GreetingPort
+import __SPRINGKIT_PACKAGE_NAME__.greeting.application.GreetingService
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
