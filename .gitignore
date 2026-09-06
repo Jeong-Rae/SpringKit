@@ -14,9 +14,9 @@ application-host.yaml
 application-security.yaml
 
 # Local ClickUp sync configuration
-/.env
-/.env.local
-/.task-sync.config.json
+/config/.env
+/config/.env.local
+/config/task-sync.config.json
 
 # TODO: Remove after tasks are backed up on the web.
 /tasks/

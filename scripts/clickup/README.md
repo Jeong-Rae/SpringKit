@@ -2,13 +2,14 @@
 
 `tasks/*.json` source는 `$task-graph` 규칙을 따릅니다.
 
-루트 `.task-sync.config.json`에 downstream target별 설정을 저장합니다. 현재 지원하는 target은 ClickUp입니다.
+루트 `config/task-sync.config.json`에 downstream target별 설정을 저장합니다. 현재 지원하는 target은 ClickUp입니다.
 
 ```sh
-cp scripts/clickup/task-sync.config.example.json .task-sync.config.json
+mkdir -p config
+cp scripts/clickup/task-sync.config.example.json config/task-sync.config.json
 ```
 
-루트 `.env.local`에 API token을 저장합니다. `.env`도 fallback으로 지원합니다.
+`config/.env.local`에 API token을 저장합니다. `config/.env`도 fallback으로 지원합니다.
 
 ```text
 CLICKUP_TOKEN=pk_...

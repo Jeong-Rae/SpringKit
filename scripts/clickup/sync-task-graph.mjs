@@ -13,10 +13,10 @@ import {
 } from "./reconciliation.mjs";
 import { loadWorkItems } from "./task-source.mjs";
 
-const CONFIG_FILE = fileURLToPath(new URL("../../.task-sync.config.json", import.meta.url));
+const CONFIG_FILE = fileURLToPath(new URL("../../config/task-sync.config.json", import.meta.url));
 const ENV_FILES = [
-  fileURLToPath(new URL("../../.env.local", import.meta.url)),
-  fileURLToPath(new URL("../../.env", import.meta.url)),
+  fileURLToPath(new URL("../../config/.env.local", import.meta.url)),
+  fileURLToPath(new URL("../../config/.env", import.meta.url)),
 ];
 const TASKS_DIR = fileURLToPath(new URL("../../tasks", import.meta.url));
 
