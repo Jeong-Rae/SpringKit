@@ -1,0 +1,29 @@
+id: sk-30
+title: Provide order cancellation
+type: feature
+status: pending
+goal: A user can cancel an order before shipping begins.
+depends_on:
+  - sk-12
+requirements:
+  - REQ-003
+scope:
+  in:
+    - Order cancellation policy
+  out:
+    - Payment cancellation
+verification:
+  - Cancellation succeeds before shipping and is rejected after shipping begins.
+issues: []
+references: []
+steps:
+  - id: sk-30-1
+    title: Implement the cancellation policy
+    status: pending
+    objective: The system can decide whether an order is cancellable from its shipping state.
+    work:
+      - Implement the domain behavior that evaluates cancellation eligibility.
+    verification:
+      - Orders before shipping are cancellable and orders after shipping are not.
+    issues: []
+    references: []

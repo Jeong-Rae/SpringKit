@@ -69,3 +69,25 @@ export function runScript(
     child.on("close", (code) => resolvePromise({ code, stdout, stderr }));
   });
 }
+
+export function runPackagedScript(
+  scriptsDir: string,
+  script: string,
+  args: string[] = [],
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [join(scriptsDir, script), ...args], {
+      cwd: repositoryRoot,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolvePromise({ code, stdout, stderr }));
+  });
+}

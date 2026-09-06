@@ -5,7 +5,7 @@ description: Turn product requirements and project context into deployable Tasks
 
 # Task Graph
 
-Create and manage canonical JSON Task Cards in `tasks/`.
+Create and manage canonical YAML Task Cards in `tasks/`.
 
 ## Goal
 
@@ -19,11 +19,11 @@ Turn product requirements and project context into a validated Task Graph of ind
 
 Every Task and Step needs at least one Verification. Do not start a later Step until the preceding Step is verified and marked `done`. A Task can be marked `done` only after all Steps and Task-level Verification succeed.
 
-Use [the canonical Task Card example](references/task-card.example.json) when creating or editing a Card. Preserve a user-provided Task ID.
+Use [the canonical Task Card example](references/task-card.example.yaml) when creating or editing a Card. Preserve a user-provided Task ID.
 
 ## Scripts
 
-Resolve this Skill directory and invoke its scripts directly with Node.js. The scripts use only Node.js standard modules and require no package installation.
+Resolve this Skill directory and invoke its packaged scripts directly with Node.js. Each script contains its runtime dependencies and requires no package installation.
 
 ```sh
 node <skill-dir>/scripts/issue-task-id.mjs [--tasks-dir <path>]
@@ -34,3 +34,7 @@ node <skill-dir>/scripts/validate-tasks.mjs [--tasks-dir <path>]
 ```
 
 The default Task directory is `./tasks`. Issue a new ID only when the user did not provide one. Add dependencies only through `add-task.mjs`; never edit `depends_on` directly. Run `lint-task.mjs` before registration and `validate-tasks.mjs` after every graph change.
+
+## Development
+
+Develop the TypeScript sources in `scripts/task/` with Vite+. Run `vp check` and `vp test`, then use `vp pack` to replace the packaged scripts in this Skill.
