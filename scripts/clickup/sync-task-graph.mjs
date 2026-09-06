@@ -2,11 +2,18 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ClickUpClient } from "./clickup-client.mjs";
+import {
+  applySyncPlan,
+  clickUpResultUrl,
+  createSyncPlan,
+  formatPlan,
+  validateClickUpMetadata,
+  validateConfig,
+} from "./reconciliation.mjs";
 import { loadWorkItems } from "./task-source.mjs";
-import { applySyncPlan, createSyncPlan, formatPlan, validateClickUpMetadata, validateConfig } from "./reconciliation.mjs";
 
 function usage() {
-  return "사용법: node scripts/clickup/sync-task-graph.mjs <plan|apply> --config <file> [--tasks-dir <path>]";
+  return "사용법: node scripts/clickup/sync-task-graph.mjs sync [--dry] --config <file> [--tasks-dir <path>]";
 }
 
 function nextArgument(args, index, name) {
@@ -16,12 +23,15 @@ function nextArgument(args, index, name) {
 }
 
 function parseArgs(args) {
-  const command = args[0];
-  if (!new Set(["plan", "apply"]).has(command)) throw new Error(usage());
+  if (args[0] !== "sync") throw new Error(usage());
+
+  let dryRun = false;
   let configFile;
   let tasksDir = resolve(process.cwd(), "tasks");
   for (let index = 1; index < args.length; index += 1) {
-    if (args[index] === "--config") {
+    if (args[index] === "--dry") {
+      dryRun = true;
+    } else if (args[index] === "--config") {
       configFile = nextArgument(args, index, "--config");
       index += 1;
     } else if (args[index] === "--tasks-dir") {
@@ -32,7 +42,7 @@ function parseArgs(args) {
     }
   }
   if (!configFile) throw new Error(`${usage()}\n--config 값이 필요합니다.`);
-  return { command, configFile: resolve(configFile), tasksDir };
+  return { dryRun, configFile: resolve(configFile), tasksDir };
 }
 
 async function readConfig(file) {
@@ -52,7 +62,7 @@ async function readConfig(file) {
 }
 
 async function main() {
-  const { command, configFile, tasksDir } = parseArgs(process.argv.slice(2));
+  const { dryRun, configFile, tasksDir } = parseArgs(process.argv.slice(2));
   const config = validateConfig(await readConfig(configFile));
   const workItems = await loadWorkItems(tasksDir);
   const client = new ClickUpClient(process.env.CLICKUP_TOKEN);
@@ -65,15 +75,26 @@ async function main() {
   validateClickUpMetadata(config, list, fields);
 
   const sourceIds = new Set(workItems.map((item) => item.id));
-  const enriched = await Promise.all(tasks.map(async (task) => {
-    const sourceId = task.custom_fields?.find((field) => field.id === config.source_id_field_id)?.value;
-    if (!sourceId || !sourceIds.has(String(sourceId)) || task.parent) return task;
-    return { ...task, ...(await client.getTask(task.id)) };
-  }));
+  const enriched = await Promise.all(
+    tasks.map(async (task) => {
+      const sourceId = task.custom_fields?.find(
+        (field) => field.id === config.source_id_field_id,
+      )?.value;
+      if (!sourceId || !sourceIds.has(String(sourceId)) || task.parent) return task;
+      return { ...task, ...(await client.getTask(task.id)) };
+    }),
+  );
 
   const plan = createSyncPlan(workItems, enriched, config);
-  process.stdout.write(formatPlan(plan));
-  if (command === "apply") await applySyncPlan(plan, workItems, config, client);
+  if (dryRun) {
+    process.stdout.write(formatPlan(plan));
+    return;
+  }
+
+  await applySyncPlan(plan, workItems, config, client);
+  process.stdout.write(
+    `ClickUp 업로드가 완료되었습니다. ${clickUpResultUrl(plan, workItems)}에서 확인 가능합니다.\n`,
+  );
 }
 
 main().catch((error) => {
