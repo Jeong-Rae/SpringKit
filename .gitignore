@@ -13,10 +13,14 @@ application-db.yaml
 application-host.yaml
 application-security.yaml
 
-# TODO: Remove after tasks are backed up on the web.
+# 로컬 ClickUp 동기화 설정
+/config/.env.local
+/config/task-sync.config.json
+
+# TODO: Task 웹 백업 후 제거
 /tasks/
 
-### STS ###
+### STS 설정 ###
 .apt_generated
 .classpath
 .factorypath
@@ -28,7 +32,7 @@ bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
 
-### IntelliJ IDEA ###
+### IntelliJ IDEA 설정 ###
 .idea
 *.iws
 *.iml
@@ -37,12 +41,12 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 
-### NetBeans ###
+### NetBeans 설정 ###
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
 
-### VS Code ###
+### VS Code 설정 ###
 .vscode/
