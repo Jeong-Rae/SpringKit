@@ -50,7 +50,7 @@
     {
       "id": "sk-6-2",
       "title": "고정 멀티 모듈 구조 구성",
-      "status": "running",
+      "status": "done",
       "objective": "4개 계층의 Gradle 모듈과 단방향 프로젝트 의존성을 제공한다.",
       "work": [
         "루트 Gradle 설정과 4개 하위 모듈을 구성한다.",
@@ -67,7 +67,7 @@
     {
       "id": "sk-6-3",
       "title": "멀티 모듈 실행과 계층 연결 검증",
-      "status": "pending",
+      "status": "running",
       "objective": "presentation의 Application.kt에서 멀티 모듈 애플리케이션을 실행하고 전체 구성을 검증할 수 있다.",
       "work": [
         "각 모듈의 최소 Kotlin 소스와 테스트를 추가한다.",
