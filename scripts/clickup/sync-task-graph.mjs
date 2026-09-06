@@ -13,8 +13,11 @@ import {
 } from "./reconciliation.mjs";
 import { loadWorkItems } from "./task-source.mjs";
 
-const CONFIG_FILE = fileURLToPath(new URL("../../.clickup-sync.json", import.meta.url));
-const ENV_FILE = fileURLToPath(new URL("../../.env", import.meta.url));
+const CONFIG_FILE = fileURLToPath(new URL("../../.task-sync.config.json", import.meta.url));
+const ENV_FILES = [
+  fileURLToPath(new URL("../../.env.local", import.meta.url)),
+  fileURLToPath(new URL("../../.env", import.meta.url)),
+];
 const TASKS_DIR = fileURLToPath(new URL("../../tasks", import.meta.url));
 
 function usage() {
@@ -38,11 +41,15 @@ function parseArgs(args) {
 function loadEnvironment() {
   const explicitToken = process.env.CLICKUP_TOKEN;
   try {
-    loadEnvFile(ENV_FILE);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
-    const code = error && typeof error === "object" && "code" in error ? ` (${error.code})` : "";
-    throw new Error(`${ENV_FILE}: .env 파일을 읽을 수 없습니다${code}.`);
+    for (const envFile of ENV_FILES) {
+      try {
+      loadEnvFile(envFile);
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") continue;
+        const code = error && typeof error === "object" && "code" in error ? ` (${error.code})` : "";
+        throw new Error(`${envFile}: 환경 변수 파일을 읽을 수 없습니다${code}.`);
+      }
+    }
   } finally {
     if (explicitToken !== undefined) process.env.CLICKUP_TOKEN = explicitToken;
   }
@@ -64,11 +71,24 @@ async function readConfig() {
   }
 }
 
+function readClickUpConfig(config) {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) {
+    throw new Error(`${CONFIG_FILE}: 설정 객체여야 합니다.`);
+  }
+  if (typeof config.targets !== "object" || config.targets === null || Array.isArray(config.targets)) {
+    throw new Error(`${CONFIG_FILE}: targets 설정이 필요합니다.`);
+  }
+  if (typeof config.targets.clickup !== "object" || config.targets.clickup === null) {
+    throw new Error(`${CONFIG_FILE}: targets.clickup 설정이 필요합니다.`);
+  }
+  return validateConfig(config.targets.clickup);
+}
+
 async function main() {
   const { dryRun } = parseArgs(process.argv.slice(2));
   loadEnvironment();
 
-  const config = validateConfig(await readConfig());
+  const config = readClickUpConfig(await readConfig());
   const workItems = await loadWorkItems(TASKS_DIR);
   const client = new ClickUpClient(process.env.CLICKUP_TOKEN);
 
