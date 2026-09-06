@@ -1,0 +1,16 @@
+{
+  "name": "springkit-tooling",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "vite-plus": "0.3.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.18.0 || >=24.11.0"
+  },
+  "packageManager": "pnpm@12.3.4"
+}
