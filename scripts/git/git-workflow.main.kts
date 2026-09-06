@@ -168,6 +168,13 @@ fun requireTaskId(taskId: String) {
     }
 }
 
+fun requirePullRequestTitle(taskId: String, title: String) {
+    val pattern = Regex("^\\[${Regex.escape(taskId)}] [A-Za-z]+: .+\\S$")
+    require(pattern.matches(title)) {
+        "PR 제목은 '[$taskId] <Type>: <description>' 형식이어야 합니다."
+    }
+}
+
 fun currentBranch(): String = commandOutput(repositoryRoot, "git", "branch", "--show-current")
 
 fun gitWorktrees(): List<GitWorktree> =
@@ -276,10 +283,7 @@ fun publish(title: String, bodyFileArgument: String) {
 
     val taskId = branch.removePrefix("feature/")
     requireTaskId(taskId)
-    val titlePrefix = "[$taskId] Feature: "
-    require(title.startsWith(titlePrefix) && title.removePrefix(titlePrefix).isNotBlank()) {
-        "PR 제목은 '$titlePrefix<description>' 형식이어야 합니다."
-    }
+    requirePullRequestTitle(taskId, title)
 
     val bodyFile = File(bodyFileArgument).let { if (it.isAbsolute) it else File(invocationDirectory, bodyFileArgument) }
     require(bodyFile.isFile) { "PR 본문 파일을 찾을 수 없습니다: ${bodyFile.path}" }
@@ -693,7 +697,7 @@ fun usage(): Nothing = error(
     """
     사용법:
       kotlin scripts/git/git-workflow.main.kts start <task-id>
-      kotlin scripts/git/git-workflow.main.kts publish "[<task-id>] Feature: <description>" --body-file <path>
+      kotlin scripts/git/git-workflow.main.kts publish "[<task-id>] <Type>: <description>" --body-file <path>
       kotlin scripts/git/git-workflow.main.kts update
       kotlin scripts/git/git-workflow.main.kts ready
       kotlin scripts/git/git-workflow.main.kts draft

@@ -99,6 +99,10 @@ try {
         )
         setExecutable(true)
     }
+    File(fakeBin, "git-flow").apply {
+        writeText("#!/bin/sh\nexit 0\n")
+        setExecutable(true)
+    }
 
     val environment = mapOf(
         "PATH" to "${fakeBin.absolutePath}:${System.getenv("PATH")}",
@@ -108,6 +112,24 @@ try {
         "BUILD_MARKER" to buildMarker.absolutePath,
         "MERGE_MARKER" to mergeMarker.absolutePath,
     )
+
+    val publishBody = File(featureWorktree, "pr-body.md").apply { writeText("본문\n") }
+    listOf("Feature", "Fix", "Hotfix", "Refactor", "Build", "Test", "Docs", "Chore").forEach { type ->
+        val publishResult = runCommand(
+            featureWorktree,
+            "kotlin",
+            workflow.absolutePath,
+            "publish",
+            "[sk-test] $type: 제목 유형 검증",
+            "--body-file",
+            publishBody.absolutePath,
+            environment = environment,
+            check = false,
+        )
+        require(publishResult.exitCode == 1 && "이미 이 브랜치의 PR이 존재합니다" in publishResult.output) {
+            "PR 제목 유형을 허용하지 않았습니다 ($type).\n${publishResult.output}"
+        }
+    }
 
     git(featureWorktree, "commit", "--allow-empty", "-m", "Fix: 게시되지 않은 테스트 변경 추가")
     val failedResult = runCommand(
