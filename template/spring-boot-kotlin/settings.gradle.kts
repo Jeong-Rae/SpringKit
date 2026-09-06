@@ -1,0 +1,1 @@
+rootProject.name = "__SPRINGKIT_PROJECT_NAME__"
