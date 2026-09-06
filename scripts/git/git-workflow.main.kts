@@ -230,6 +230,24 @@ fun isAncestor(ancestor: String, descendant: String): Boolean =
         check = false,
     ).exitCode == 0
 
+fun gradleProjectDirectories(revision: String, worktreeDirectory: File): List<File> {
+    val rootWrapper = File(worktreeDirectory, "gradlew")
+    if (rootWrapper.isFile) return listOf(worktreeDirectory)
+
+    return commandOutput(
+        repositoryRoot,
+        "git",
+        "ls-tree",
+        "-r",
+        "--name-only",
+        revision,
+    ).lineSequence()
+        .filter { it.endsWith("/gradlew") }
+        .map { File(worktreeDirectory, it).parentFile }
+        .distinctBy { it.absolutePath }
+        .toList()
+}
+
 fun start(taskId: String) {
     requireTaskId(taskId)
     requireCommand("git-flow")
@@ -454,9 +472,15 @@ fun finish(taskId: String) {
         }
         worktreeForBranch(branch)?.directory?.let(::requireCleanTrackedFiles)
 
-        val gradleWrapper = File(developDirectory, "gradlew")
-        if (!gradleWrapper.isFile) {
-            machine.fail("Gradle wrapper를 찾을 수 없습니다: ${gradleWrapper.path}")
+        val preflightGradleDirectories = gradleProjectDirectories("develop", developDirectory)
+        if (preflightGradleDirectories.isEmpty()) {
+            machine.fail("develop에서 Gradle wrapper를 찾을 수 없습니다.")
+        }
+        val missingGradleWrapper = preflightGradleDirectories
+            .map { File(it, "gradlew") }
+            .firstOrNull { !it.isFile }
+        if (missingGradleWrapper != null) {
+            machine.fail("Gradle wrapper를 찾을 수 없습니다: ${missingGradleWrapper.path}")
         }
 
         val localFeature = if (branchExists(branch)) {
@@ -549,7 +573,9 @@ fun finish(taskId: String) {
         }
 
         machine.transition(FinishPhase.BUILD)
-        execute(developDirectory, gradleWrapper.absolutePath, "build")
+        gradleProjectDirectories("develop", developDirectory).forEach { gradleProjectDirectory ->
+            execute(gradleProjectDirectory, File(gradleProjectDirectory, "gradlew").absolutePath, "build")
+        }
 
         machine.transition(FinishPhase.CLEANUP)
         remoteBranchCommit(branch)?.let { remoteCommit ->

@@ -8,6 +8,7 @@ PR #8의 `finish`는 GitHub 병합을 완료한 뒤 로컬 `develop` 전환에 �
 
 - `finish`를 명시적인 상태 머신으로 구성했습니다.
 - 원격 변경 전 사전 검사에서 worktree, 브랜치 HEAD, Gradle wrapper를 검증합니다.
+- 루트에 Gradle wrapper가 없으면 저장소에서 추적하는 각 Gradle 프로젝트를 빌드합니다.
 - 결과를 `FAILED`, `RECOVERY_REQUIRED`, `SUCCEEDED`로 구분합니다.
 - 병합 요청의 응답이 실패해도 PR 상태를 다시 조회해 실제 병합 여부를 확인합니다.
 - `SUCCEEDED`는 `develop` 동기화, Gradle build, 원격과 로컬 feature 브랜치 정리, 사후 검증이 모두 끝난 경우에만 반환합니다.
