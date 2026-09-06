@@ -17,7 +17,7 @@ application-security.yaml
 /config/.env.local
 /config/task-sync.config.json
 
-# TODO: Task 웹 백업 후 제거
+# 로컬 Task 데이터
 /tasks/
 
 ### STS 설정 ###
