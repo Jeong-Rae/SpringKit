@@ -2,6 +2,7 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
 import com.epages.restdocs.apispec.SimpleType
 import org.springframework.restdocs.payload.JsonFieldType
+import org.springframework.restdocs.snippet.Attributes
 import org.springframework.restdocs.snippet.Attributes.Attribute
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
@@ -22,6 +23,10 @@ class ValueMetadataResolver(
 ) {
     fun resolve(sample: Sample): ValueMetadata {
         val classifier = sample.type.classifier as? KClass<*>
+        if (classifier?.java?.isEnum == true) {
+            return enumMetadata(classifier)
+        }
+
         val (fieldType, simpleType) = primitiveTypeMapping[classifier]
             ?: (JsonFieldType.OBJECT to null)
 
@@ -29,6 +34,19 @@ class ValueMetadataResolver(
             fieldType = fieldType,
             simpleType = simpleType,
             attributes = emptyList(),
+        )
+    }
+
+    private fun enumMetadata(enumType: KClass<*>): ValueMetadata {
+        val enumValues =
+            enumType.java.enumConstants.map { constant ->
+                objectMapper.convertValue(constant, Any::class.java)
+            }
+
+        return ValueMetadata(
+            fieldType = "enum",
+            simpleType = SimpleType.STRING,
+            attributes = listOf(Attributes.key("enumValues").value(enumValues)),
         )
     }
 

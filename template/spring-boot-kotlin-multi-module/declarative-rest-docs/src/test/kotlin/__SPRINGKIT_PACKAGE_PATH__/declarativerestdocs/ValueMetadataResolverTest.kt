@@ -2,6 +2,7 @@
 
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
+import com.fasterxml.jackson.annotation.JsonValue
 import com.epages.restdocs.apispec.SimpleType
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.datatest.withData
@@ -29,6 +30,26 @@ class ValueMetadataResolverTest :
                 metadata.attributes.shouldBeEmpty()
             }
         }
+
+        context("Jackson enum 메타데이터 계약") {
+            test("기본 enum은 전체 상수명을 enumValues로 제공한다") {
+                val metadata = resolver.resolve(sampleOf(BasicRole.ADMIN))
+
+                metadata.fieldType shouldBe "enum"
+                metadata.simpleType shouldBe SimpleType.STRING
+                metadata.attributes.single().key shouldBe "enumValues"
+                metadata.attributes.single().value shouldBe listOf("USER", "ADMIN")
+            }
+
+            test("JsonValue enum은 전체 직렬화 값을 enumValues로 제공한다") {
+                val metadata = resolver.resolve(sampleOf(SerializedRole.ADMIN))
+
+                metadata.fieldType shouldBe "enum"
+                metadata.simpleType shouldBe SimpleType.STRING
+                metadata.attributes.single().key shouldBe "enumValues"
+                metadata.attributes.single().value shouldBe listOf("user", "admin")
+            }
+        }
     })
 
 private fun primitiveMetadataCases(): List<PrimitiveMetadataCase> =
@@ -52,3 +73,15 @@ private data class PrimitiveMetadataCase(
     val fieldType: Any,
     val simpleType: SimpleType,
 )
+
+private enum class BasicRole {
+    USER,
+    ADMIN,
+}
+
+private enum class SerializedRole(
+    @get:JsonValue val serializedValue: String,
+) {
+    USER("user"),
+    ADMIN("admin"),
+}
