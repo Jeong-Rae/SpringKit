@@ -18,7 +18,7 @@ class ValueMetadataResolverTest :
     FunSpec({
         val resolver = ValueMetadataResolver(ObjectMapper())
 
-        context("원시값과 날짜 타입 메타데이터 계약") {
+        context("원시값과 날짜 타입의 메타데이터 해석") {
             withData(
                 nameFn = { it.name },
                 primitiveMetadataCases(),
@@ -31,8 +31,8 @@ class ValueMetadataResolverTest :
             }
         }
 
-        context("Jackson enum 메타데이터 계약") {
-            test("기본 enum은 전체 상수명을 enumValues로 제공한다") {
+        context("Jackson enum의 메타데이터 해석") {
+            test("기본 enum을 해석하면, 전체 상수명을 enumValues로 제공한다") {
                 val metadata = resolver.resolve(sampleOf(BasicRole.ADMIN))
 
                 metadata.fieldType shouldBe "enum"
@@ -41,7 +41,7 @@ class ValueMetadataResolverTest :
                 metadata.attributes.single().value shouldBe listOf("USER", "ADMIN")
             }
 
-            test("JsonValue enum은 전체 직렬화 값을 enumValues로 제공한다") {
+            test("JsonValue enum을 해석하면, 전체 직렬화 값을 enumValues로 제공한다") {
                 val metadata = resolver.resolve(sampleOf(SerializedRole.ADMIN))
 
                 metadata.fieldType shouldBe "enum"
@@ -51,7 +51,7 @@ class ValueMetadataResolverTest :
             }
         }
 
-        context("배열 메타데이터 계약") {
+        context("배열과 컬렉션의 메타데이터 해석") {
             withData(
                 nameFn = { it.name },
                 arrayMetadataCases(),
@@ -63,7 +63,7 @@ class ValueMetadataResolverTest :
                 metadata.attributeValues() shouldBe case.attributes
             }
 
-            test("enum 컬렉션은 원소의 Jackson 직렬화 값을 보존한다") {
+            test("enum 컬렉션을 해석하면, 원소의 Jackson 직렬화 값을 보존한다") {
                 val metadata = resolver.resolve(sampleOf<List<SerializedRole>>(emptyList()))
 
                 metadata.attributeValues() shouldBe
@@ -73,7 +73,7 @@ class ValueMetadataResolverTest :
                     )
             }
 
-            test("동일한 Sample은 같은 메타데이터를 결정론적으로 생성한다") {
+            test("동일한 Sample을 반복해서 해석하면, 같은 메타데이터를 생성한다") {
                 val sample = sampleOf(listOf("USER", "ADMIN"))
 
                 val first = resolver.resolve(sample)
@@ -88,17 +88,30 @@ class ValueMetadataResolverTest :
 
 private fun primitiveMetadataCases(): List<PrimitiveMetadataCase> =
     listOf(
-        PrimitiveMetadataCase("String", sampleOf("value"), JsonFieldType.STRING, SimpleType.STRING),
-        PrimitiveMetadataCase("Boolean", sampleOf(true), JsonFieldType.BOOLEAN, SimpleType.BOOLEAN),
-        PrimitiveMetadataCase("Byte", sampleOf(1.toByte()), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        PrimitiveMetadataCase("Short", sampleOf(1.toShort()), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        PrimitiveMetadataCase("Int", sampleOf(1), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        PrimitiveMetadataCase("Long", sampleOf(1L), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        PrimitiveMetadataCase("BigInteger", sampleOf(BigInteger.ONE), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        PrimitiveMetadataCase("Float", sampleOf(1.5F), JsonFieldType.NUMBER, SimpleType.NUMBER),
-        PrimitiveMetadataCase("Double", sampleOf(1.5), JsonFieldType.NUMBER, SimpleType.NUMBER),
-        PrimitiveMetadataCase("BigDecimal", sampleOf(BigDecimal("1.5")), JsonFieldType.NUMBER, SimpleType.NUMBER),
-        PrimitiveMetadataCase("LocalDate", sampleOf(LocalDate.of(2026, 9, 9)), "date", SimpleType.STRING),
+        primitiveMetadataCase("String", sampleOf("value"), JsonFieldType.STRING, SimpleType.STRING),
+        primitiveMetadataCase("Boolean", sampleOf(true), JsonFieldType.BOOLEAN, SimpleType.BOOLEAN),
+        primitiveMetadataCase("Byte", sampleOf(1.toByte()), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase("Short", sampleOf(1.toShort()), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase("Int", sampleOf(1), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase("Long", sampleOf(1L), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase("BigInteger", sampleOf(BigInteger.ONE), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase("Float", sampleOf(1.5F), JsonFieldType.NUMBER, SimpleType.NUMBER),
+        primitiveMetadataCase("Double", sampleOf(1.5), JsonFieldType.NUMBER, SimpleType.NUMBER),
+        primitiveMetadataCase("BigDecimal", sampleOf(BigDecimal("1.5")), JsonFieldType.NUMBER, SimpleType.NUMBER),
+        primitiveMetadataCase("LocalDate", sampleOf(LocalDate.of(2026, 9, 9)), "date", SimpleType.STRING),
+    )
+
+private fun primitiveMetadataCase(
+    typeName: String,
+    sample: Sample,
+    fieldType: Any,
+    simpleType: SimpleType,
+): PrimitiveMetadataCase =
+    PrimitiveMetadataCase(
+        name = "$typeName 값을 해석하면, 정의된 메타데이터를 제공한다",
+        sample = sample,
+        fieldType = fieldType,
+        simpleType = simpleType,
     )
 
 private data class PrimitiveMetadataCase(
@@ -111,25 +124,25 @@ private data class PrimitiveMetadataCase(
 private fun arrayMetadataCases(): List<ArrayMetadataCase> =
     listOf(
         ArrayMetadataCase(
-            name = "빈 List<String>도 선언된 원소 타입으로 해석한다",
+            name = "빈 List<String>을 해석하면, 선언된 원소 타입을 제공한다",
             sample = sampleOf<List<String>>(emptyList()),
             simpleType = SimpleType.STRING,
             attributes = listOf("itemsType" to "STRING"),
         ),
         ArrayMetadataCase(
-            name = "Set<Int>는 정수 원소 타입으로 해석한다",
+            name = "Set<Int>를 해석하면, 정수 원소 타입을 제공한다",
             sample = sampleOf(setOf(1, 2)),
             simpleType = SimpleType.INTEGER,
             attributes = listOf("itemsType" to "NUMBER"),
         ),
         ArrayMetadataCase(
-            name = "Array<String>은 문자열 원소 타입으로 해석한다",
+            name = "Array<String>을 해석하면, 문자열 원소 타입을 제공한다",
             sample = sampleOf(arrayOf("USER", "ADMIN")),
             simpleType = SimpleType.STRING,
             attributes = listOf("itemsType" to "STRING"),
         ),
         ArrayMetadataCase(
-            name = "IntArray는 정수 원소 타입으로 해석한다",
+            name = "IntArray를 해석하면, 정수 원소 타입을 제공한다",
             sample = sampleOf(intArrayOf(1, 2)),
             simpleType = SimpleType.INTEGER,
             attributes = listOf("itemsType" to "NUMBER"),

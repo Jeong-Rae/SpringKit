@@ -5,16 +5,13 @@ import com.epages.restdocs.apispec.ResourceDocumentation.parameterWithName as re
 import com.epages.restdocs.apispec.ResourceDocumentation.resource
 import com.epages.restdocs.apispec.ResourceSnippetParameters
 import com.epages.restdocs.apispec.SimpleType
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
-import org.junit.jupiter.api.extension.ExtendWith
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
-import org.springframework.restdocs.RestDocumentationContextProvider
-import org.springframework.restdocs.RestDocumentationExtension
+import org.springframework.restdocs.ManualRestDocumentation
 import org.springframework.restdocs.headers.HeaderDocumentation.headerWithName
 import org.springframework.restdocs.headers.HeaderDocumentation.requestHeaders
 import org.springframework.restdocs.headers.HeaderDocumentation.responseHeaders
@@ -43,21 +40,26 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-@ExtendWith(RestDocumentationExtension::class)
-class CreateUserDocumentationTest {
+class CreateUserDocumentationTest :
+    FunSpec({
+        lateinit var mockMvc: MockMvc
+        lateinit var restDocumentation: ManualRestDocumentation
 
-    private lateinit var mockMvc: MockMvc
+        beforeTest { testCase ->
+            restDocumentation = ManualRestDocumentation()
+            restDocumentation.beforeTest(CreateUserDocumentationTest::class.java, testCase.name.name)
+            mockMvc =
+                standaloneSetup(CreateUserController())
+                    .apply<StandaloneMockMvcBuilder>(documentationConfiguration(restDocumentation))
+                    .build()
+        }
 
-    @BeforeEach
-    fun setUp(restDocumentation: RestDocumentationContextProvider) {
-        mockMvc =
-            standaloneSetup(CreateUserController())
-                .apply<StandaloneMockMvcBuilder>(documentationConfiguration(restDocumentation))
-                .build()
-    }
+        afterTest {
+            restDocumentation.afterTest()
+        }
 
-    @Test
-    fun `create-user 문서 기준선을 생성한다`() {
+        context("create-user 문서 생성") {
+            test("요청과 응답을 문서화하면, 기준 문서 조각을 생성한다") {
         val requestFieldDescriptors =
             listOf(
                 fieldWithPath("name").type(JsonFieldType.STRING).description("사용자 이름"),
@@ -128,11 +130,12 @@ class CreateUserDocumentationTest {
                     ),
                 ),
             )
-    }
+            }
+        }
 
-    @Test
-    fun `request field가 descriptor와 다르면 실패한다`() {
-        assertThrows<SnippetException> {
+        context("create-user field descriptor 검증") {
+            test("request field가 descriptor와 다르면, 문서 생성에 실패한다") {
+                shouldThrow<SnippetException> {
             mockMvc
                 .perform(createUserRequest())
                 .andDo(
@@ -143,12 +146,11 @@ class CreateUserDocumentationTest {
                         ),
                     ),
                 )
-        }
-    }
+                }
+            }
 
-    @Test
-    fun `response field가 descriptor와 다르면 실패한다`() {
-        assertThrows<SnippetException> {
+            test("response field가 descriptor와 다르면, 문서 생성에 실패한다") {
+                shouldThrow<SnippetException> {
             mockMvc
                 .perform(createUserRequest())
                 .andDo(
@@ -160,18 +162,20 @@ class CreateUserDocumentationTest {
                         ),
                     ),
                 )
+                }
+            }
         }
-    }
+    })
 
-    private fun createUserRequest(): MockHttpServletRequestBuilder =
-        post("/tenants/{tenantId}/users", "tenant-1")
-            .queryParam("dryRun", "false")
-            .header("X-Request-Id", "request-123")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""{"name":"Alice","role":"ADMIN"}""")
+private fun createUserRequest(): MockHttpServletRequestBuilder =
+    post("/tenants/{tenantId}/users", "tenant-1")
+        .queryParam("dryRun", "false")
+        .header("X-Request-Id", "request-123")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("""{"name":"Alice","role":"ADMIN"}""")
 
-    @RestController
-    private class CreateUserController {
+@RestController
+private class CreateUserController {
 
         @PostMapping("/tenants/{tenantId}/users")
         fun createUser(
@@ -190,5 +194,4 @@ class CreateUserDocumentationTest {
                 .header("X-Request-Id", requestId)
                 .body("""{"id":"user-123","name":"Alice","role":"ADMIN"}""")
         }
-    }
 }

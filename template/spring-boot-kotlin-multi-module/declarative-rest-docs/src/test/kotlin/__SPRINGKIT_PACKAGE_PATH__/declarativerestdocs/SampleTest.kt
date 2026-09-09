@@ -13,7 +13,7 @@ import kotlin.reflect.typeOf
 
 class SampleTest :
     FunSpec({
-        context("sampleOf가 원시 타입을 보존하는 계약") {
+        context("sampleOf의 원시 타입 반환값") {
             withData(
                 nameFn = { it.testName },
                 primitiveSampleCases(),
@@ -23,8 +23,8 @@ class SampleTest :
             }
         }
 
-        context("sampleOf가 enum 타입을 보존하는 계약") {
-            test("enum 값을 입력하면 값과 KType을 보존한다") {
+        context("sampleOf의 enum 타입 반환값") {
+            test("enum 값을 입력하면, 값과 KType을 보존한다") {
                 val sample = sampleOf(SampleUserRole.ADMIN)
 
                 sample.value shouldBe SampleUserRole.ADMIN
@@ -32,7 +32,7 @@ class SampleTest :
             }
         }
 
-        context("sampleOf가 컬렉션 타입을 보존하는 계약") {
+        context("sampleOf의 컬렉션 타입 반환값") {
             withData(
                 nameFn = { it.testName },
                 collectionSampleCases(),
@@ -105,7 +105,7 @@ private fun sampleCase(
     expectedType: KType,
 ): SampleContractCase =
     SampleContractCase(
-        testName = "$typeName 값을 입력하면 값과 KType을 보존한다",
+        testName = "$typeName 값을 입력하면, 값과 KType을 보존한다",
         sample = sample,
         expectedValue = expectedValue,
         expectedType = expectedType,
@@ -113,7 +113,7 @@ private fun sampleCase(
 
 private fun booleanSampleCase(value: Boolean): SampleContractCase =
     SampleContractCase(
-        testName = "${value}를 Boolean 값으로 입력하면 값과 KType을 보존한다",
+        testName = "${value}를 Boolean 값으로 입력하면, 값과 KType을 보존한다",
         sample = sampleOf(value),
         expectedValue = value,
         expectedType = typeOf<Boolean>(),

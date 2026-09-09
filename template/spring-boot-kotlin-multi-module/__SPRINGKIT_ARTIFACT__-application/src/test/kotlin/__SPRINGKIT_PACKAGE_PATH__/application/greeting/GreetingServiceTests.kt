@@ -1,15 +1,16 @@
 package __SPRINGKIT_PACKAGE_NAME__.application.greeting
 
 import __SPRINGKIT_PACKAGE_NAME__.domain.greeting.Greeting
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 
-class GreetingServiceTests {
+class GreetingServiceTests :
+    FunSpec({
+        context("GreetingService의 인사말 조회") {
+            test("포트가 인사말을 반환하면, 같은 메시지를 제공한다") {
+                val service = GreetingService { Greeting("Hello, Springkit!") }
 
-    @Test
-    fun `포트에서 인사말을 가져온다`() {
-        val service = GreetingService { Greeting("Hello, Springkit!") }
-
-        assertEquals("Hello, Springkit!", service.greeting().message)
-    }
-}
+                service.greeting().message shouldBe "Hello, Springkit!"
+            }
+        }
+    })
