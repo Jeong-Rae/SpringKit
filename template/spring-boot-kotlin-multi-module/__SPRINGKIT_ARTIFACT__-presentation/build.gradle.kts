@@ -3,6 +3,7 @@ plugins {
     kotlin("plugin.spring")
     id("org.springframework.boot")
     id("io.spring.dependency-management")
+    id("com.epages.restdocs-api-spec")
 }
 
 base {
@@ -36,4 +37,43 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+configure<com.epages.restdocs.apispec.gradle.OpenApi3Extension> {
+    setServer("http://localhost")
+    title = "__SPRINGKIT_PROJECT_NAME__ API"
+    description = "__SPRINGKIT_PROJECT_NAME__ REST API"
+    version = "1.0.0"
+    format = "yaml"
+}
+
+tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
+    dependsOn(tasks.named("test"))
+    notCompatibleWithConfigurationCache(
+        "restdocs-api-spec 0.20.1의 OpenApi3Task는 Jackson 상태를 직렬화할 수 없습니다.",
+    )
+}
+
+val openApiTestSourceSet = sourceSets.create("openApiTest")
+
+configurations.named(openApiTestSourceSet.implementationConfigurationName) {
+    extendsFrom(configurations.testImplementation.get())
+}
+
+configurations.named(openApiTestSourceSet.runtimeOnlyConfigurationName) {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+
+val openApiTest =
+    tasks.register<Test>("openApiTest") {
+        description = "생성된 OpenAPI 기준선의 의미를 검증합니다."
+        group = "verification"
+        testClassesDirs = openApiTestSourceSet.output.classesDirs
+        classpath = openApiTestSourceSet.runtimeClasspath
+        dependsOn(tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>())
+        useJUnitPlatform()
+    }
+
+tasks.named("build") {
+    dependsOn(openApiTest)
 }
