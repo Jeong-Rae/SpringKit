@@ -1,40 +1,37 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import kotlin.reflect.typeOf
-import kotlin.test.Test
-import kotlin.test.assertEquals
 
-class SampleTest {
+@OptIn(ExperimentalStdlibApi::class)
+class SampleTest :
+    FunSpec({
+        context("sampleOf 계약") {
+            test("primitive의 값과 타입을 보존한다") {
+                val sample = sampleOf(1L)
 
-    @OptIn(ExperimentalStdlibApi::class)
-    @Test
-    fun `primitive의 값과 타입을 보존한다`() {
-        val sample = sampleOf(1L)
+                sample.value shouldBe 1L
+                sample.type shouldBe typeOf<Long>()
+            }
 
-        assertEquals(1L, sample.value)
-        assertEquals(typeOf<Long>(), sample.type)
-    }
+            test("enum의 값과 타입을 보존한다") {
+                val sample = sampleOf(SampleUserRole.ADMIN)
 
-    @OptIn(ExperimentalStdlibApi::class)
-    @Test
-    fun `enum의 값과 타입을 보존한다`() {
-        val sample = sampleOf(UserRole.ADMIN)
+                sample.value shouldBe SampleUserRole.ADMIN
+                sample.type shouldBe typeOf<SampleUserRole>()
+            }
 
-        assertEquals(UserRole.ADMIN, sample.value)
-        assertEquals(typeOf<UserRole>(), sample.type)
-    }
+            test("generic collection의 원소 타입을 보존한다") {
+                val sample = sampleOf(listOf("USER", "ADMIN"))
 
-    @OptIn(ExperimentalStdlibApi::class)
-    @Test
-    fun `generic collection의 원소 타입을 보존한다`() {
-        val sample = sampleOf(listOf("USER", "ADMIN"))
+                sample.value shouldBe listOf("USER", "ADMIN")
+                sample.type shouldBe typeOf<List<String>>()
+            }
+        }
+    })
 
-        assertEquals(listOf("USER", "ADMIN"), sample.value)
-        assertEquals(typeOf<List<String>>(), sample.type)
-    }
-
-    private enum class UserRole {
-        USER,
-        ADMIN,
-    }
+private enum class SampleUserRole {
+    USER,
+    ADMIN,
 }
