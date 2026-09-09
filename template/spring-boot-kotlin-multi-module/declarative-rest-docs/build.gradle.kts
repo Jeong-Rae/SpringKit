@@ -23,7 +23,8 @@ dependencyManagement {
 dependencies {
     api("com.epages:restdocs-api-spec:0.20.1")
     api("org.springframework.restdocs:spring-restdocs-mockmvc")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("io.kotest:kotest-assertions-core:6.2.4")
+    testImplementation("io.kotest:kotest-runner-junit5:6.2.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
