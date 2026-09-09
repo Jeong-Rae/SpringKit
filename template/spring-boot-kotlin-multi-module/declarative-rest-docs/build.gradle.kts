@@ -21,6 +21,8 @@ dependencyManagement {
 }
 
 dependencies {
+    api("com.epages:restdocs-api-spec:0.20.1")
+    api("org.springframework.restdocs:spring-restdocs-mockmvc")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
