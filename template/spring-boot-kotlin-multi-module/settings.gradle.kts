@@ -1,6 +1,7 @@
 rootProject.name = "__SPRINGKIT_PROJECT_NAME__"
 
 include(
+    "declarative-rest-docs",
     "__SPRINGKIT_ARTIFACT__-presentation",
     "__SPRINGKIT_ARTIFACT__-application",
     "__SPRINGKIT_ARTIFACT__-domain",
