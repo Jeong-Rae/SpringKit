@@ -9,6 +9,7 @@ import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.LocalDate
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
 
 /** 하나의 [Sample]에서 해석한 문서 메타데이터입니다. */
 data class ValueMetadata(
@@ -21,8 +22,14 @@ data class ValueMetadata(
 class ValueMetadataResolver(
     private val objectMapper: ObjectMapper,
 ) {
-    fun resolve(sample: Sample): ValueMetadata {
-        val classifier = sample.type.classifier as? KClass<*>
+    fun resolve(sample: Sample): ValueMetadata = resolveType(sample.type)
+
+    private fun resolveType(type: KType): ValueMetadata {
+        val classifier = type.classifier as? KClass<*>
+        if (classifier != null && classifier.isArrayOrCollection()) {
+            return arrayMetadata(type, classifier)
+        }
+
         if (classifier?.java?.isEnum == true) {
             return enumMetadata(classifier)
         }
@@ -35,6 +42,40 @@ class ValueMetadataResolver(
             simpleType = simpleType,
             attributes = emptyList(),
         )
+    }
+
+    private fun arrayMetadata(
+        type: KType,
+        containerType: KClass<*>,
+    ): ValueMetadata {
+        val itemType = type.arguments.singleOrNull()?.type
+        val itemClassifier =
+            itemType?.classifier as? KClass<*>
+                ?: containerType.java.componentType?.kotlin
+        val itemMetadata = itemType?.let(::resolveType) ?: itemClassifier?.let(::scalarMetadata)
+        val attributes =
+            if (itemMetadata == null) {
+                emptyList()
+            } else {
+                listOf(Attributes.key("itemsType").value(itemMetadata.fieldType.attributeValue())) +
+                    itemMetadata.attributes
+            }
+
+        return ValueMetadata(
+            fieldType = JsonFieldType.ARRAY,
+            simpleType = itemMetadata?.simpleType,
+            attributes = attributes,
+        )
+    }
+
+    private fun scalarMetadata(classifier: KClass<*>): ValueMetadata {
+        if (classifier.java.isEnum) {
+            return enumMetadata(classifier)
+        }
+
+        val (fieldType, simpleType) = primitiveTypeMapping[classifier]
+            ?: (JsonFieldType.OBJECT to null)
+        return ValueMetadata(fieldType, simpleType, emptyList())
     }
 
     private fun enumMetadata(enumType: KClass<*>): ValueMetadata {
@@ -65,5 +106,14 @@ class ValueMetadataResolver(
                 BigDecimal::class to (JsonFieldType.NUMBER to SimpleType.NUMBER),
                 LocalDate::class to ("date" to SimpleType.STRING),
             )
+
+        fun KClass<*>.isArrayOrCollection(): Boolean =
+            java.isArray || Collection::class.java.isAssignableFrom(java)
+
+        fun Any.attributeValue(): String =
+            when (this) {
+                is JsonFieldType -> name
+                else -> toString().uppercase()
+            }
     }
 }

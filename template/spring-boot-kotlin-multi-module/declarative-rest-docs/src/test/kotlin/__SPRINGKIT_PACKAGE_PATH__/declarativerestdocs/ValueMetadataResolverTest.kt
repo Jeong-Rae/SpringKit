@@ -50,6 +50,40 @@ class ValueMetadataResolverTest :
                 metadata.attributes.single().value shouldBe listOf("user", "admin")
             }
         }
+
+        context("배열 메타데이터 계약") {
+            withData(
+                nameFn = { it.name },
+                arrayMetadataCases(),
+            ) { case ->
+                val metadata = resolver.resolve(case.sample)
+
+                metadata.fieldType shouldBe JsonFieldType.ARRAY
+                metadata.simpleType shouldBe case.simpleType
+                metadata.attributeValues() shouldBe case.attributes
+            }
+
+            test("enum 컬렉션은 원소의 Jackson 직렬화 값을 보존한다") {
+                val metadata = resolver.resolve(sampleOf<List<SerializedRole>>(emptyList()))
+
+                metadata.attributeValues() shouldBe
+                    listOf(
+                        "itemsType" to "ENUM",
+                        "enumValues" to listOf("user", "admin"),
+                    )
+            }
+
+            test("동일한 Sample은 같은 메타데이터를 결정론적으로 생성한다") {
+                val sample = sampleOf(listOf("USER", "ADMIN"))
+
+                val first = resolver.resolve(sample)
+                val second = resolver.resolve(sample)
+
+                first.fieldType shouldBe second.fieldType
+                first.simpleType shouldBe second.simpleType
+                first.attributeValues() shouldBe second.attributeValues()
+            }
+        }
     })
 
 private fun primitiveMetadataCases(): List<PrimitiveMetadataCase> =
@@ -72,6 +106,44 @@ private data class PrimitiveMetadataCase(
     val sample: Sample,
     val fieldType: Any,
     val simpleType: SimpleType,
+)
+
+private fun arrayMetadataCases(): List<ArrayMetadataCase> =
+    listOf(
+        ArrayMetadataCase(
+            name = "빈 List<String>도 선언된 원소 타입으로 해석한다",
+            sample = sampleOf<List<String>>(emptyList()),
+            simpleType = SimpleType.STRING,
+            attributes = listOf("itemsType" to "STRING"),
+        ),
+        ArrayMetadataCase(
+            name = "Set<Int>는 정수 원소 타입으로 해석한다",
+            sample = sampleOf(setOf(1, 2)),
+            simpleType = SimpleType.INTEGER,
+            attributes = listOf("itemsType" to "NUMBER"),
+        ),
+        ArrayMetadataCase(
+            name = "Array<String>은 문자열 원소 타입으로 해석한다",
+            sample = sampleOf(arrayOf("USER", "ADMIN")),
+            simpleType = SimpleType.STRING,
+            attributes = listOf("itemsType" to "STRING"),
+        ),
+        ArrayMetadataCase(
+            name = "IntArray는 정수 원소 타입으로 해석한다",
+            sample = sampleOf(intArrayOf(1, 2)),
+            simpleType = SimpleType.INTEGER,
+            attributes = listOf("itemsType" to "NUMBER"),
+        ),
+    )
+
+private fun ValueMetadata.attributeValues(): List<Pair<String, Any>> =
+    attributes.map { attribute -> attribute.key to attribute.value }
+
+private data class ArrayMetadataCase(
+    val name: String,
+    val sample: Sample,
+    val simpleType: SimpleType?,
+    val attributes: List<Pair<String, Any>>,
 )
 
 private enum class BasicRole {
