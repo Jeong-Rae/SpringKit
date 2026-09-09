@@ -7,22 +7,22 @@ import kotlin.reflect.typeOf
 @OptIn(ExperimentalStdlibApi::class)
 class SampleTest :
     FunSpec({
-        context("sampleOf 계약") {
-            test("primitive의 값과 타입을 보존한다") {
+        context("sampleOf가 값을 보존하는 계약") {
+            test("Long 값을 전달하면 값과 KType을 보존한다") {
                 val sample = sampleOf(1L)
 
                 sample.value shouldBe 1L
                 sample.type shouldBe typeOf<Long>()
             }
 
-            test("enum의 값과 타입을 보존한다") {
+            test("enum 값을 전달하면 값과 KType을 보존한다") {
                 val sample = sampleOf(SampleUserRole.ADMIN)
 
                 sample.value shouldBe SampleUserRole.ADMIN
                 sample.type shouldBe typeOf<SampleUserRole>()
             }
 
-            test("generic collection의 원소 타입을 보존한다") {
+            test("List<String> 값을 전달하면 원소의 KType을 보존한다") {
                 val sample = sampleOf(listOf("USER", "ADMIN"))
 
                 sample.value shouldBe listOf("USER", "ADMIN")

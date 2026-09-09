@@ -6,8 +6,8 @@ import org.springframework.http.HttpMethod
 
 class DocumentationTest :
     FunSpec({
-        context("PathVariable 계약") {
-            test("required 상태로 유지한다") {
+        context("PathVariable의 필수 상태 계약") {
+            test("PathVariable을 생성하면 필수 상태를 유지한다") {
                 val pathVariable =
                     PathVariable(
                         key = "tenantId",
@@ -21,8 +21,8 @@ class DocumentationTest :
             }
         }
 
-        context("선택 및 제외 상태 계약") {
-            test("값 요소의 optional과 ignored 상태를 유지한다") {
+        context("값 요소의 선택 및 제외 상태 계약") {
+            test("optional이 true이면 선택 상태를 유지한다") {
                 val queryParameter =
                     QueryParameter(
                         key = "dryRun",
@@ -30,6 +30,21 @@ class DocumentationTest :
                         sample = sampleOf(false),
                         optional = true,
                     )
+                val field =
+                    Field(
+                        key = "profile.nickname",
+                        description = "사용자 별명",
+                        sample = sampleOf("Alice"),
+                        optional = true,
+                    )
+
+                queryParameter.optional shouldBe true
+                queryParameter.ignored shouldBe false
+                field.optional shouldBe true
+                field.ignored shouldBe false
+            }
+
+            test("ignored가 true이면 제외 상태를 유지한다") {
                 val header =
                     Header(
                         key = "X-Debug",
@@ -39,24 +54,21 @@ class DocumentationTest :
                     )
                 val field =
                     Field(
-                        key = "profile.nickname",
-                        description = "사용자 별명",
-                        sample = sampleOf("Alice"),
-                        optional = true,
+                        key = "legacyCode",
+                        description = "이전 시스템 코드",
+                        sample = sampleOf("legacy"),
                         ignored = true,
                     )
 
-                queryParameter.optional shouldBe true
-                queryParameter.ignored shouldBe false
                 header.optional shouldBe false
                 header.ignored shouldBe true
-                field.optional shouldBe true
+                field.optional shouldBe false
                 field.ignored shouldBe true
             }
         }
 
-        context("HTTP context 선언 순서 계약") {
-            test("입력한 요소와 tag의 순서를 유지한다") {
+        context("HTTP context의 선언 순서 계약") {
+            test("여러 요소와 tags를 입력하면 선언 순서를 유지한다") {
                 val firstPath = PathVariable("tenantId", "테넌트 식별자", sampleOf("tenant-1"))
                 val secondPath = PathVariable("userId", "사용자 식별자", sampleOf("user-1"))
                 val firstQuery = QueryParameter("dryRun", "검증 여부", sampleOf(false))

@@ -8,8 +8,8 @@ import kotlin.reflect.typeOf
 @OptIn(ExperimentalStdlibApi::class)
 class CoreDocumentationFixtureTest :
     FunSpec({
-        context("create-user Core fixture 계약") {
-            test("모든 v1 HTTP context와 값 상태를 표현한다") {
+        context("create-user Core fixture의 입력 계약") {
+            test("create-user fixture를 구성하면 모든 v1 HTTP context와 값 상태를 표현한다") {
                 val documentation = createUserDocumentation()
 
                 documentation.name shouldBe "create-user"
