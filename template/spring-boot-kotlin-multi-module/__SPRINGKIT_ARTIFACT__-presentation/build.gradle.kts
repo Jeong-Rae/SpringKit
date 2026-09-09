@@ -23,7 +23,9 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(project(":declarative-rest-docs"))
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("io.kotest:kotest-assertions-core:6.2.4")
+    testImplementation("io.kotest:kotest-extensions-spring:6.2.4")
+    testImplementation("io.kotest:kotest-runner-junit5:6.2.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

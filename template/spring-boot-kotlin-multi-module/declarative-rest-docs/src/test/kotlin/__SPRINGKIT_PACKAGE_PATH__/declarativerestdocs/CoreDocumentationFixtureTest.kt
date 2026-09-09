@@ -8,14 +8,18 @@ import kotlin.reflect.typeOf
 @OptIn(ExperimentalStdlibApi::class)
 class CoreDocumentationFixtureTest :
     FunSpec({
-        context("create-user Core fixture의 입력 계약") {
-            test("create-user fixture를 구성하면 모든 v1 HTTP context와 값 상태를 표현한다") {
+        context("create-user Core fixture의 입력") {
+            test("create-user fixture를 구성하면, 기본 설명을 보존한다") {
                 val documentation = createUserDocumentation()
 
                 documentation.name shouldBe "create-user"
                 documentation.summary shouldBe "사용자 생성"
                 documentation.description shouldBe "새로운 사용자를 생성한다."
                 documentation.tags shouldBe setOf("users")
+            }
+
+            test("create-user fixture를 구성하면, request line 입력을 보존한다") {
+                val documentation = createUserDocumentation()
 
                 documentation.requestLine.method shouldBe HttpMethod.POST
                 documentation.requestLine.uri shouldBe "/tenants/{tenantId}/users"
@@ -23,11 +27,19 @@ class CoreDocumentationFixtureTest :
                 documentation.requestLine.queryParameters.map { it.key } shouldBe listOf("dryRun", "debug")
                 documentation.requestLine.queryParameters.first().optional shouldBe true
                 documentation.requestLine.queryParameters.last().ignored shouldBe true
+            }
+
+            test("create-user fixture를 구성하면, request header 입력을 보존한다") {
+                val documentation = createUserDocumentation()
 
                 documentation.requestHeaders.headers.map { it.key } shouldBe
                     listOf("X-Request-Id", "X-Internal-Trace")
                 documentation.requestHeaders.headers.first().ignored shouldBe false
                 documentation.requestHeaders.headers.last().ignored shouldBe true
+            }
+
+            test("create-user fixture를 구성하면, request body 입력을 보존한다") {
+                val documentation = createUserDocumentation()
 
                 documentation.requestBody.fields.map { it.key } shouldBe
                     listOf("name", "profile.nickname", "roles", "role", "legacyCode")
@@ -35,6 +47,10 @@ class CoreDocumentationFixtureTest :
                 documentation.requestBody.fields[2].sample.type shouldBe typeOf<List<FixtureUserRole>>()
                 documentation.requestBody.fields[3].sample.type shouldBe typeOf<FixtureUserRole>()
                 documentation.requestBody.fields[4].ignored shouldBe true
+            }
+
+            test("create-user fixture를 구성하면, response 입력을 보존한다") {
+                val documentation = createUserDocumentation()
 
                 documentation.responseHeaders.headers.map { it.key } shouldBe listOf("Location")
                 documentation.responseBody.fields.map { it.key } shouldBe listOf("id", "name", "role")

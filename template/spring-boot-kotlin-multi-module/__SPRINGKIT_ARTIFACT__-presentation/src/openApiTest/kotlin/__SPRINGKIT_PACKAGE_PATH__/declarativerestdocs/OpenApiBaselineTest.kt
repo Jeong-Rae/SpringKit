@@ -1,81 +1,79 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
-import org.junit.jupiter.api.Test
+import io.kotest.assertions.fail
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContainAll
+import io.kotest.matchers.shouldBe
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.test.fail
 
-class OpenApiBaselineTest {
+class OpenApiBaselineTest :
+    FunSpec({
+        context("create-user OpenAPI 기준선") {
+            test("OpenAPI 문서를 생성하면, create-user 계약을 포함한다") {
+                val root =
+                    Files.newBufferedReader(Path.of("build/api-spec/openapi3.yaml")).use {
+                        Yaml().load<Map<String, Any>>(it)
+                    }
+                val operation =
+                    root.map("paths")
+                        .map("/tenants/{tenantId}/users")
+                        .map("post")
 
-    @Test
-    fun openapi3ContainsCreateUserSemantics() {
-        val root =
-            Files.newBufferedReader(Path.of("build/api-spec/openapi3.yaml")).use {
-                Yaml().load<Map<String, Any>>(it)
+                root["openapi"] shouldBe "3.0.1"
+                operation["operationId"] shouldBe "create-user"
+                operation["summary"] shouldBe "사용자 생성"
+                operation["description"] shouldBe "테넌트에 새로운 사용자를 생성합니다."
+                operation["tags"] shouldBe listOf("users")
+
+                assertParameter(operation, "tenantId", "path", "string")
+                assertParameter(operation, "dryRun", "query", "boolean")
+                assertParameter(operation, "X-Request-Id", "header", "string")
+
+                val requestSchema =
+                    operation.map("requestBody")
+                        .map("content")
+                        .map("application/json")
+                        .map("schema")
+                assertSchemaProperties(root, requestSchema, setOf("name", "role"))
+
+                val createdResponse = operation.map("responses").map("201")
+                createdResponse.map("headers").map("Location").map("schema")["type"] shouldBe "string"
+                val responseSchema =
+                    createdResponse.map("content")
+                        .map("application/json")
+                        .map("schema")
+                assertSchemaProperties(root, responseSchema, setOf("id", "name", "role"))
             }
-        val operation =
-            root.map("paths")
-                .map("/tenants/{tenantId}/users")
-                .map("post")
+        }
+    })
 
-        assertEquals("3.0.1", root["openapi"])
-        assertEquals("create-user", operation["operationId"])
-        assertEquals("사용자 생성", operation["summary"])
-        assertEquals("테넌트에 새로운 사용자를 생성합니다.", operation["description"])
-        assertEquals(listOf("users"), operation["tags"])
+private fun assertParameter(
+    operation: Map<String, Any>,
+    name: String,
+    location: String,
+    type: String,
+) {
+    val parameter =
+        operation.listOfMaps("parameters")
+            .single { it["name"] == name && it["in"] == location }
 
-        assertParameter(operation, "tenantId", "path", "string")
-        assertParameter(operation, "dryRun", "query", "boolean")
-        assertParameter(operation, "X-Request-Id", "header", "string")
+    parameter["required"] shouldBe true
+    parameter.map("schema")["type"] shouldBe type
+}
 
-        val requestSchema =
-            operation.map("requestBody")
-                .map("content")
-                .map("application/json")
-                .map("schema")
-        assertSchemaProperties(root, requestSchema, setOf("name", "role"))
+private fun assertSchemaProperties(
+    root: Map<String, Any>,
+    schemaReference: Map<String, Any>,
+    expectedProperties: Set<String>,
+) {
+    val schemaName = schemaReference.string("$" + "ref").substringAfterLast("/")
+    val schema = root.map("components").map("schemas").map(schemaName)
 
-        val createdResponse = operation.map("responses").map("201")
-        assertEquals(
-            "string",
-            createdResponse.map("headers").map("Location").map("schema")["type"],
-        )
-        val responseSchema =
-            createdResponse.map("content")
-                .map("application/json")
-                .map("schema")
-        assertSchemaProperties(root, responseSchema, setOf("id", "name", "role"))
-    }
-
-    private fun assertParameter(
-        operation: Map<String, Any>,
-        name: String,
-        location: String,
-        type: String,
-    ) {
-        val parameter =
-            operation.listOfMaps("parameters")
-                .single { it["name"] == name && it["in"] == location }
-
-        assertEquals(true, parameter["required"])
-        assertEquals(type, parameter.map("schema")["type"])
-    }
-
-    private fun assertSchemaProperties(
-        root: Map<String, Any>,
-        schemaReference: Map<String, Any>,
-        expectedProperties: Set<String>,
-    ) {
-        val schemaName = schemaReference.string("$" + "ref").substringAfterLast("/")
-        val schema = root.map("components").map("schemas").map(schemaName)
-
-        assertEquals("object", schema["type"])
-        assertEquals(expectedProperties, schema.map("properties").keys)
-        assertTrue(schema.list("required").containsAll(expectedProperties))
-    }
+    schema["type"] shouldBe "object"
+    schema.map("properties").keys shouldBe expectedProperties
+    schema.list("required") shouldContainAll expectedProperties
 }
 
 @Suppress("UNCHECKED_CAST")

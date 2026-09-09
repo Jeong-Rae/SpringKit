@@ -1,19 +1,20 @@
 package __SPRINGKIT_PACKAGE_NAME__
 
 import __SPRINGKIT_PACKAGE_NAME__.application.greeting.GreetingService
-import org.junit.jupiter.api.Test
-import org.springframework.beans.factory.annotation.Autowired
+import io.kotest.core.extensions.ApplyExtension
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.extensions.spring.SpringExtension
+import io.kotest.matchers.shouldBe
 import org.springframework.boot.test.context.SpringBootTest
-import kotlin.test.assertEquals
 
 @SpringBootTest
-class ApplicationTests {
-
-    @Autowired
-    private lateinit var greetingService: GreetingService
-
-    @Test
-    fun contextLoads() {
-        assertEquals("Hello, Springkit!", greetingService.greeting().message)
-    }
-}
+@ApplyExtension(SpringExtension::class)
+class ApplicationTests(
+    private val greetingService: GreetingService,
+) : FunSpec({
+        context("Presentation 애플리케이션의 Spring context") {
+            test("애플리케이션을 시작하면, GreetingService를 제공한다") {
+                greetingService.greeting().message shouldBe "Hello, Springkit!"
+            }
+        }
+    })

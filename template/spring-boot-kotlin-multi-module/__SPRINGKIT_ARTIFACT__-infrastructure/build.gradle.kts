@@ -19,7 +19,8 @@ dependencies {
     implementation(project(":__SPRINGKIT_ARTIFACT__-application"))
     implementation(project(":__SPRINGKIT_ARTIFACT__-domain"))
     implementation("org.springframework:spring-context")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("io.kotest:kotest-assertions-core:6.2.4")
+    testImplementation("io.kotest:kotest-runner-junit5:6.2.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
