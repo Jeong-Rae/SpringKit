@@ -8,7 +8,7 @@ import org.springframework.restdocs.request.RequestDocumentation.pathParameters
 import org.springframework.restdocs.request.RequestDocumentation.queryParameters
 import org.springframework.restdocs.snippet.Snippet
 
-/** 컴파일된 HTTP context를 정해진 순서의 Spring REST Docs 표준 snippet으로 조합합니다. */
+/** 컴파일된 HTTP context의 Spring REST Docs 표준 snippet 순서 조합 */
 class StandardSnippetComposer {
   fun compose(
       requestLine: CompiledRequestLine,

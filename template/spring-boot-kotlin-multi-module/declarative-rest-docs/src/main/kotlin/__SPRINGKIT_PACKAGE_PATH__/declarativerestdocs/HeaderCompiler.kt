@@ -11,7 +11,7 @@ data class CompiledHeader(
     val resourceDescriptor: HeaderDescriptorWithType,
 )
 
-/** Spring REST Docs와 ResourceSnippet에 함께 사용할 header context 컴파일 결과입니다. */
+/** Spring REST Docs와 ResourceSnippet에 함께 사용할 header context 컴파일 결과 */
 data class CompiledHeaders(
     val headers: List<CompiledHeader>,
 )

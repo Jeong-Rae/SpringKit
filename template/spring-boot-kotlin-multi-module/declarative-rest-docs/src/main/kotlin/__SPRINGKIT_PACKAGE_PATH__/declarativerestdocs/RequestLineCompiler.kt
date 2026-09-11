@@ -6,14 +6,14 @@ import org.springframework.restdocs.operation.Operation
 import org.springframework.restdocs.snippet.Snippet
 import org.springframework.restdocs.snippet.SnippetException
 
-/** Spring REST Docs 요청 검증과 파라미터 문서에 사용할 request line 컴파일 결과입니다. */
+/** Spring REST Docs 요청 검증과 파라미터 문서에 사용할 RequestLine 컴파일 결과 */
 data class CompiledRequestLine(
     val validationSnippet: Snippet,
     val pathParameters: List<CompiledParameter>,
     val queryParameters: List<CompiledParameter>,
 )
 
-/** Core [RequestLine]을 요청 검증 snippet과 파라미터 descriptor로 변환합니다. */
+/** Core [RequestLine]의 요청 검증 snippet과 파라미터 descriptor 변환 */
 class RequestLineCompiler(
     private val parameterCompiler: ParameterCompiler,
 ) {
@@ -29,7 +29,7 @@ class RequestLineCompiler(
       )
 }
 
-/** 실제 HTTP 요청의 method와 URI template이 문서의 request line과 일치하는지 검증합니다. */
+/** 실제 HTTP 요청의 method 및 URI template과 문서의 RequestLine 일치 여부 검증 */
 class RequestLineValidationSnippet(
     private val expectedMethod: HttpMethod,
     private val expectedUri: String,
