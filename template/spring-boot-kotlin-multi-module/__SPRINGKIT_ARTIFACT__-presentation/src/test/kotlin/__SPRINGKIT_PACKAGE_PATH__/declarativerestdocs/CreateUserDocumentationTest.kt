@@ -2,7 +2,12 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
+import java.nio.file.Files
+import java.nio.file.Path
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -10,9 +15,6 @@ import org.springframework.restdocs.ManualRestDocumentation
 import org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.document
 import org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post
-import org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath
-import org.springframework.restdocs.payload.PayloadDocumentation.requestFields
-import org.springframework.restdocs.payload.PayloadDocumentation.responseFields
 import org.springframework.restdocs.snippet.SnippetException
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
@@ -40,6 +42,16 @@ class CreateUserDocumentationTest :
               headerCompiler = HeaderCompiler(metadataResolver),
               bodyCompiler = BodyCompiler(FieldDescriptorCompiler(metadataResolver)),
           )
+
+      fun executeDocumentation(
+          documentation: Documentation,
+          request: MockHttpServletRequestBuilder = createUserRequest(),
+      ) {
+        val compiled = compiler.compile(documentation)
+        mockMvc
+            .perform(request)
+            .andDo(document(compiled.identifier, *compiled.snippets.toTypedArray()))
+      }
 
       beforeTest { testCase ->
         restDocumentation = ManualRestDocumentation()
@@ -75,33 +87,193 @@ class CreateUserDocumentationTest :
         }
       }
 
-      context("create-user field descriptor 검증") {
-        test("request field가 descriptor와 다르면, 문서 생성에 실패한다") {
+      context("create-user body field 검증") {
+        test("required request field가 없으면, 문서 생성에 실패한다") {
+          val documentation =
+              createUserDocumentation()
+                  .copy(
+                      name = "create-user-required-field-mismatch",
+                      requestBody =
+                          Body(
+                              createUserDocumentation().requestBody.fields +
+                                  Field("email", "이메일", sampleOf("alice@example.com"))
+                          ),
+                  )
+
           shouldThrow<SnippetException> {
-            mockMvc
-                .perform(createUserRequest())
-                .andDo(
-                    document(
-                        "create-user-request-mismatch",
-                        requestFields(fieldWithPath("name").description("사용자 이름")),
-                    )
-                )
+            executeDocumentation(documentation)
           }
         }
 
-        test("response field가 descriptor와 다르면, 문서 생성에 실패한다") {
+        test("optional request field가 없으면, 문서 생성에 성공한다") {
+          val documentation =
+              createUserDocumentation()
+                  .copy(
+                      name = "create-user-optional-field",
+                      requestBody =
+                          Body(
+                              createUserDocumentation().requestBody.fields +
+                                  Field("nickname", "별명", sampleOf("ally"), optional = true)
+                          ),
+                  )
+
+          executeDocumentation(documentation)
+        }
+
+        test("ignored request field가 있으면, 검증에서 제외하고 문서에 출력하지 않는다") {
+          val documentation =
+              createUserDocumentation()
+                  .copy(
+                      name = "create-user-ignored-field",
+                      requestBody =
+                          Body(
+                              createUserDocumentation().requestBody.fields +
+                                  Field("legacyCode", "이전 코드", sampleOf("legacy"), ignored = true)
+                          ),
+                  )
+
+          executeDocumentation(
+              documentation,
+              createUserRequest("""{"name":"Alice","role":"ADMIN","legacyCode":"legacy"}"""),
+          )
+
+          Files.readString(
+              Path.of("build/generated-snippets/create-user-ignored-field/request-fields.adoc")
+          ) shouldNotContain "legacyCode"
+        }
+
+        test("request field 타입이 다르면, 문서 생성에 실패한다") {
+          val documentation =
+              createUserDocumentation()
+                  .copy(
+                      name = "create-user-field-type-mismatch",
+                      requestBody =
+                          Body(
+                              listOf(
+                                  Field("name", "사용자 이름", sampleOf("Alice")),
+                                  Field("role", "사용자 역할", sampleOf(1)),
+                              )
+                          ),
+                  )
+
+          val exception = shouldThrow<RuntimeException> { executeDocumentation(documentation) }
+          exception.javaClass.simpleName shouldBe "FieldTypesDoNotMatchException"
+        }
+
+        test("required response field가 없으면, 문서 생성에 실패한다") {
+          val documentation =
+              createUserDocumentation()
+                  .copy(
+                      name = "create-user-response-field-mismatch",
+                      responseBody =
+                          Body(
+                              createUserDocumentation().responseBody.fields +
+                                  Field("email", "이메일", sampleOf("alice@example.com"))
+                          ),
+                  )
+
           shouldThrow<SnippetException> {
-            mockMvc
-                .perform(createUserRequest())
-                .andDo(
-                    document(
-                        "create-user-response-mismatch",
-                        responseFields(
-                            fieldWithPath("id").description("생성된 사용자 식별자"),
-                            fieldWithPath("name").description("사용자 이름"),
-                        ),
-                    )
-                )
+            executeDocumentation(documentation)
+          }
+        }
+      }
+
+      context("create-user parameter와 header 검증") {
+        test("required path parameter가 없으면, 문서 생성에 실패한다") {
+          val base = createUserDocumentation()
+          val documentation =
+              base.copy(
+                  name = "create-user-path-parameter-mismatch",
+                  requestLine =
+                      base.requestLine.copy(
+                          pathVariables =
+                              base.requestLine.pathVariables +
+                                  PathVariable("userId", "사용자 식별자", sampleOf("user-123"))
+                      ),
+              )
+
+          shouldThrow<SnippetException> {
+            executeDocumentation(documentation)
+          }
+        }
+
+        test("required query parameter가 없으면, 문서 생성에 실패한다") {
+          val base = createUserDocumentation()
+          val documentation =
+              base.copy(
+                  name = "create-user-query-parameter-mismatch",
+                  requestLine =
+                      base.requestLine.copy(
+                          queryParameters =
+                              base.requestLine.queryParameters +
+                                  QueryParameter("mode", "실행 방식", sampleOf("sync"))
+                      ),
+              )
+
+          shouldThrow<SnippetException> {
+            executeDocumentation(documentation)
+          }
+        }
+
+        test("required request header가 없으면, 문서 생성에 실패한다") {
+          val base = createUserDocumentation()
+          val documentation =
+              base.copy(
+                  name = "create-user-request-header-mismatch",
+                  requestHeaders =
+                      Headers(
+                          base.requestHeaders.headers +
+                              Header("X-Client-Id", "클라이언트 식별자", sampleOf("client-1"))
+                      ),
+              )
+
+          shouldThrow<SnippetException> {
+            executeDocumentation(documentation)
+          }
+        }
+
+        test("required response header가 없으면, 문서 생성에 실패한다") {
+          val base = createUserDocumentation()
+          val documentation =
+              base.copy(
+                  name = "create-user-response-header-mismatch",
+                  responseHeaders =
+                      Headers(
+                          base.responseHeaders.headers +
+                              Header("X-RateLimit", "요청 제한", sampleOf(100))
+                      ),
+              )
+
+          shouldThrow<SnippetException> {
+            executeDocumentation(documentation)
+          }
+        }
+      }
+
+      context("create-user request line 검증") {
+        test("HTTP method가 다르면, 문서 생성에 실패한다") {
+          val base = createUserDocumentation()
+          val documentation =
+              base.copy(
+                  name = "create-user-method-mismatch",
+                  requestLine = base.requestLine.copy(method = HttpMethod.PUT),
+              )
+
+          shouldThrow<SnippetException> {
+            executeDocumentation(documentation)
+          }
+        }
+
+        test("URI template이 다르면, 문서 생성에 실패한다") {
+          val base = createUserDocumentation()
+          val documentation =
+              base.copy(
+                  name = "create-user-uri-mismatch",
+                  requestLine = base.requestLine.copy(uri = "/organizations/{tenantId}/users"),
+              )
+
+          shouldThrow<SnippetException> {
+            executeDocumentation(documentation)
           }
         }
       }
@@ -115,7 +287,7 @@ private fun createUserDocumentation(): Documentation =
         tags = setOf("users"),
         requestLine =
             RequestLine(
-                method = org.springframework.http.HttpMethod.POST,
+                method = HttpMethod.POST,
                 uri = "/tenants/{tenantId}/users",
                 pathVariables =
                     listOf(PathVariable("tenantId", "사용자를 생성할 테넌트 식별자", sampleOf("tenant-1"))),
@@ -143,12 +315,14 @@ private fun createUserDocumentation(): Documentation =
             ),
     )
 
-private fun createUserRequest(): MockHttpServletRequestBuilder =
+private fun createUserRequest(
+    content: String = """{"name":"Alice","role":"ADMIN"}""",
+): MockHttpServletRequestBuilder =
     post("/tenants/{tenantId}/users", "tenant-1")
         .queryParam("dryRun", "false")
         .header("X-Request-Id", "request-123")
         .contentType(MediaType.APPLICATION_JSON)
-        .content("""{"name":"Alice","role":"ADMIN"}""")
+        .content(content)
 
 @RestController
 private class CreateUserController {
