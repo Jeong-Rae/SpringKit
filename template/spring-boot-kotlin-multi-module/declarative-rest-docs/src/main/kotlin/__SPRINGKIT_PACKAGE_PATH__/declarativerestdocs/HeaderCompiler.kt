@@ -5,7 +5,7 @@ import com.epages.restdocs.apispec.ResourceDocumentation.headerWithName as resou
 import org.springframework.restdocs.headers.HeaderDescriptor
 import org.springframework.restdocs.headers.HeaderDocumentation.headerWithName
 
-/** Spring REST Docs와 ResourceSnippet에 함께 사용할 header descriptor입니다. */
+/** Spring REST Docs와 ResourceSnippet에 함께 사용할 header descriptor */
 data class CompiledHeader(
     val descriptor: HeaderDescriptor,
     val resourceDescriptor: HeaderDescriptorWithType,
@@ -16,7 +16,7 @@ data class CompiledHeaders(
     val headers: List<CompiledHeader>,
 )
 
-/** Core [Header]를 표준 및 typed descriptor로 변환하고 ignored header를 제외합니다. */
+/** Core [Header]의 표준 및 typed descriptor 변환과 ignored header 제외 */
 class HeaderCompiler(
     private val metadataResolver: ValueMetadataResolver,
 ) {
