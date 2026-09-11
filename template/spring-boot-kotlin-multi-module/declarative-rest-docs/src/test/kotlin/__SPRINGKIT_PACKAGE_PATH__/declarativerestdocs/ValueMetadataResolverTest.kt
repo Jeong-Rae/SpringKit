@@ -16,74 +16,74 @@ import tools.jackson.databind.ObjectMapper
 
 class ValueMetadataResolverTest :
     FunSpec({
-        val resolver = ValueMetadataResolver(ObjectMapper())
+      val resolver = ValueMetadataResolver(ObjectMapper())
 
-        context("원시값과 날짜 타입의 메타데이터 해석") {
-            withData(
-                nameFn = { it.name },
-                primitiveMetadataCases(),
-            ) { case ->
-                val metadata = resolver.resolve(case.sample)
+      context("원시값과 날짜 타입의 메타데이터 해석") {
+        withData(
+            nameFn = { it.name },
+            primitiveMetadataCases(),
+        ) { case ->
+          val metadata = resolver.resolve(case.sample)
 
-                metadata.fieldType shouldBe case.fieldType
-                metadata.simpleType shouldBe case.simpleType
-                metadata.attributes.shouldBeEmpty()
-            }
+          metadata.fieldType shouldBe case.fieldType
+          metadata.simpleType shouldBe case.simpleType
+          metadata.attributes.shouldBeEmpty()
+        }
+      }
+
+      context("Jackson enum의 메타데이터 해석") {
+        test("기본 enum을 해석하면, 전체 상수명을 enumValues로 제공한다") {
+          val metadata = resolver.resolve(sampleOf(BasicRole.ADMIN))
+
+          metadata.fieldType shouldBe "enum"
+          metadata.simpleType shouldBe SimpleType.STRING
+          metadata.attributes.single().key shouldBe "enumValues"
+          metadata.attributes.single().value shouldBe listOf("USER", "ADMIN")
         }
 
-        context("Jackson enum의 메타데이터 해석") {
-            test("기본 enum을 해석하면, 전체 상수명을 enumValues로 제공한다") {
-                val metadata = resolver.resolve(sampleOf(BasicRole.ADMIN))
+        test("JsonValue enum을 해석하면, 전체 직렬화 값을 enumValues로 제공한다") {
+          val metadata = resolver.resolve(sampleOf(SerializedRole.ADMIN))
 
-                metadata.fieldType shouldBe "enum"
-                metadata.simpleType shouldBe SimpleType.STRING
-                metadata.attributes.single().key shouldBe "enumValues"
-                metadata.attributes.single().value shouldBe listOf("USER", "ADMIN")
-            }
+          metadata.fieldType shouldBe "enum"
+          metadata.simpleType shouldBe SimpleType.STRING
+          metadata.attributes.single().key shouldBe "enumValues"
+          metadata.attributes.single().value shouldBe listOf("user", "admin")
+        }
+      }
 
-            test("JsonValue enum을 해석하면, 전체 직렬화 값을 enumValues로 제공한다") {
-                val metadata = resolver.resolve(sampleOf(SerializedRole.ADMIN))
+      context("배열과 컬렉션의 메타데이터 해석") {
+        withData(
+            nameFn = { it.name },
+            arrayMetadataCases(),
+        ) { case ->
+          val metadata = resolver.resolve(case.sample)
 
-                metadata.fieldType shouldBe "enum"
-                metadata.simpleType shouldBe SimpleType.STRING
-                metadata.attributes.single().key shouldBe "enumValues"
-                metadata.attributes.single().value shouldBe listOf("user", "admin")
-            }
+          metadata.fieldType shouldBe JsonFieldType.ARRAY
+          metadata.simpleType shouldBe case.simpleType
+          metadata.attributeValues() shouldBe case.attributes
         }
 
-        context("배열과 컬렉션의 메타데이터 해석") {
-            withData(
-                nameFn = { it.name },
-                arrayMetadataCases(),
-            ) { case ->
-                val metadata = resolver.resolve(case.sample)
+        test("enum 컬렉션을 해석하면, 원소의 Jackson 직렬화 값을 보존한다") {
+          val metadata = resolver.resolve(sampleOf<List<SerializedRole>>(emptyList()))
 
-                metadata.fieldType shouldBe JsonFieldType.ARRAY
-                metadata.simpleType shouldBe case.simpleType
-                metadata.attributeValues() shouldBe case.attributes
-            }
-
-            test("enum 컬렉션을 해석하면, 원소의 Jackson 직렬화 값을 보존한다") {
-                val metadata = resolver.resolve(sampleOf<List<SerializedRole>>(emptyList()))
-
-                metadata.attributeValues() shouldBe
-                    listOf(
-                        "itemsType" to "ENUM",
-                        "enumValues" to listOf("user", "admin"),
-                    )
-            }
-
-            test("동일한 Sample을 반복해서 해석하면, 같은 메타데이터를 생성한다") {
-                val sample = sampleOf(listOf("USER", "ADMIN"))
-
-                val first = resolver.resolve(sample)
-                val second = resolver.resolve(sample)
-
-                first.fieldType shouldBe second.fieldType
-                first.simpleType shouldBe second.simpleType
-                first.attributeValues() shouldBe second.attributeValues()
-            }
+          metadata.attributeValues() shouldBe
+              listOf(
+                  "itemsType" to "ENUM",
+                  "enumValues" to listOf("user", "admin"),
+              )
         }
+
+        test("동일한 Sample을 반복해서 해석하면, 같은 메타데이터를 생성한다") {
+          val sample = sampleOf(listOf("USER", "ADMIN"))
+
+          val first = resolver.resolve(sample)
+          val second = resolver.resolve(sample)
+
+          first.fieldType shouldBe second.fieldType
+          first.simpleType shouldBe second.simpleType
+          first.attributeValues() shouldBe second.attributeValues()
+        }
+      }
     })
 
 private fun primitiveMetadataCases(): List<PrimitiveMetadataCase> =
@@ -175,7 +175,7 @@ private fun arrayMetadataCases(): List<ArrayMetadataCase> =
     )
 
 private fun ValueMetadata.attributeValues(): List<Pair<String, Any>> = attributes.map { attribute ->
-    attribute.key to attribute.value
+  attribute.key to attribute.value
 }
 
 private data class ArrayMetadataCase(
@@ -186,11 +186,11 @@ private data class ArrayMetadataCase(
 )
 
 private enum class BasicRole {
-    USER,
-    ADMIN,
+  USER,
+  ADMIN,
 }
 
 private enum class SerializedRole(@get:JsonValue val serializedValue: String) {
-    USER("user"),
-    ADMIN("admin"),
+  USER("user"),
+  ADMIN("admin"),
 }

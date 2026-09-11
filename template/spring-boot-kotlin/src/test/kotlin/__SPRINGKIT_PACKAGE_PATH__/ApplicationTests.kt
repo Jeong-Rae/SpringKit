@@ -11,9 +11,9 @@ import org.springframework.context.ApplicationContext
 @ApplyExtension(SpringExtension::class)
 class ApplicationTests(private val applicationContext: ApplicationContext) :
     FunSpec({
-        context("애플리케이션의 Spring context") {
-            test("애플리케이션을 시작하면, context를 구성한다") {
-                applicationContext.id.shouldNotBeBlank()
-            }
+      context("애플리케이션의 Spring context") {
+        test("애플리케이션을 시작하면, context를 구성한다") {
+          applicationContext.id.shouldNotBeBlank()
         }
+      }
     })

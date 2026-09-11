@@ -10,40 +10,34 @@ import org.yaml.snakeyaml.Yaml
 
 class OpenApiBaselineTest :
     FunSpec({
-        context("create-user OpenAPI 기준선") {
-            test("OpenAPI 문서를 생성하면, create-user 계약을 포함한다") {
-                val root =
-                    Files.newBufferedReader(Path.of("build/api-spec/openapi3.yaml")).use {
-                        Yaml().load<Map<String, Any>>(it)
-                    }
-                val operation = root.map("paths").map("/tenants/{tenantId}/users").map("post")
+      context("create-user OpenAPI 기준선") {
+        test("OpenAPI 문서를 생성하면, create-user 계약을 포함한다") {
+          val root =
+              Files.newBufferedReader(Path.of("build/api-spec/openapi3.yaml")).use {
+                Yaml().load<Map<String, Any>>(it)
+              }
+          val operation = root.map("paths").map("/tenants/{tenantId}/users").map("post")
 
-                root["openapi"] shouldBe "3.0.1"
-                operation["operationId"] shouldBe "create-user"
-                operation["summary"] shouldBe "사용자 생성"
-                operation["description"] shouldBe "테넌트에 새로운 사용자를 생성합니다."
-                operation["tags"] shouldBe listOf("users")
+          root["openapi"] shouldBe "3.0.1"
+          operation["operationId"] shouldBe "create-user"
+          operation["summary"] shouldBe "사용자 생성"
+          operation["description"] shouldBe "테넌트에 새로운 사용자를 생성합니다."
+          operation["tags"] shouldBe listOf("users")
 
-                assertParameter(operation, "tenantId", "path", "string")
-                assertParameter(operation, "dryRun", "query", "boolean")
-                assertParameter(operation, "X-Request-Id", "header", "string")
+          assertParameter(operation, "tenantId", "path", "string")
+          assertParameter(operation, "dryRun", "query", "boolean")
+          assertParameter(operation, "X-Request-Id", "header", "string")
 
-                val requestSchema =
-                    operation
-                        .map("requestBody")
-                        .map("content")
-                        .map("application/json")
-                        .map("schema")
-                assertSchemaProperties(root, requestSchema, setOf("name", "role"))
+          val requestSchema =
+              operation.map("requestBody").map("content").map("application/json").map("schema")
+          assertSchemaProperties(root, requestSchema, setOf("name", "role"))
 
-                val createdResponse = operation.map("responses").map("201")
-                createdResponse.map("headers").map("Location").map("schema")["type"] shouldBe
-                    "string"
-                val responseSchema =
-                    createdResponse.map("content").map("application/json").map("schema")
-                assertSchemaProperties(root, responseSchema, setOf("id", "name", "role"))
-            }
+          val createdResponse = operation.map("responses").map("201")
+          createdResponse.map("headers").map("Location").map("schema")["type"] shouldBe "string"
+          val responseSchema = createdResponse.map("content").map("application/json").map("schema")
+          assertSchemaProperties(root, responseSchema, setOf("id", "name", "role"))
         }
+      }
     })
 
 private fun assertParameter(
@@ -52,11 +46,11 @@ private fun assertParameter(
     location: String,
     type: String,
 ) {
-    val parameter =
-        operation.listOfMaps("parameters").single { it["name"] == name && it["in"] == location }
+  val parameter =
+      operation.listOfMaps("parameters").single { it["name"] == name && it["in"] == location }
 
-    parameter["required"] shouldBe true
-    parameter.map("schema")["type"] shouldBe type
+  parameter["required"] shouldBe true
+  parameter.map("schema")["type"] shouldBe type
 }
 
 private fun assertSchemaProperties(
@@ -64,12 +58,12 @@ private fun assertSchemaProperties(
     schemaReference: Map<String, Any>,
     expectedProperties: Set<String>,
 ) {
-    val schemaName = schemaReference.string("$" + "ref").substringAfterLast("/")
-    val schema = root.map("components").map("schemas").map(schemaName)
+  val schemaName = schemaReference.string("$" + "ref").substringAfterLast("/")
+  val schema = root.map("components").map("schemas").map(schemaName)
 
-    schema["type"] shouldBe "object"
-    schema.map("properties").keys shouldBe expectedProperties
-    schema.list("required") shouldContainAll expectedProperties
+  schema["type"] shouldBe "object"
+  schema.map("properties").keys shouldBe expectedProperties
+  schema.list("required") shouldContainAll expectedProperties
 }
 
 @Suppress("UNCHECKED_CAST")

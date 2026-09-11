@@ -11,9 +11,9 @@ import org.springframework.boot.test.context.SpringBootTest
 @ApplyExtension(SpringExtension::class)
 class WorkerApplicationTests(private val greetingService: GreetingService) :
     FunSpec({
-        context("Worker 애플리케이션의 Spring context") {
-            test("애플리케이션을 시작하면, GreetingService를 제공한다") {
-                greetingService.greeting().message shouldBe "Hello, Springkit!"
-            }
+      context("Worker 애플리케이션의 Spring context") {
+        test("애플리케이션을 시작하면, GreetingService를 제공한다") {
+          greetingService.greeting().message shouldBe "Hello, Springkit!"
         }
+      }
     })

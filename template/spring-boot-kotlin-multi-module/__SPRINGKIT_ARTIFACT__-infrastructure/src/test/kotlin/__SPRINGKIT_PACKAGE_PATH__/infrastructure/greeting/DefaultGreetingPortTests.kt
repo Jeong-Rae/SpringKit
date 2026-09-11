@@ -5,11 +5,11 @@ import io.kotest.matchers.shouldBe
 
 class DefaultGreetingPortTests :
     FunSpec({
-        context("DefaultGreetingPort의 인사말 조회") {
-            test("인사말을 조회하면, 기본 메시지를 제공한다") {
-                val greetingPort = DefaultGreetingPort()
+      context("DefaultGreetingPort의 인사말 조회") {
+        test("인사말을 조회하면, 기본 메시지를 제공한다") {
+          val greetingPort = DefaultGreetingPort()
 
-                greetingPort.load().message shouldBe "Hello, Springkit!"
-            }
+          greetingPort.load().message shouldBe "Hello, Springkit!"
         }
+      }
     })

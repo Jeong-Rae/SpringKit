@@ -8,8 +8,8 @@ import org.springframework.context.annotation.Configuration
 @Configuration(proxyBeanMethods = false)
 class InfrastructureConfiguration {
 
-    @Bean fun greetingPort(): GreetingPort = DefaultGreetingPort()
+  @Bean fun greetingPort(): GreetingPort = DefaultGreetingPort()
 
-    @Bean
-    fun greetingService(greetingPort: GreetingPort): GreetingService = GreetingService(greetingPort)
+  @Bean
+  fun greetingService(greetingPort: GreetingPort): GreetingService = GreetingService(greetingPort)
 }
