@@ -7,7 +7,7 @@
 
 # Git: PR 우선
 
-`develop` 반영에는 원격 GitHub PR의 병합 커밋만 SoT(Single source of truth, 단일 기준 정보)로 사용해야 합니다. 원격에서 병합한 feature 브랜치는 로컬에서 `git flow feature finish`로만 정리해야 합니다.
+`develop` 반영에는 원격 GitHub PR의 스쿼시 병합 커밋만 SoT(Single source of truth, 단일 기준 정보)로 사용해야 합니다. feature 브랜치의 생성, 게시, PR 상태 전환, 병합, 정리는 workflow CLI로만 수행해야 합니다.
 
 ## Task 식별자
 
@@ -26,13 +26,16 @@ kotlin scripts/git/git-workflow.main.kts publish \
   "[TASK_ID] Feature: 사용자 프로필 API 추가" \
   --body-file /tmp/pr-body.md
 kotlin scripts/git/git-workflow.main.kts update
+kotlin scripts/git/git-workflow.main.kts ready
+kotlin scripts/git/git-workflow.main.kts draft
 kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 ```
 
-- `start`는 현재 브랜치가 최신 `develop`인지 확인한 뒤 `git flow feature start <task-id>`를 실행해야 합니다.
-- `publish`는 PR 본문 파일을 검증한 뒤 `git flow feature publish <task-id>`를 실행해야 합니다. 이어서 `develop` 대상 draft PR을 생성해야 합니다.
-- `update`는 현재 feature의 열린 PR을 확인한 뒤 `git flow feature publish <task-id>`로 리뷰 반영 커밋을 게시해야 합니다.
-- `finish`는 PR의 `MERGED` 상태를 확인해야 합니다. 이어서 `develop`을 fast-forward로 최신화하고 Gradle build를 통과한 뒤 `git flow feature finish <task-id>`를 실행해야 합니다.
+- `start`는 깨끗한 `develop`이 `origin/develop`과 일치하는지 확인하고 `feature/<task-id>` 브랜치를 생성합니다.
+- `publish`는 feature 브랜치와 PR 제목 및 본문을 검증합니다. 이어서 브랜치를 게시하고 `develop` 대상 초안 PR을 생성합니다.
+- `update`는 `develop` 대상 PR이 열려 있는지 확인하고 리뷰 반영 커밋을 게시합니다.
+- `ready`와 `draft`는 열린 PR을 각각 리뷰 준비 상태와 초안 상태로 전환합니다.
+- `finish`는 리뷰 준비 상태인 PR을 스쿼시 병합하거나 이미 병합된 PR을 이어서 처리합니다. 이어서 `develop`을 fast-forward로 최신화하고 Gradle 빌드를 통과한 뒤 로컬과 원격 feature 브랜치를 정리합니다.
 
 ## PR 작업 흐름
 
@@ -41,32 +44,32 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 1. [Must] feature는 최신 `develop`에서 `start` 명령으로만 생성해야 합니다.
 2. [Must] 서로 의존하지 않는 작업을 병렬로 수행할 때는 `.worktree` 아래의 별도 worktree를 사용해야 합니다.
 3. [Must] 각 Step의 구현과 검증을 완료한 뒤 커밋해야 합니다.
-4. [Must] feature 게시와 draft PR 생성에는 `publish` 명령만 사용해야 합니다.
+4. [Must] feature 게시와 초안 PR 생성에는 `publish` 명령만 사용해야 합니다.
 5. [Must] PR 대상 브랜치는 `develop`만 사용해야 합니다.
 
 ### 2. PR 리뷰 및 반영
 
-1. [Must] draft PR의 diff, CI 결과, 리뷰 의견을 기준으로 PR을 리뷰해야 합니다.
+1. [Must] 초안 PR의 diff, CI 결과, 리뷰 의견을 기준으로 PR을 리뷰해야 합니다.
 2. [Must] 에이전트는 리뷰 요청을 받으면 `gh pr view`, `gh pr diff`, `gh pr checks`로 현재 상태를 조회해야 합니다. 조회 결과는 사용자에게 보고해야 합니다.
 3. [Must] 에이전트가 GitHub에 작성하는 모든 PR 및 Issue 댓글과 답글은 `[Agent]` 접두사로 시작해야 합니다.
 4. [Must] 에이전트는 사용자가 반영을 요청한 리뷰 의견의 범위에서만 코드를 변경해야 합니다.
 5. [Must] 동일한 feature 브랜치에서 리뷰 반영을 구현하고 관련 Gradle 검증을 마친 뒤 커밋해야 합니다.
 6. [Must] 에이전트가 리뷰 반영 커밋을 원격에 게시할 때는 `update` 명령만 사용해야 합니다.
 7. [Must] 변경을 게시한 뒤 승인과 CI 통과 여부를 다시 확인해야 합니다.
-8. [Must] draft PR의 ready 전환과 최종 병합은 사용자만 결정해야 합니다.
+8. [Must] 초안 PR의 리뷰 준비 상태 전환은 사용자만 결정해야 합니다. 사용자가 전환을 명시적으로 요청하면 `ready` 명령만 사용해야 합니다.
 
 ### 3. 원격 병합 및 종료
 
-1. [Must] `develop`에는 사용자 승인과 CI 통과 후 GitHub 원격 PR의 병합 커밋으로만 반영해야 합니다.
-2. [Must] 에이전트는 사용자가 명시적으로 요청한 경우에만 원격 PR을 병합해야 합니다.
-3. [Must] 원격 PR의 `MERGED` 상태를 확인한 뒤에만 `finish` 명령을 실행해야 합니다.
-4. [Must] `finish`는 `develop`의 `git pull --ff-only origin develop`과 `gradlew build`가 모두 성공해야 완료할 수 있습니다.
+1. [Must] `develop`에는 사용자 승인과 CI 통과 후 `finish` 명령으로 GitHub 원격 PR을 스쿼시 병합한 커밋만 반영해야 합니다.
+2. [Must] 에이전트는 사용자가 원격 PR 병합을 명시적으로 요청한 경우에만 `finish` 명령을 실행해야 합니다.
+3. [Must] `finish`는 열린 PR을 병합하거나 이미 병합된 PR의 후속 절차를 재개해야 합니다.
+4. [Must] `finish`는 로컬 `develop`의 fast-forward 동기화와 Gradle 빌드가 모두 성공해야 완료할 수 있습니다.
 5. [Must] 이전 feature의 `finish`가 성공한 뒤에만 다음 feature 브랜치를 생성해야 합니다.
 
 # 커밋과 PR 형식
 
 - [Must] 커밋과 PR의 푸터(Footer)에는 프로젝트에서 명시적으로 요구한 항목만 포함해야 합니다.
-- [Must] PR은 draft 상태로만 생성해야 합니다. ready 전환은 사용자만 수행해야 합니다.
+- [Must] PR은 초안 상태로만 생성해야 합니다. 리뷰 준비 상태 전환은 사용자만 수행해야 합니다.
 - [Must] 에이전트는 사용자가 명시적으로 요청한 경우에만 원격 PR을 병합해야 합니다.
 
 # 빌드 명령
@@ -88,5 +91,5 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 # 전문 스킬
 
-- [Must] 모든 응답과 작성하는 글에 `$writing-guide`를 사용해야 합니다. 기술 문서를 작성, 수정, 검토할 때는 스킬이 정한 문서 작성 기준도 적용해야 합니다.
-- `$create-pr`: 작업을 검증하고 커밋한 뒤 draft PR을 생성할 때 사용할 수 있습니다.
+- `$writing-guide`를 사용해야 합니다. 기술 문서를 작성, 수정, 검토할 때는 스킬이 정한 문서 작성 기준도 적용해야 합니다.
+- `$create-pr`: 작업을 검증하고 커밋한 뒤 초안 PR을 생성할 때 사용할 수 있습니다.
