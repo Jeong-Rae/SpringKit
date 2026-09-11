@@ -5,13 +5,13 @@ import com.epages.restdocs.apispec.ResourceDocumentation.parameterWithName as re
 import org.springframework.restdocs.request.ParameterDescriptor
 import org.springframework.restdocs.request.RequestDocumentation.parameterWithName
 
-/** Spring REST Docs와 ResourceSnippet에 함께 사용할 파라미터 descriptor입니다. */
+/** Spring REST Docs와 ResourceSnippet에 함께 사용할 파라미터 descriptor */
 data class CompiledParameter(
     val descriptor: ParameterDescriptor,
     val resourceDescriptor: ParameterDescriptorWithType,
 )
 
-/** Core path variable과 query parameter를 표준 및 typed descriptor로 변환합니다. */
+/** Core path variable과 query parameter의 표준 및 typed descriptor 변환 */
 class ParameterCompiler(
     private val metadataResolver: ValueMetadataResolver,
 ) {

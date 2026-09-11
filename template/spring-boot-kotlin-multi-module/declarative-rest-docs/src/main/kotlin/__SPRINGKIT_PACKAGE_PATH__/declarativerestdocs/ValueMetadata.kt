@@ -11,14 +11,14 @@ import org.springframework.restdocs.snippet.Attributes
 import org.springframework.restdocs.snippet.Attributes.Attribute
 import tools.jackson.databind.ObjectMapper
 
-/** 하나의 [Sample]에서 해석한 문서 메타데이터입니다. */
+/** 하나의 [Sample]에서 해석한 문서 metadata */
 data class ValueMetadata(
     val fieldType: Any,
     val simpleType: SimpleType?,
     val attributes: List<Attribute>,
 )
 
-/** 애플리케이션의 JSON 설정을 기준으로 [Sample]의 문서 메타데이터를 해석합니다. */
+/** 애플리케이션의 JSON 설정을 기준으로 한 [Sample] 문서 metadata 해석 */
 class ValueMetadataResolver(private val objectMapper: ObjectMapper) {
   fun resolve(sample: Sample): ValueMetadata = resolveType(sample.type)
 

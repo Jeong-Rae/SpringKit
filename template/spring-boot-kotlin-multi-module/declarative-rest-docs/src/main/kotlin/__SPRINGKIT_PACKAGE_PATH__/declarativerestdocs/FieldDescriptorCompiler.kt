@@ -3,7 +3,7 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 import org.springframework.restdocs.payload.FieldDescriptor
 import org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath
 
-/** Core [Field]를 Spring REST Docs [FieldDescriptor]로 변환합니다. */
+/** Core [Field]의 Spring REST Docs [FieldDescriptor] 변환 */
 class FieldDescriptorCompiler(
     private val metadataResolver: ValueMetadataResolver,
 ) {
