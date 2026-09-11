@@ -11,10 +11,20 @@ data class CompiledHeader(
     val resourceDescriptor: HeaderDescriptorWithType,
 )
 
+/** Spring REST Docs와 ResourceSnippet에 함께 사용할 header context 컴파일 결과입니다. */
+data class CompiledHeaders(
+    val headers: List<CompiledHeader>,
+)
+
 /** Core [Header]를 표준 및 typed descriptor로 변환하고 ignored header를 제외합니다. */
 class HeaderCompiler(
     private val metadataResolver: ValueMetadataResolver,
 ) {
+  fun compile(headers: Headers): CompiledHeaders =
+      CompiledHeaders(
+          headers = headers.headers.mapNotNull(::compile),
+      )
+
   fun compile(header: Header): CompiledHeader? {
     if (header.ignored) {
       return null
