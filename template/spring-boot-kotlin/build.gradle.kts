@@ -1,45 +1,62 @@
 plugins {
-    kotlin("jvm") version "2.3.21"
-    kotlin("plugin.spring") version "2.3.21"
-    id("org.springframework.boot") version "4.1.1"
-    id("io.spring.dependency-management") version "1.1.7"
+  kotlin("jvm") version "2.3.21"
+  kotlin("plugin.spring") version "2.3.21"
+  id("org.springframework.boot") version "4.1.1"
+  id("io.spring.dependency-management") version "1.1.7"
+  id("com.diffplug.spotless") version "8.10.2"
 }
 
 group = "__SPRINGKIT_GROUP__"
+
 version = "0.0.1-SNAPSHOT"
 
 base {
-    archivesName = "__SPRINGKIT_ARTIFACT__"
+  archivesName = "__SPRINGKIT_ARTIFACT__"
 }
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
 }
 
 repositories {
-    mavenCentral()
+  mavenCentral()
+}
+
+spotless {
+  isEnforceCheck = false
+
+  kotlin {
+    target("src/*/kotlin/**/*.kt")
+    ktfmt("0.63").metaStyle()
+  }
+
+  kotlinGradle {
+    target("*.gradle.kts")
+    ktfmt("0.63").metaStyle()
+  }
 }
 
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("io.kotest:kotest-assertions-core:6.2.4")
-    testImplementation("io.kotest:kotest-extensions-spring:6.2.4")
-    testImplementation("io.kotest:kotest-runner-junit5:6.2.4")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  implementation("org.springframework.boot:spring-boot-starter")
+  implementation("org.jetbrains.kotlin:kotlin-reflect")
+  testImplementation("org.springframework.boot:spring-boot-starter-test")
+  testImplementation("io.kotest:kotest-assertions-core:6.2.4")
+  testImplementation("io.kotest:kotest-extensions-spring:6.2.4")
+  testImplementation("io.kotest:kotest-runner-junit5:6.2.4")
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 kotlin {
-    compilerOptions {
-        // 참고: https://kotlinlang.org/docs/java-interop.html#jsr-305-support
-        // 참고: https://kotlinlang.org/docs/whatsnew22.html#new-defaulting-rules-for-use-site-annotation-targets
-        freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
-    }
+  compilerOptions {
+    // 참고: https://kotlinlang.org/docs/java-interop.html#jsr-305-support
+    // 참고:
+    // https://kotlinlang.org/docs/whatsnew22.html#new-defaulting-rules-for-use-site-annotation-targets
+    freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+  }
 }
 
 tasks.withType<Test> {
-    useJUnitPlatform()
+  useJUnitPlatform()
 }

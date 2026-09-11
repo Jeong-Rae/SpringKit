@@ -13,34 +13,34 @@ import kotlin.reflect.typeOf
 
 class SampleTest :
     FunSpec({
-        context("sampleOf의 원시 타입 반환값") {
-            withData(
-                nameFn = { it.testName },
-                primitiveSampleCases(),
-            ) { case ->
-                case.sample.value shouldBe case.expectedValue
-                case.sample.type shouldBe case.expectedType
-            }
+      context("sampleOf의 원시 타입 반환값") {
+        withData(
+            nameFn = { it.testName },
+            primitiveSampleCases(),
+        ) { case ->
+          case.sample.value shouldBe case.expectedValue
+          case.sample.type shouldBe case.expectedType
         }
+      }
 
-        context("sampleOf의 enum 타입 반환값") {
-            test("enum 값을 입력하면, 값과 KType을 보존한다") {
-                val sample = sampleOf(SampleUserRole.ADMIN)
+      context("sampleOf의 enum 타입 반환값") {
+        test("enum 값을 입력하면, 값과 KType을 보존한다") {
+          val sample = sampleOf(SampleUserRole.ADMIN)
 
-                sample.value shouldBe SampleUserRole.ADMIN
-                sample.type shouldBe typeOf<SampleUserRole>()
-            }
+          sample.value shouldBe SampleUserRole.ADMIN
+          sample.type shouldBe typeOf<SampleUserRole>()
         }
+      }
 
-        context("sampleOf의 컬렉션 타입 반환값") {
-            withData(
-                nameFn = { it.testName },
-                collectionSampleCases(),
-            ) { case ->
-                case.sample.value shouldBe case.expectedValue
-                case.sample.type shouldBe case.expectedType
-            }
+      context("sampleOf의 컬렉션 타입 반환값") {
+        withData(
+            nameFn = { it.testName },
+            collectionSampleCases(),
+        ) { case ->
+          case.sample.value shouldBe case.expectedValue
+          case.sample.type shouldBe case.expectedType
         }
+      }
     })
 
 private fun primitiveSampleCases(): List<SampleContractCase> =
@@ -52,10 +52,20 @@ private fun primitiveSampleCases(): List<SampleContractCase> =
         sampleCase("Short", sampleOf(1.toShort()), 1.toShort(), typeOf<Short>()),
         sampleCase("Int", sampleOf(1), 1, typeOf<Int>()),
         sampleCase("Long", sampleOf(1L), 1L, typeOf<Long>()),
-        sampleCase("BigInteger", sampleOf<BigInteger>(BigInteger.ONE), BigInteger.ONE, typeOf<BigInteger>()),
+        sampleCase(
+            "BigInteger",
+            sampleOf<BigInteger>(BigInteger.ONE),
+            BigInteger.ONE,
+            typeOf<BigInteger>(),
+        ),
         sampleCase("Float", sampleOf(1.5F), 1.5F, typeOf<Float>()),
         sampleCase("Double", sampleOf(1.5), 1.5, typeOf<Double>()),
-        sampleCase("BigDecimal", sampleOf(BigDecimal("1.5")), BigDecimal("1.5"), typeOf<BigDecimal>()),
+        sampleCase(
+            "BigDecimal",
+            sampleOf(BigDecimal("1.5")),
+            BigDecimal("1.5"),
+            typeOf<BigDecimal>(),
+        ),
         sampleCase(
             typeName = "LocalDate",
             sample = sampleOf<LocalDate>(LocalDate.of(2026, 9, 9)),
@@ -127,6 +137,6 @@ private data class SampleContractCase(
 )
 
 private enum class SampleUserRole {
-    USER,
-    ADMIN,
+  USER,
+  ADMIN,
 }

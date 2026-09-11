@@ -25,9 +25,9 @@ data class RequestLine(
 
 /** HTTP 값 요소가 공통으로 제공하는 문서 정보입니다. */
 sealed interface ValueElement {
-    val key: String
-    val description: String
-    val sample: Sample
+  val key: String
+  val description: String
+  val sample: Sample
 }
 
 /** URI 경로에서 항상 필요한 값을 표현합니다. */
@@ -65,11 +65,7 @@ data class Field(
 ) : ValueElement
 
 /** 요청 또는 응답 헤더를 선언된 순서로 보존합니다. */
-data class Headers(
-    val headers: List<Header> = emptyList(),
-)
+data class Headers(val headers: List<Header> = emptyList())
 
 /** 요청 또는 응답 본문 필드를 선언된 순서로 보존합니다. */
-data class Body(
-    val fields: List<Field> = emptyList(),
-)
+data class Body(val fields: List<Field> = emptyList())
