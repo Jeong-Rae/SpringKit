@@ -73,12 +73,13 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 - [Must] 빌드와 배포에는 프로젝트에서 정한 CLI(Command line interface)와 명령만 사용해야 합니다.
 - [Must] JVM 빌드에는 Gradle만 사용해야 합니다.
-- [Must] build는 clean 없이 증분 방식으로 수행해야 합니다.
+- [Must] `build`는 `clean` 없이 증분 방식으로 실행해야 합니다.
+- [Must] `spotlessApply`, `test`, `build` 순으로 실행해야 합니다. `check`는 별도로 실행하지 않습니다.
 
 ```sh
-./gradlew build # build 시에 사용하며, clean 하지 않고 증분 빌드함.
-./gradlew test --tests "com.example.mypackage.*" # Task 작업 테스트 시 전체 테스트가 아닌 경우 패키지 단위로 Task 범위를 잡고 수행함.
-./gradlew spotlessApply # Check 후 직접 수정하는 것이 아니라, 기계적인 전체 Apply를 수행함.
+./gradlew spotlessApply # 전체 파일에 기계적 포맷을 적용합니다.
+./gradlew test --tests "com.example.mypackage.*" # Task 범위의 패키지 테스트를 실행합니다.
+./gradlew build # clean 없이 증분 빌드를 실행합니다.
 ```
 
 # 주요 디렉터리
