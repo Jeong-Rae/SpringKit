@@ -10,7 +10,7 @@ Kotest의 `FunSpec`을 사용합니다. 확인할 기능이나 상황은 `contex
 class SampleTest :
     FunSpec({
         context("sampleOf의 반환값") {
-            test("Long 값을 입력하면, 값과 KType을 보존한다") {
+            test("Long 값을 입력하면, 값과 KType을 보존합니다") {
                 val sample = sampleOf(1L)
 
                 sample.value shouldBe 1L
@@ -30,8 +30,8 @@ class SampleTest :
 
 입력이나 동작으로 결과가 발생하면 `<입력 또는 동작>하면, <예상 결과>`로 작성합니다.
 
-- Do: `Long 값을 입력하면, 값과 KType을 보존한다`
-- Do: `여러 요소를 입력하면, 선언 순서를 유지한다`
+- Do: `Long 값을 입력하면, 값과 KType을 보존합니다`
+- Do: `여러 요소를 입력하면, 선언 순서를 유지합니다`
 - Not: `Long 타입 테스트`
 - Not: `선언 순서 검증`
 
@@ -39,8 +39,8 @@ class SampleTest :
 
 특정 상태에서 결과가 달라지면 `<상태>이면, <예상 결과>`로 작성합니다.
 
-- Do: `optional이 true이면, 선택 상태를 유지한다`
-- Do: `요청 본문이 비어 있으면, 문서 조각을 생성하지 않는다`
+- Do: `optional이 true이면, 선택 상태를 유지합니다`
+- Do: `요청 본문이 비어 있으면, 문서 조각을 생성하지 않습니다`
 - Not: `optional true 테스트`
 - Not: `빈 요청 본문`
 
@@ -63,7 +63,7 @@ class SampleTest :
 context("정수가 양수인지 확인할 때") {
     withData(
         nameFn = { (value, expected) ->
-            val result = if (expected) "양수이다" else "양수가 아니다"
+            val result = if (expected) "양수입니다" else "양수가 아닙니다"
             "입력값이 $value이면, $result"
         },
         -1 to false,

@@ -12,7 +12,7 @@ class FieldDescriptorCompilerTest :
       val compiler = FieldDescriptorCompiler(ValueMetadataResolver(ObjectMapper()))
 
       context("Field descriptor 컴파일") {
-        test("일반 Field를 컴파일하면, 기본 descriptor 상태가 적용된다") {
+        test("일반 Field를 컴파일하면, Field의 정보와 기본 상태가 FieldDescriptor에 적용됩니다") {
           val descriptor = compiler.compile(Field("name", "사용자 이름", sampleOf("Alice")))
 
           descriptor.path shouldBe "name"
@@ -23,7 +23,7 @@ class FieldDescriptorCompilerTest :
           descriptor.isIgnored shouldBe false
         }
 
-        test("nested optional Field를 컴파일하면, path와 optional 상태가 보존된다") {
+        test("중첩 경로가 있는 optional Field를 컴파일하면, 경로와 optional 상태가 보존됩니다") {
           val descriptor =
               compiler.compile(
                   Field(
@@ -39,7 +39,7 @@ class FieldDescriptorCompilerTest :
           descriptor.isIgnored shouldBe false
         }
 
-        test("ignored Field를 컴파일하면, ignored 상태가 적용된다") {
+        test("ignored가 true인 Field를 컴파일하면, ignored 상태가 적용됩니다") {
           val descriptor =
               compiler.compile(
                   Field(
@@ -54,7 +54,7 @@ class FieldDescriptorCompilerTest :
           descriptor.isIgnored shouldBe true
         }
 
-        test("enum Field를 컴파일하면, enum metadata가 적용된다") {
+        test("enum Field를 컴파일하면, enum 메타데이터가 적용됩니다") {
           val descriptor =
               compiler.compile(Field("role", "사용자 역할", sampleOf(FieldCompilerSerializedRole.ADMIN)))
 
@@ -62,7 +62,7 @@ class FieldDescriptorCompilerTest :
           descriptor.attributes shouldBe mapOf("enumValues" to listOf("user", "admin"))
         }
 
-        test("enum collection Field를 컴파일하면, array와 item metadata가 적용된다") {
+        test("enum 컬렉션 Field를 컴파일하면, 배열 타입과 원소 메타데이터가 적용됩니다") {
           val descriptor =
               compiler.compile(
                   Field(
@@ -87,7 +87,7 @@ class FieldDescriptorCompilerTest :
       }
 
       context("Field metadata 해석 횟수") {
-        test("Field 하나를 컴파일하면, metadata가 한 번만 해석된다") {
+        test("Field 하나를 컴파일하면, 메타데이터가 한 번만 해석됩니다") {
           CountingRole.serializationCount = 0
           val countingCompiler = FieldDescriptorCompiler(ValueMetadataResolver(ObjectMapper()))
 

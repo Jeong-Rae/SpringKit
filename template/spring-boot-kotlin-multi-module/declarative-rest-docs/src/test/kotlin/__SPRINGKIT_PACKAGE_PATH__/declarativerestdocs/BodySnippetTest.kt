@@ -34,7 +34,7 @@ class BodySnippetTest :
           )
 
       context("request와 response body snippet") {
-        test("컴파일한 fields와 실제 request 및 response body가 일치하면, 검증에 성공한다") {
+        test("컴파일한 각 FieldDescriptor 목록이 실제 요청 본문과 응답 본문에 일치하면, 검증에 성공합니다") {
           val requestBody =
               Body(
                   listOf(
@@ -80,7 +80,7 @@ class BodySnippetTest :
           }
         }
 
-        test("request body에서 required Field가 누락되면, 검증에 실패한다") {
+        test("요청 본문에서 필수 Field가 누락되면, 검증에 실패합니다") {
           val compiled = compiler.compile(Body(listOf(Field("name", "사용자 이름", sampleOf("Alice")))))
           val operation = operation(requestContent = "{}", responseContent = "{}")
 
@@ -89,7 +89,7 @@ class BodySnippetTest :
           }
         }
 
-        test("response body의 primitive 타입이 다르면, 검증에 실패한다") {
+        test("응답 본문의 Field 타입이 컴파일한 타입과 다르면, 검증에 실패합니다") {
           val compiled =
               compiler.compile(Body(listOf(Field("id", "생성된 사용자 식별자", sampleOf("user-123")))))
           val operation = operation(requestContent = "{}", responseContent = """{"id":123}""")
