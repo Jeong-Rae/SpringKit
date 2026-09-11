@@ -65,11 +65,7 @@ data class Field(
 ) : ValueElement
 
 /** 요청 또는 응답 헤더를 선언된 순서로 보존합니다. */
-data class Headers(
-    val headers: List<Header> = emptyList(),
-)
+data class Headers(val headers: List<Header> = emptyList())
 
 /** 요청 또는 응답 본문 필드를 선언된 순서로 보존합니다. */
-data class Body(
-    val fields: List<Field> = emptyList(),
-)
+data class Body(val fields: List<Field> = emptyList())

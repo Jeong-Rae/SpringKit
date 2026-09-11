@@ -32,7 +32,8 @@ dependencies {
 kotlin {
     compilerOptions {
         // 참고: https://kotlinlang.org/docs/java-interop.html#jsr-305-support
-        // 참고: https://kotlinlang.org/docs/whatsnew22.html#new-defaulting-rules-for-use-site-annotation-targets
+        // 참고:
+        // https://kotlinlang.org/docs/whatsnew22.html#new-defaulting-rules-for-use-site-annotation-targets
         freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
     }
 }
@@ -52,7 +53,7 @@ configure<com.epages.restdocs.apispec.gradle.OpenApi3Extension> {
 tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
     dependsOn(tasks.named("test"))
     notCompatibleWithConfigurationCache(
-        "restdocs-api-spec 0.20.1의 OpenApi3Task는 Jackson 상태를 직렬화할 수 없습니다.",
+        "restdocs-api-spec 0.20.1의 OpenApi3Task는 Jackson 상태를 직렬화할 수 없습니다."
     )
 }
 

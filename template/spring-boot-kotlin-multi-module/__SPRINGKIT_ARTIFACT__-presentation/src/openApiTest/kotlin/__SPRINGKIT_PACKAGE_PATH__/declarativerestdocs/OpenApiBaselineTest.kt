@@ -4,9 +4,9 @@ import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
-import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
 import java.nio.file.Path
+import org.yaml.snakeyaml.Yaml
 
 class OpenApiBaselineTest :
     FunSpec({
@@ -16,10 +16,7 @@ class OpenApiBaselineTest :
                     Files.newBufferedReader(Path.of("build/api-spec/openapi3.yaml")).use {
                         Yaml().load<Map<String, Any>>(it)
                     }
-                val operation =
-                    root.map("paths")
-                        .map("/tenants/{tenantId}/users")
-                        .map("post")
+                val operation = root.map("paths").map("/tenants/{tenantId}/users").map("post")
 
                 root["openapi"] shouldBe "3.0.1"
                 operation["operationId"] shouldBe "create-user"
@@ -32,18 +29,18 @@ class OpenApiBaselineTest :
                 assertParameter(operation, "X-Request-Id", "header", "string")
 
                 val requestSchema =
-                    operation.map("requestBody")
+                    operation
+                        .map("requestBody")
                         .map("content")
                         .map("application/json")
                         .map("schema")
                 assertSchemaProperties(root, requestSchema, setOf("name", "role"))
 
                 val createdResponse = operation.map("responses").map("201")
-                createdResponse.map("headers").map("Location").map("schema")["type"] shouldBe "string"
+                createdResponse.map("headers").map("Location").map("schema")["type"] shouldBe
+                    "string"
                 val responseSchema =
-                    createdResponse.map("content")
-                        .map("application/json")
-                        .map("schema")
+                    createdResponse.map("content").map("application/json").map("schema")
                 assertSchemaProperties(root, responseSchema, setOf("id", "name", "role"))
             }
         }
@@ -56,8 +53,7 @@ private fun assertParameter(
     type: String,
 ) {
     val parameter =
-        operation.listOfMaps("parameters")
-            .single { it["name"] == name && it["in"] == location }
+        operation.listOfMaps("parameters").single { it["name"] == name && it["in"] == location }
 
     parameter["required"] shouldBe true
     parameter.map("schema")["type"] shouldBe type

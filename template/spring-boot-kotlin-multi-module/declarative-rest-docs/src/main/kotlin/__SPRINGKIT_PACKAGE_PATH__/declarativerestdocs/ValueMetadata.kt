@@ -1,15 +1,15 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
 import com.epages.restdocs.apispec.SimpleType
-import org.springframework.restdocs.payload.JsonFieldType
-import org.springframework.restdocs.snippet.Attributes
-import org.springframework.restdocs.snippet.Attributes.Attribute
-import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.LocalDate
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
+import org.springframework.restdocs.payload.JsonFieldType
+import org.springframework.restdocs.snippet.Attributes
+import org.springframework.restdocs.snippet.Attributes.Attribute
+import tools.jackson.databind.ObjectMapper
 
 /** 하나의 [Sample]에서 해석한 문서 메타데이터입니다. */
 data class ValueMetadata(
@@ -19,9 +19,7 @@ data class ValueMetadata(
 )
 
 /** 애플리케이션의 JSON 설정을 기준으로 [Sample]의 문서 메타데이터를 해석합니다. */
-class ValueMetadataResolver(
-    private val objectMapper: ObjectMapper,
-) {
+class ValueMetadataResolver(private val objectMapper: ObjectMapper) {
     fun resolve(sample: Sample): ValueMetadata = resolveType(sample.type)
 
     private fun resolveType(type: KType): ValueMetadata {
@@ -34,8 +32,8 @@ class ValueMetadataResolver(
             return enumMetadata(classifier)
         }
 
-        val (fieldType, simpleType) = primitiveTypeMapping[classifier]
-            ?: (JsonFieldType.OBJECT to null)
+        val (fieldType, simpleType) =
+            primitiveTypeMapping[classifier] ?: (JsonFieldType.OBJECT to null)
 
         return ValueMetadata(
             fieldType = fieldType,
@@ -50,8 +48,7 @@ class ValueMetadataResolver(
     ): ValueMetadata {
         val itemType = type.arguments.singleOrNull()?.type
         val itemClassifier =
-            itemType?.classifier as? KClass<*>
-                ?: containerType.java.componentType?.kotlin
+            itemType?.classifier as? KClass<*> ?: containerType.java.componentType?.kotlin
         val itemMetadata = itemType?.let(::resolveType) ?: itemClassifier?.let(::scalarMetadata)
         val attributes =
             if (itemMetadata == null) {
@@ -73,8 +70,8 @@ class ValueMetadataResolver(
             return enumMetadata(classifier)
         }
 
-        val (fieldType, simpleType) = primitiveTypeMapping[classifier]
-            ?: (JsonFieldType.OBJECT to null)
+        val (fieldType, simpleType) =
+            primitiveTypeMapping[classifier] ?: (JsonFieldType.OBJECT to null)
         return ValueMetadata(fieldType, simpleType, emptyList())
     }
 

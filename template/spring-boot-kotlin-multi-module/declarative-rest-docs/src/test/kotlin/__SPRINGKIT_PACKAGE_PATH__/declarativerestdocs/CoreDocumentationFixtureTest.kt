@@ -2,8 +2,8 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import org.springframework.http.HttpMethod
 import kotlin.reflect.typeOf
+import org.springframework.http.HttpMethod
 
 @OptIn(ExperimentalStdlibApi::class)
 class CoreDocumentationFixtureTest :
@@ -24,7 +24,8 @@ class CoreDocumentationFixtureTest :
                 documentation.requestLine.method shouldBe HttpMethod.POST
                 documentation.requestLine.uri shouldBe "/tenants/{tenantId}/users"
                 documentation.requestLine.pathVariables.map { it.key } shouldBe listOf("tenantId")
-                documentation.requestLine.queryParameters.map { it.key } shouldBe listOf("dryRun", "debug")
+                documentation.requestLine.queryParameters.map { it.key } shouldBe
+                    listOf("dryRun", "debug")
                 documentation.requestLine.queryParameters.first().optional shouldBe true
                 documentation.requestLine.queryParameters.last().ignored shouldBe true
             }
@@ -44,7 +45,8 @@ class CoreDocumentationFixtureTest :
                 documentation.requestBody.fields.map { it.key } shouldBe
                     listOf("name", "profile.nickname", "roles", "role", "legacyCode")
                 documentation.requestBody.fields[1].optional shouldBe true
-                documentation.requestBody.fields[2].sample.type shouldBe typeOf<List<FixtureUserRole>>()
+                documentation.requestBody.fields[2].sample.type shouldBe
+                    typeOf<List<FixtureUserRole>>()
                 documentation.requestBody.fields[3].sample.type shouldBe typeOf<FixtureUserRole>()
                 documentation.requestBody.fields[4].ignored shouldBe true
             }
@@ -53,7 +55,8 @@ class CoreDocumentationFixtureTest :
                 val documentation = createUserDocumentation()
 
                 documentation.responseHeaders.headers.map { it.key } shouldBe listOf("Location")
-                documentation.responseBody.fields.map { it.key } shouldBe listOf("id", "name", "role")
+                documentation.responseBody.fields.map { it.key } shouldBe
+                    listOf("id", "name", "role")
             }
         }
     })
@@ -74,7 +77,7 @@ private fun createUserDocumentation(): Documentation =
                             key = "tenantId",
                             description = "사용자를 생성할 테넌트 식별자",
                             sample = sampleOf("tenant-1"),
-                        ),
+                        )
                     ),
                 queryParameters =
                     listOf(
@@ -106,7 +109,7 @@ private fun createUserDocumentation(): Documentation =
                         sample = sampleOf("trace-123"),
                         ignored = true,
                     ),
-                ),
+                )
             ),
         requestBody =
             Body(
@@ -130,7 +133,7 @@ private fun createUserDocumentation(): Documentation =
                         sample = sampleOf("legacy"),
                         ignored = true,
                     ),
-                ),
+                )
             ),
         responseHeaders =
             Headers(
@@ -139,8 +142,8 @@ private fun createUserDocumentation(): Documentation =
                         key = "Location",
                         description = "생성된 사용자 URI",
                         sample = sampleOf("/tenants/tenant-1/users/user-123"),
-                    ),
-                ),
+                    )
+                )
             ),
         responseBody =
             Body(
@@ -148,7 +151,7 @@ private fun createUserDocumentation(): Documentation =
                     Field("id", "생성된 사용자 식별자", sampleOf("user-123")),
                     Field("name", "사용자 이름", sampleOf("Alice")),
                     Field("role", "사용자 역할", sampleOf(FixtureUserRole.ADMIN)),
-                ),
+                )
             ),
     )
 

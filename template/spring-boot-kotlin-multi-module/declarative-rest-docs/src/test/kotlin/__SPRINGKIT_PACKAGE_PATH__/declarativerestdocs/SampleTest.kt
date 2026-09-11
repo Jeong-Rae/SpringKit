@@ -52,10 +52,20 @@ private fun primitiveSampleCases(): List<SampleContractCase> =
         sampleCase("Short", sampleOf(1.toShort()), 1.toShort(), typeOf<Short>()),
         sampleCase("Int", sampleOf(1), 1, typeOf<Int>()),
         sampleCase("Long", sampleOf(1L), 1L, typeOf<Long>()),
-        sampleCase("BigInteger", sampleOf<BigInteger>(BigInteger.ONE), BigInteger.ONE, typeOf<BigInteger>()),
+        sampleCase(
+            "BigInteger",
+            sampleOf<BigInteger>(BigInteger.ONE),
+            BigInteger.ONE,
+            typeOf<BigInteger>(),
+        ),
         sampleCase("Float", sampleOf(1.5F), 1.5F, typeOf<Float>()),
         sampleCase("Double", sampleOf(1.5), 1.5, typeOf<Double>()),
-        sampleCase("BigDecimal", sampleOf(BigDecimal("1.5")), BigDecimal("1.5"), typeOf<BigDecimal>()),
+        sampleCase(
+            "BigDecimal",
+            sampleOf(BigDecimal("1.5")),
+            BigDecimal("1.5"),
+            typeOf<BigDecimal>(),
+        ),
         sampleCase(
             typeName = "LocalDate",
             sample = sampleOf<LocalDate>(LocalDate.of(2026, 9, 9)),

@@ -2,17 +2,17 @@
 
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
-import com.fasterxml.jackson.annotation.JsonValue
 import com.epages.restdocs.apispec.SimpleType
+import com.fasterxml.jackson.annotation.JsonValue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.datatest.withData
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
-import org.springframework.restdocs.payload.JsonFieldType
-import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.LocalDate
+import org.springframework.restdocs.payload.JsonFieldType
+import tools.jackson.databind.ObjectMapper
 
 class ValueMetadataResolverTest :
     FunSpec({
@@ -90,15 +90,40 @@ private fun primitiveMetadataCases(): List<PrimitiveMetadataCase> =
     listOf(
         primitiveMetadataCase("String", sampleOf("value"), JsonFieldType.STRING, SimpleType.STRING),
         primitiveMetadataCase("Boolean", sampleOf(true), JsonFieldType.BOOLEAN, SimpleType.BOOLEAN),
-        primitiveMetadataCase("Byte", sampleOf(1.toByte()), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        primitiveMetadataCase("Short", sampleOf(1.toShort()), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase(
+            "Byte",
+            sampleOf(1.toByte()),
+            JsonFieldType.NUMBER,
+            SimpleType.INTEGER,
+        ),
+        primitiveMetadataCase(
+            "Short",
+            sampleOf(1.toShort()),
+            JsonFieldType.NUMBER,
+            SimpleType.INTEGER,
+        ),
         primitiveMetadataCase("Int", sampleOf(1), JsonFieldType.NUMBER, SimpleType.INTEGER),
         primitiveMetadataCase("Long", sampleOf(1L), JsonFieldType.NUMBER, SimpleType.INTEGER),
-        primitiveMetadataCase("BigInteger", sampleOf(BigInteger.ONE), JsonFieldType.NUMBER, SimpleType.INTEGER),
+        primitiveMetadataCase(
+            "BigInteger",
+            sampleOf(BigInteger.ONE),
+            JsonFieldType.NUMBER,
+            SimpleType.INTEGER,
+        ),
         primitiveMetadataCase("Float", sampleOf(1.5F), JsonFieldType.NUMBER, SimpleType.NUMBER),
         primitiveMetadataCase("Double", sampleOf(1.5), JsonFieldType.NUMBER, SimpleType.NUMBER),
-        primitiveMetadataCase("BigDecimal", sampleOf(BigDecimal("1.5")), JsonFieldType.NUMBER, SimpleType.NUMBER),
-        primitiveMetadataCase("LocalDate", sampleOf(LocalDate.of(2026, 9, 9)), "date", SimpleType.STRING),
+        primitiveMetadataCase(
+            "BigDecimal",
+            sampleOf(BigDecimal("1.5")),
+            JsonFieldType.NUMBER,
+            SimpleType.NUMBER,
+        ),
+        primitiveMetadataCase(
+            "LocalDate",
+            sampleOf(LocalDate.of(2026, 9, 9)),
+            "date",
+            SimpleType.STRING,
+        ),
     )
 
 private fun primitiveMetadataCase(
@@ -149,8 +174,9 @@ private fun arrayMetadataCases(): List<ArrayMetadataCase> =
         ),
     )
 
-private fun ValueMetadata.attributeValues(): List<Pair<String, Any>> =
-    attributes.map { attribute -> attribute.key to attribute.value }
+private fun ValueMetadata.attributeValues(): List<Pair<String, Any>> = attributes.map { attribute ->
+    attribute.key to attribute.value
+}
 
 private data class ArrayMetadataCase(
     val name: String,
@@ -164,9 +190,7 @@ private enum class BasicRole {
     ADMIN,
 }
 
-private enum class SerializedRole(
-    @get:JsonValue val serializedValue: String,
-) {
+private enum class SerializedRole(@get:JsonValue val serializedValue: String) {
     USER("user"),
     ADMIN("admin"),
 }
