@@ -53,3 +53,6 @@ out/
 
 ### VS Code 설정 ###
 .vscode/
+
+### zvec-grep 설정 ###
+.zvec-grep/
