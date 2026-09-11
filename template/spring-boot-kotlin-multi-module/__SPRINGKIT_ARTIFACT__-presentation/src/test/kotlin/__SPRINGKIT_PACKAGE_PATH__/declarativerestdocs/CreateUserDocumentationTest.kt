@@ -1,5 +1,21 @@
-package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
+package __SPRINGKIT_PACKAGE_NAME__.presentation.documentation
 
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Body
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Documentation
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Field
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.FieldDescriptorCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Header
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.HeaderCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Headers
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ParameterCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.PathVariable as DocumentedPathVariable
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.QueryParameter
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestLine
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestLineCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.SpringRestDocsCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ValueMetadataResolver
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.sampleOf
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -188,7 +204,7 @@ class CreateUserDocumentationTest :
                       base.requestLine.copy(
                           pathVariables =
                               base.requestLine.pathVariables +
-                                  PathVariable("userId", "사용자 식별자", sampleOf("user-123"))
+                                  DocumentedPathVariable("userId", "사용자 식별자", sampleOf("user-123"))
                       ),
               )
 
@@ -290,7 +306,13 @@ private fun createUserDocumentation(): Documentation =
                 method = HttpMethod.POST,
                 uri = "/tenants/{tenantId}/users",
                 pathVariables =
-                    listOf(PathVariable("tenantId", "사용자를 생성할 테넌트 식별자", sampleOf("tenant-1"))),
+                    listOf(
+                        DocumentedPathVariable(
+                            "tenantId",
+                            "사용자를 생성할 테넌트 식별자",
+                            sampleOf("tenant-1"),
+                        )
+                    ),
                 queryParameters =
                     listOf(QueryParameter("dryRun", "사용자 생성 검증만 수행할지 여부", sampleOf(false))),
             ),
