@@ -15,7 +15,7 @@ class BodyCompilerTest :
           )
 
       context("Body 컴파일") {
-        test("여러 Field를 컴파일하면, descriptor의 선언 순서와 상태를 보존한다") {
+        test("여러 Field를 컴파일하면, descriptor의 선언 순서와 상태를 보존합니다") {
           val body =
               Body(
                   listOf(
@@ -42,7 +42,7 @@ class BodyCompilerTest :
           compiled.fields.map { it.isIgnored } shouldBe listOf(false, false, true)
         }
 
-        test("빈 Body를 컴파일하면, 빈 descriptor 목록을 제공한다") {
+        test("빈 Body를 컴파일하면, 빈 descriptor 목록을 제공합니다") {
           compiler.compile(Body()).fields.shouldBeEmpty()
         }
       }
