@@ -18,57 +18,60 @@ class SpringRestDocsCompilerTest :
               bodyCompiler = BodyCompiler(FieldDescriptorCompiler(metadataResolver)),
           )
 
-      test("Documentation을 컴파일하면, identifier와 전체 snippet을 명세 순서로 생성합니다") {
-        val compiled = compiler.compile(fullDocumentation())
+      context("SpringRestDocsCompiler 컴파일") {
+        test("Documentation을 컴파일하면, identifier와 전체 snippet을 명세 순서로 생성합니다") {
+          val compiled = compiler.compile(fullDocumentation())
 
-        compiled.identifier shouldBe "create-user"
-        compiled.snippets.map { it.javaClass.simpleName } shouldContainExactly
-            listOf(
-                "RequestLineValidationSnippet",
-                "PathParametersSnippet",
-                "QueryParametersSnippet",
-                "RequestHeadersSnippet",
-                "RequestFieldsSnippet",
-                "ResponseHeadersSnippet",
-                "ResponseFieldsSnippet",
-                "ResourceSnippet",
-            )
-      }
+          compiled.identifier shouldBe "create-user"
+          compiled.snippets.map { it.javaClass.simpleName } shouldContainExactly
+              listOf(
+                  "RequestLineValidationSnippet",
+                  "PathParametersSnippet",
+                  "QueryParametersSnippet",
+                  "RequestHeadersSnippet",
+                  "RequestFieldsSnippet",
+                  "ResponseHeadersSnippet",
+                  "ResponseFieldsSnippet",
+                  "ResourceSnippet",
+              )
+        }
 
-      test("선택 context가 비어 있으면, validation과 resource snippet만 생성합니다") {
-        val compiled =
-            compiler.compile(
-                Documentation(
-                    name = "list-users",
-                    summary = "사용자 목록",
-                    description = "사용자 목록을 조회한다.",
-                    requestLine = RequestLine(HttpMethod.GET, "/users"),
-                )
-            )
+        test("선택 context가 비어 있으면, validation과 resource snippet만 생성합니다") {
+          val compiled =
+              compiler.compile(
+                  Documentation(
+                      name = "list-users",
+                      summary = "사용자 목록",
+                      description = "사용자 목록을 조회한다.",
+                      requestLine = RequestLine(HttpMethod.GET, "/users"),
+                  )
+              )
 
-        compiled.identifier shouldBe "list-users"
-        compiled.snippets.map { it.javaClass.simpleName } shouldContainExactly
-            listOf("RequestLineValidationSnippet", "ResourceSnippet")
-      }
+          compiled.identifier shouldBe "list-users"
+          compiled.snippets.map { it.javaClass.simpleName } shouldContainExactly
+              listOf("RequestLineValidationSnippet", "ResourceSnippet")
+        }
 
-      test("같은 Documentation을 반복 컴파일하면, 실행 순서와 무관하게 같은 구조와 resource 의미를 생성합니다") {
-        val documentation = fullDocumentation()
-        val first = compiler.compile(documentation)
+        test("같은 Documentation을 반복 컴파일하면, 실행 순서와 무관하게 같은 구조와 resource 의미를 생성합니다") {
+          val documentation = fullDocumentation()
+          val first = compiler.compile(documentation)
 
-        compiler.compile(
-            Documentation(
-                name = "health",
-                summary = "상태 확인",
-                description = "서비스 상태를 확인한다.",
-                requestLine = RequestLine(HttpMethod.GET, "/health"),
-            )
-        )
+          compiler.compile(
+              Documentation(
+                  name = "health",
+                  summary = "상태 확인",
+                  description = "서비스 상태를 확인한다.",
+                  requestLine = RequestLine(HttpMethod.GET, "/health"),
+              )
+          )
 
-        val second = compiler.compile(documentation)
+          val second = compiler.compile(documentation)
 
-        first.identifier shouldBe second.identifier
-        first.snippets.map { it.javaClass.name } shouldBe second.snippets.map { it.javaClass.name }
-        first.resourceSemantics() shouldBe second.resourceSemantics()
+          first.identifier shouldBe second.identifier
+          first.snippets.map { it.javaClass.name } shouldBe
+              second.snippets.map { it.javaClass.name }
+          first.resourceSemantics() shouldBe second.resourceSemantics()
+        }
       }
     })
 

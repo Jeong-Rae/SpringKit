@@ -16,65 +16,67 @@ class ResourceSnippetComposerTest :
       val bodyCompiler = BodyCompiler(FieldDescriptorCompiler(metadataResolver))
       val composer = ResourceSnippetComposer()
 
-      test("컴파일 결과를 조합하면, resource metadata와 typed descriptor를 보존합니다") {
-        val documentation = resourceDocumentation()
-        val requestLine = requestLineCompiler.compile(documentation.requestLine)
-        val requestHeaders = headerCompiler.compile(documentation.requestHeaders)
-        val requestBody = bodyCompiler.compile(documentation.requestBody)
-        val responseHeaders = headerCompiler.compile(documentation.responseHeaders)
-        val responseBody = bodyCompiler.compile(documentation.responseBody)
+      context("ResourceSnippet 조합") {
+        test("컴파일 결과를 조합하면, resource metadata와 typed descriptor를 보존합니다") {
+          val documentation = resourceDocumentation()
+          val requestLine = requestLineCompiler.compile(documentation.requestLine)
+          val requestHeaders = headerCompiler.compile(documentation.requestHeaders)
+          val requestBody = bodyCompiler.compile(documentation.requestBody)
+          val responseHeaders = headerCompiler.compile(documentation.responseHeaders)
+          val responseBody = bodyCompiler.compile(documentation.responseBody)
 
-        val parameters =
-            composer.composeParameters(
-                documentation,
-                requestLine,
-                requestHeaders,
-                requestBody,
-                responseHeaders,
-                responseBody,
-            )
+          val parameters =
+              composer.composeParameters(
+                  documentation,
+                  requestLine,
+                  requestHeaders,
+                  requestBody,
+                  responseHeaders,
+                  responseBody,
+              )
 
-        parameters.summary shouldBe "사용자 생성"
-        parameters.description shouldBe "새로운 사용자를 생성한다."
-        parameters.tags shouldBe setOf("users", "write")
-        parameters.pathParameters.map { it.name to it.type } shouldContainExactly
-            listOf("tenantId" to SimpleType.STRING)
-        parameters.queryParameters.map { it.name to it.type } shouldContainExactly
-            listOf("dryRun" to SimpleType.BOOLEAN)
-        parameters.requestHeaders.map { it.name to it.type } shouldContainExactly
-            listOf("X-Request-Id" to SimpleType.STRING)
-        parameters.responseHeaders.map { it.name to it.type } shouldContainExactly
-            listOf("Location" to SimpleType.STRING)
-      }
+          parameters.summary shouldBe "사용자 생성"
+          parameters.description shouldBe "새로운 사용자를 생성한다."
+          parameters.tags shouldBe setOf("users", "write")
+          parameters.pathParameters.map { it.name to it.type } shouldContainExactly
+              listOf("tenantId" to SimpleType.STRING)
+          parameters.queryParameters.map { it.name to it.type } shouldContainExactly
+              listOf("dryRun" to SimpleType.BOOLEAN)
+          parameters.requestHeaders.map { it.name to it.type } shouldContainExactly
+              listOf("X-Request-Id" to SimpleType.STRING)
+          parameters.responseHeaders.map { it.name to it.type } shouldContainExactly
+              listOf("Location" to SimpleType.STRING)
+        }
 
-      test("resource parameter는 standard snippet과 동일한 body descriptor를 사용합니다") {
-        val documentation = resourceDocumentation()
-        val requestLine = requestLineCompiler.compile(documentation.requestLine)
-        val requestHeaders = headerCompiler.compile(documentation.requestHeaders)
-        val requestBody = bodyCompiler.compile(documentation.requestBody)
-        val responseHeaders = headerCompiler.compile(documentation.responseHeaders)
-        val responseBody = bodyCompiler.compile(documentation.responseBody)
+        test("resource parameter를 조합하면, standard snippet과 동일한 body descriptor를 사용합니다") {
+          val documentation = resourceDocumentation()
+          val requestLine = requestLineCompiler.compile(documentation.requestLine)
+          val requestHeaders = headerCompiler.compile(documentation.requestHeaders)
+          val requestBody = bodyCompiler.compile(documentation.requestBody)
+          val responseHeaders = headerCompiler.compile(documentation.responseHeaders)
+          val responseBody = bodyCompiler.compile(documentation.responseBody)
 
-        val parameters =
-            composer.composeParameters(
-                documentation,
-                requestLine,
-                requestHeaders,
-                requestBody,
-                responseHeaders,
-                responseBody,
-            )
+          val parameters =
+              composer.composeParameters(
+                  documentation,
+                  requestLine,
+                  requestHeaders,
+                  requestBody,
+                  responseHeaders,
+                  responseBody,
+              )
 
-        (parameters.requestFields.single() === requestBody.fields.single()) shouldBe true
-        (parameters.responseFields.single() === responseBody.fields.single()) shouldBe true
-        composer.compose(
-            documentation,
-            requestLine,
-            requestHeaders,
-            requestBody,
-            responseHeaders,
-            responseBody,
-        )::class shouldBe ResourceSnippet::class
+          (parameters.requestFields.single() === requestBody.fields.single()) shouldBe true
+          (parameters.responseFields.single() === responseBody.fields.single()) shouldBe true
+          composer.compose(
+              documentation,
+              requestLine,
+              requestHeaders,
+              requestBody,
+              responseHeaders,
+              responseBody,
+          )::class shouldBe ResourceSnippet::class
+        }
       }
     })
 
