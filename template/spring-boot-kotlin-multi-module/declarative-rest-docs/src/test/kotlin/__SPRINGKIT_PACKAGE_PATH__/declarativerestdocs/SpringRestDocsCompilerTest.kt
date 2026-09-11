@@ -1,5 +1,7 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
+import com.epages.restdocs.apispec.ResourceSnippet
+import com.epages.restdocs.apispec.ResourceSnippetParameters
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -48,7 +50,50 @@ class SpringRestDocsCompilerTest :
         compiled.snippets.map { it.javaClass.simpleName } shouldContainExactly
             listOf("RequestLineValidationSnippet", "ResourceSnippet")
       }
+
+      test("같은 Documentation을 반복 컴파일하면, 실행 순서와 무관하게 같은 구조와 resource 의미를 생성합니다") {
+        val documentation = fullDocumentation()
+        val first = compiler.compile(documentation)
+
+        compiler.compile(
+            Documentation(
+                name = "health",
+                summary = "상태 확인",
+                description = "서비스 상태를 확인한다.",
+                requestLine = RequestLine(HttpMethod.GET, "/health"),
+            )
+        )
+
+        val second = compiler.compile(documentation)
+
+        first.identifier shouldBe second.identifier
+        first.snippets.map { it.javaClass.name } shouldBe second.snippets.map { it.javaClass.name }
+        first.resourceSemantics() shouldBe second.resourceSemantics()
+      }
     })
+
+private fun CompiledDocumentation.resourceSemantics(): List<Any?> {
+  val resourceSnippet = snippets.filterIsInstance<ResourceSnippet>().single()
+  val parametersField = ResourceSnippet::class.java.getDeclaredField("resourceSnippetParameters")
+  parametersField.isAccessible = true
+  val parameters = parametersField.get(resourceSnippet) as ResourceSnippetParameters
+
+  return listOf(
+      parameters.summary,
+      parameters.description,
+      parameters.tags,
+      parameters.pathParameters.map { listOf(it.name, it.description, it.type, it.optional) },
+      parameters.queryParameters.map { listOf(it.name, it.description, it.type, it.optional) },
+      parameters.requestHeaders.map { listOf(it.name, it.description, it.type, it.optional) },
+      parameters.requestFields.map {
+        listOf(it.path, it.description, it.type, it.isOptional, it.isIgnored, it.attributes)
+      },
+      parameters.responseHeaders.map { listOf(it.name, it.description, it.type, it.optional) },
+      parameters.responseFields.map {
+        listOf(it.path, it.description, it.type, it.isOptional, it.isIgnored, it.attributes)
+      },
+  )
+}
 
 private fun fullDocumentation(): Documentation =
     Documentation(
