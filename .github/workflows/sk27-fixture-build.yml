@@ -20,14 +20,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.1.0'
       - name: Generate fixture documentation
         working-directory: template/spring-boot-kotlin-multi-module
         run: |
-          chmod +x gradlew
-          ./gradlew spotlessApply
-          ./gradlew :declarative-rest-docs:springTest :declarative-rest-docs:springFixtureOpenApiJson :declarative-rest-docs:springFixtureOpenApiYaml
-          ./gradlew build
+          gradle spotlessApply
+          gradle :declarative-rest-docs:springTest :declarative-rest-docs:springFixtureOpenApiJson :declarative-rest-docs:springFixtureOpenApiYaml
+          gradle build
       - name: Commit generated JSON and YAML
         run: |
           if git diff --quiet -- template/spring-boot-kotlin-multi-module/declarative-rest-docs/fixtures/spring-restdocs/generated; then
