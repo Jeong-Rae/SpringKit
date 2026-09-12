@@ -42,16 +42,69 @@ tasks.withType<Test> {
   useJUnitPlatform()
 }
 
+val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/compiler-contract")
+val compilerOpenApiSnippets = compilerContractSnippets.map { it.dir("compiler") }
+val compilerRepeatSnippets = compilerContractSnippets.map { it.dir("compiler-repeat") }
+val manualBaselineSnippets = compilerContractSnippets.map { it.dir("manual") }
+val compilerOpenApiDocument = layout.buildDirectory.file("api-spec/openapi3.yaml")
+val compilerRepeatOpenApiDocument = layout.buildDirectory.file("api-spec-repeat/openapi3.yaml")
+val compilerOpenApiTestSourceSet = sourceSets.create("compilerOpenApiTest")
+
+configurations.named(compilerOpenApiTestSourceSet.implementationConfigurationName) {
+  extendsFrom(configurations.testImplementation.get())
+}
+
+configurations.named(compilerOpenApiTestSourceSet.runtimeOnlyConfigurationName) {
+  extendsFrom(configurations.testRuntimeOnly.get())
+}
+
+val cleanCompilerOpenApiSnippets =
+    tasks.register<Delete>("cleanCompilerOpenApiSnippets") {
+      delete(compilerContractSnippets)
+    }
+
+val compilerOpenApiTest =
+    tasks.register<Test>("compilerOpenApiTest") {
+      description = "Compiler 결과로 OpenAPI 집계 입력을 생성합니다."
+      group = "verification"
+      testClassesDirs = compilerOpenApiTestSourceSet.output.classesDirs
+      classpath = compilerOpenApiTestSourceSet.runtimeClasspath
+      outputs.dir(compilerContractSnippets)
+      systemProperty(
+          "springkit.compiler-openapi.snippets",
+          compilerOpenApiSnippets.get().asFile.absolutePath,
+      )
+      systemProperty(
+          "springkit.compiler-repeat.snippets",
+          compilerRepeatSnippets.get().asFile.absolutePath,
+      )
+      systemProperty(
+          "springkit.manual-baseline.snippets",
+          manualBaselineSnippets.get().asFile.absolutePath,
+      )
+      dependsOn(cleanCompilerOpenApiSnippets)
+      useJUnitPlatform()
+    }
+
 configure<com.epages.restdocs.apispec.gradle.OpenApi3Extension> {
   setServer("http://localhost")
   title = "__SPRINGKIT_PROJECT_NAME__ API"
   description = "__SPRINGKIT_PROJECT_NAME__ REST API"
   version = "1.0.0"
   format = "yaml"
+  snippetsDirectory = compilerOpenApiSnippets.get().asFile.path
 }
 
+val openApi3Extension = extensions.getByType<com.epages.restdocs.apispec.gradle.OpenApi3Extension>()
+val compilerRepeatOpenApi3 =
+    tasks.register<com.epages.restdocs.apispec.gradle.OpenApi3Task>("compilerRepeatOpenApi3") {
+      applyExtension(openApi3Extension)
+      snippetsDirectory = compilerRepeatSnippets.get().asFile.path
+      outputDirectory = layout.buildDirectory.dir("api-spec-repeat").get().asFile.path
+    }
+
 tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
-  dependsOn(tasks.named("test"))
+  dependsOn(compilerOpenApiTest)
   notCompatibleWithConfigurationCache(
       "restdocs-api-spec 0.20.1의 OpenApi3Task는 Jackson 상태를 직렬화할 수 없습니다."
   )
@@ -74,6 +127,7 @@ val openApiTest =
       testClassesDirs = openApiTestSourceSet.output.classesDirs
       classpath = openApiTestSourceSet.runtimeClasspath
       dependsOn(tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>())
+      inputs.files(compilerOpenApiDocument, compilerRepeatOpenApiDocument)
       useJUnitPlatform()
     }
 
