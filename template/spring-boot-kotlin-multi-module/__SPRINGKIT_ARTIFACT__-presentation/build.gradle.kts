@@ -21,9 +21,8 @@ dependencies {
   runtimeOnly(project(":__SPRINGKIT_ARTIFACT__-infrastructure"))
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
-  implementation("com.scalar.maven:scalar-core:0.6.66")
+  implementation("com.scalar.maven:scalar-webmvc:0.6.66")
   testImplementation("org.springframework.boot:spring-boot-starter-test")
-  testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
   testImplementation(project(":declarative-rest-docs"))
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -43,6 +42,7 @@ tasks.withType<Test> {
 
 val restDocsSnippets = layout.buildDirectory.dir("generated-snippets")
 val openApiDocument = layout.buildDirectory.file("api-spec/openapi3.json")
+val generatedOpenApiResources = layout.buildDirectory.dir("generated-resources/openapi")
 val cleanRestDocsSnippets =
     tasks.register<Delete>("cleanRestDocsSnippets") {
       delete(restDocsSnippets)
@@ -73,14 +73,21 @@ tasks.named("build") {
   dependsOn(tasks.named("openapi3"))
 }
 
+val stageOpenApiDocument =
+    tasks.register<Sync>("stageOpenApiDocument") {
+      dependsOn(tasks.named("openapi3"))
+      from(openApiDocument)
+      into(generatedOpenApiResources.map { it.dir("static") })
+    }
+
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
-  dependsOn(tasks.named("openapi3"))
-  from(openApiDocument) {
-    into("BOOT-INF/classes/openapi")
+  dependsOn(stageOpenApiDocument)
+  from(generatedOpenApiResources) {
+    into("BOOT-INF/classes")
   }
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
-  dependsOn(tasks.named("openapi3"))
-  systemProperty("springkit.openapi.document", openApiDocument.get().asFile.toURI().toString())
+  dependsOn(stageOpenApiDocument)
+  classpath(generatedOpenApiResources)
 }
