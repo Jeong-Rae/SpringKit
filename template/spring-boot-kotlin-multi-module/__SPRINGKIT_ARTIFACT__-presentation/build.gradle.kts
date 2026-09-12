@@ -21,7 +21,9 @@ dependencies {
   runtimeOnly(project(":__SPRINGKIT_ARTIFACT__-infrastructure"))
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
+  implementation("com.scalar.maven:scalar-core:0.6.66")
   testImplementation("org.springframework.boot:spring-boot-starter-test")
+  testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
   testImplementation(project(":declarative-rest-docs"))
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -76,4 +78,9 @@ tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
   from(openApiDocument) {
     into("BOOT-INF/classes/openapi")
   }
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+  dependsOn(tasks.named("openapi3"))
+  systemProperty("springkit.openapi.document", openApiDocument.get().asFile.toURI().toString())
 }

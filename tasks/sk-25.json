@@ -56,7 +56,7 @@
     {
       "id": "sk-25-2",
       "title": "Scalar API 문서 연결",
-      "status": "pending",
+      "status": "done",
       "objective": "모든 프로필에서 패키징한 OpenAPI를 Scalar API 문서로 볼 수 있다.",
       "work": [
         "Scalar 자산을 presentation에 추가한다.",
