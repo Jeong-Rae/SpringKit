@@ -66,6 +66,7 @@ class SpringHttpFixtureDocumentationTest {
         request =
             get("/api/members/{memberId}", 1)
                 .cookie(Cookie("SESSION", "session-token"))
+                .header(HttpHeaders.COOKIE, "SESSION=session-token")
                 .accept(MediaType.APPLICATION_JSON),
         expectedStatus = status().isOk,
     )
