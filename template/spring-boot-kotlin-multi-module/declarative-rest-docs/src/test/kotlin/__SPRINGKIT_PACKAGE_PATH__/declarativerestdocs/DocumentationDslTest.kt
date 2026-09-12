@@ -11,7 +11,7 @@ class DocumentationDslTest :
       context("Documentation DSL의 Core 모델 변환") {
         test("모든 context를 선언하면, 값과 타입 및 선언 순서를 보존합니다") {
           val actual =
-              documentation("create-user") {
+              documentationDefinition("create-user") {
                 summary = "사용자 생성"
                 description = "새로운 사용자를 생성합니다."
                 tags("users", "admin")
@@ -70,7 +70,7 @@ class DocumentationDslTest :
 
         test("선택 context를 생략하면, 빈 header와 body를 생성합니다") {
           val actual =
-              documentation("health") {
+              documentationDefinition("health") {
                 summary = "상태 확인"
                 description = "서비스 상태를 확인합니다."
                 requestLine(method = "get", path = "/health")
@@ -86,7 +86,7 @@ class DocumentationDslTest :
       context("Documentation DSL의 필수 선언") {
         test("summary를 생략하면, 문서 생성을 거부합니다") {
           shouldThrow<IllegalStateException> {
-            documentation("health") {
+            documentationDefinition("health") {
               description = "서비스 상태를 확인합니다."
               requestLine(method = "get", path = "/health")
             }
@@ -95,7 +95,7 @@ class DocumentationDslTest :
 
         test("description을 생략하면, 문서 생성을 거부합니다") {
           shouldThrow<IllegalStateException> {
-            documentation("health") {
+            documentationDefinition("health") {
               summary = "상태 확인"
               requestLine(method = "get", path = "/health")
             }
@@ -104,7 +104,7 @@ class DocumentationDslTest :
 
         test("requestLine을 생략하면, 문서 생성을 거부합니다") {
           shouldThrow<IllegalStateException> {
-            documentation("health") {
+            documentationDefinition("health") {
               summary = "상태 확인"
               description = "서비스 상태를 확인합니다."
             }
@@ -113,7 +113,7 @@ class DocumentationDslTest :
 
         test("requestLine을 두 번 선언하면, 문서 생성을 거부합니다") {
           shouldThrow<IllegalStateException> {
-            documentation("health") {
+            documentationDefinition("health") {
               summary = "상태 확인"
               description = "서비스 상태를 확인합니다."
               requestLine(method = "get", path = "/health")

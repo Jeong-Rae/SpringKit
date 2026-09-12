@@ -6,8 +6,11 @@ import org.springframework.http.HttpMethod
 /** Documentation builder의 수신 객체 범위를 제한합니다. */
 @DslMarker annotation class DocumentationDslMarker
 
-/** 선언형 API 문서를 Core [Documentation]으로 생성합니다. */
-fun documentation(name: String, block: DocumentationDsl.() -> Unit): Documentation {
+/** 선언형 API 문서를 내부 Core [Documentation]으로 생성합니다. */
+internal fun documentationDefinition(
+    name: String,
+    block: DocumentationDsl.() -> Unit,
+): Documentation {
   require(name.isNotBlank()) { "문서 이름은 비어 있을 수 없습니다." }
   return DocumentationDsl(name).apply(block).build()
 }
