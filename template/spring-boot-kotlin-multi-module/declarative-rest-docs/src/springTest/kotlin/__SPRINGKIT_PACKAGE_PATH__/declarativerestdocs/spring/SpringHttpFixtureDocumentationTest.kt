@@ -1,14 +1,14 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
-import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyDsl
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Documentation
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.SpringRestDocsCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ValueMetadataResolver
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.FieldDescriptorCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.HeaderCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ParameterCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestLineCompiler
-import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.SpringRestDocsCompiler
-import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ValueMetadataResolver
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.documentationDefinition
 import jakarta.servlet.http.Cookie
 import java.nio.file.Path
@@ -29,8 +29,8 @@ import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.opt
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.patch
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.put
+import org.springframework.test.web.servlet.RequestBuilder
 import org.springframework.test.web.servlet.ResultMatcher
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup
@@ -223,7 +223,7 @@ class SpringHttpFixtureDocumentationTest {
 
   private fun documentOperation(
       documentation: Documentation,
-      request: MockHttpServletRequestBuilder,
+      request: RequestBuilder,
       expectedStatus: ResultMatcher,
   ) {
     val restDocumentation = ManualRestDocumentation(snippetsRoot().toString())
@@ -303,9 +303,7 @@ private fun createMemberDocumentation(): Documentation =
       requestHeader {
         header("Idempotency-Key", "멱등성 식별자", sample = "create-member-001")
       }
-      requestBody {
-        memberWriteFields("Jane", "jane@example.com", true, 30, listOf("java", "spring"))
-      }
+      requestBody { memberWriteFields("Jane", "jane@example.com", true, 30, listOf("java", "spring")) }
       responseHeader {
         header(HttpHeaders.LOCATION, "생성된 회원 URI", sample = "/api/members/1")
       }
