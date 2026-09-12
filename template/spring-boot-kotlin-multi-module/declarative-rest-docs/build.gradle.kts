@@ -182,11 +182,14 @@ val springFixtureOpenApiJson =
       outputFileNamePrefix = "openapi3"
       format = "json"
       dependsOn(springTest)
+      doFirst {
+        springFixtureGeneratedOpenApiJson.asFile.mkdirs()
+      }
     }
 
 val springFixtureOpenApiYaml =
     tasks.register<com.epages.restdocs.apispec.gradle.OpenApi3Task>("springFixtureOpenApiYaml") {
-      description = "Spring fixture resource.json을 OpenAPI YAML로 집계합니다."
+      description = "Spring fixture resource.json을 OpenAPI YAML으로 집계합니다."
       group = "verification"
       applyExtension(openApi3Extension)
       snippetsDirectory = springFixtureSnippets.get().asFile.path
@@ -194,6 +197,9 @@ val springFixtureOpenApiYaml =
       outputFileNamePrefix = "openapi3"
       format = "yaml"
       dependsOn(springTest)
+      doFirst {
+        springFixtureGeneratedOpenApiYaml.asFile.mkdirs()
+      }
     }
 
 tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
