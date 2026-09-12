@@ -42,7 +42,9 @@ tasks.withType<Test> {
   useJUnitPlatform()
 }
 
-val compilerOpenApiSnippets = layout.buildDirectory.dir("generated-snippets/compiler-openapi")
+val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/compiler-contract")
+val compilerOpenApiSnippets = compilerContractSnippets.map { it.dir("compiler") }
+val manualBaselineSnippets = compilerContractSnippets.map { it.dir("manual") }
 val compilerOpenApiTestSourceSet = sourceSets.create("compilerOpenApiTest")
 
 configurations.named(compilerOpenApiTestSourceSet.implementationConfigurationName) {
@@ -55,7 +57,7 @@ configurations.named(compilerOpenApiTestSourceSet.runtimeOnlyConfigurationName) 
 
 val cleanCompilerOpenApiSnippets =
     tasks.register<Delete>("cleanCompilerOpenApiSnippets") {
-      delete(compilerOpenApiSnippets)
+      delete(compilerContractSnippets)
     }
 
 val compilerOpenApiTest =
@@ -64,10 +66,14 @@ val compilerOpenApiTest =
       group = "verification"
       testClassesDirs = compilerOpenApiTestSourceSet.output.classesDirs
       classpath = compilerOpenApiTestSourceSet.runtimeClasspath
-      outputs.dir(compilerOpenApiSnippets)
+      outputs.dir(compilerContractSnippets)
       systemProperty(
           "springkit.compiler-openapi.snippets",
           compilerOpenApiSnippets.get().asFile.absolutePath,
+      )
+      systemProperty(
+          "springkit.manual-baseline.snippets",
+          manualBaselineSnippets.get().asFile.absolutePath,
       )
       dependsOn(cleanCompilerOpenApiSnippets)
       useJUnitPlatform()
