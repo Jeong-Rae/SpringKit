@@ -27,8 +27,11 @@ jobs:
         working-directory: template/spring-boot-kotlin-multi-module
         run: |
           gradle spotlessApply
-          gradle :declarative-rest-docs:springTest :declarative-rest-docs:springFixtureOpenApiJson :declarative-rest-docs:springFixtureOpenApiYaml
-          gradle build
+          if ! gradle --no-configuration-cache :declarative-rest-docs:springTest :declarative-rest-docs:springFixtureOpenApiJson :declarative-rest-docs:springFixtureOpenApiYaml; then
+            cat declarative-rest-docs/build/test-results/springTest/*.xml || true
+            exit 1
+          fi
+          gradle --no-configuration-cache build
       - name: Commit generated JSON and YAML
         run: |
           if git diff --quiet -- template/spring-boot-kotlin-multi-module/declarative-rest-docs/fixtures/spring-restdocs/generated; then
