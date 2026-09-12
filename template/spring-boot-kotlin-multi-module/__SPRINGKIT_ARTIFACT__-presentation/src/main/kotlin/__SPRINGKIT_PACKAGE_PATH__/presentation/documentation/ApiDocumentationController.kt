@@ -3,6 +3,8 @@ package __SPRINGKIT_PACKAGE_NAME__.presentation.documentation
 import com.scalar.maven.core.ScalarHtmlRenderer
 import java.util.Base64
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.core.env.Environment
+import org.springframework.core.env.Profiles
 import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -13,11 +15,14 @@ import org.springframework.web.bind.annotation.RestController
 class ApiDocumentationController(
     @Value("\${springkit.openapi.document:classpath:/openapi/openapi3.json}")
     private val openApiDocument: Resource,
+    private val environment: Environment,
 ) {
   @GetMapping("/api/docs", produces = [MediaType.TEXT_HTML_VALUE])
   fun apiDocumentation(): String {
     val encodedDocument =
         openApiDocument.inputStream.use { Base64.getEncoder().encodeToString(it.readAllBytes()) }
+    val documentDownloadType =
+        if (environment.acceptsProfiles(Profiles.of("local"))) "json" else "none"
 
     return """
       <!doctype html>
@@ -33,7 +38,7 @@ class ApiDocumentationController(
           <script>
             const bytes = Uint8Array.from(atob("$encodedDocument"), character => character.charCodeAt(0))
             const content = JSON.parse(new TextDecoder().decode(bytes))
-            Scalar.createApiReference('#app', { content, documentDownloadType: 'none' })
+            Scalar.createApiReference('#app', { content, documentDownloadType: '$documentDownloadType' })
           </script>
         </body>
       </html>

@@ -2,7 +2,7 @@
   "id": "sk-25",
   "title": "Scalar API 문서와 local JSON 내보내기",
   "type": "feature",
-  "status": "pending",
+  "status": "done",
   "goal": "presentation 애플리케이션이 모든 프로필에서 Scalar API 문서를 제공하고 local 프로필에서만 OpenAPI JSON 파일을 내보낼 수 있다.",
   "depends_on": [
     "sk-20"
@@ -73,7 +73,7 @@
     {
       "id": "sk-25-3",
       "title": "local OpenAPI JSON 내보내기",
-      "status": "pending",
+      "status": "done",
       "objective": "local 프로필에서만 OpenAPI JSON 파일과 Scalar JSON 다운로드 기능을 사용할 수 있다.",
       "work": [
         "local 프로필 전용 JSON 응답 경로를 추가한다.",
