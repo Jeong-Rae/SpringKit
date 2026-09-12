@@ -23,7 +23,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.1.0'
-      - name: Align Cookie fixture with HTTP header semantics
+      - name: Align fixture semantics
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -49,6 +49,22 @@ jobs:
               '  ): MemberResponse {\n'
               '    check(cookie == "SESSION=session-token")',
           )
+          if 'import org.springframework.web.bind.annotation.RequestMapping\n' not in content:
+            content = content.replace(
+                'import org.springframework.web.bind.annotation.RequestHeader\n',
+                'import org.springframework.web.bind.annotation.RequestHeader\n'
+                'import org.springframework.web.bind.annotation.RequestMapping\n'
+                'import org.springframework.web.bind.annotation.RequestMethod\n',
+            )
+          if 'fun headMember(' not in content:
+            head_handler = '''  @RequestMapping(method = [RequestMethod.HEAD], path = ["/api/members/{memberId}"])
+          fun headMember(@PathVariable memberId: Long): ResponseEntity<Void> {
+            check(memberId > 0)
+            return ResponseEntity.ok().build()
+          }
+
+          '''
+            content = content.replace('  @PostMapping("/api/members")\n', head_handler + '  @PostMapping("/api/members")\n')
           controller.write_text(content)
           PY
       - name: Generate fixture documentation
