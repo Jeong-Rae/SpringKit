@@ -52,36 +52,38 @@ class CompilerOpenApiIntegrationTest :
       val manualSnippetsRoot = snippetsRoot("springkit.manual-baseline.snippets")
       val objectMapper = ObjectMapper()
 
-      test("수동 기준선과 Compiler가 같은 resource 의미를 생성합니다") {
-        val documentation = createUserDocumentation()
+      context("create-user Compiler resource 의미 보존") {
+        test("수동 기준선과 Compiler가 같은 resource 의미를 생성합니다") {
+          val documentation = createUserDocumentation()
 
-        documentOperation(
-            snippetsRoot = compilerSnippetsRoot,
-            testName = "compiler",
-            snippets = compiler(objectMapper).compile(documentation).snippets,
-        )
-        documentOperation(
-            snippetsRoot = compilerRepeatRoot,
-            testName = "compiler-repeat",
-            snippets = compiler(objectMapper).compile(documentation).snippets,
-        )
-        documentOperation(
-            snippetsRoot = manualSnippetsRoot,
-            testName = "manual",
-            snippets = manualSnippets(),
-        )
+          documentOperation(
+              snippetsRoot = compilerSnippetsRoot,
+              testName = "compiler",
+              snippets = compiler(objectMapper).compile(documentation).snippets,
+          )
+          documentOperation(
+              snippetsRoot = compilerRepeatRoot,
+              testName = "compiler-repeat",
+              snippets = compiler(objectMapper).compile(documentation).snippets,
+          )
+          documentOperation(
+              snippetsRoot = manualSnippetsRoot,
+              testName = "manual",
+              snippets = manualSnippets(),
+          )
 
-        compilerSnippetsRoot.resourceFiles() shouldContainExactly
-            listOf(compilerSnippetsRoot.resolve("create-user/resource.json"))
+          compilerSnippetsRoot.resourceFiles() shouldContainExactly
+              listOf(compilerSnippetsRoot.resolve("create-user/resource.json"))
 
-        val compilerResource = objectMapper.readTree(compilerSnippetsRoot.resourceFile().toFile())
-        val compilerRepeatResource =
-            objectMapper.readTree(compilerRepeatRoot.resourceFile().toFile())
-        val manualResource = objectMapper.readTree(manualSnippetsRoot.resourceFile().toFile())
+          val compilerResource = objectMapper.readTree(compilerSnippetsRoot.resourceFile().toFile())
+          val compilerRepeatResource =
+              objectMapper.readTree(compilerRepeatRoot.resourceFile().toFile())
+          val manualResource = objectMapper.readTree(manualSnippetsRoot.resourceFile().toFile())
 
-        compilerResource shouldBe compilerRepeatResource
-        compilerResource shouldBe manualResource
-        assertResourceSemantics(compilerResource)
+          compilerResource shouldBe compilerRepeatResource
+          compilerResource shouldBe manualResource
+          assertResourceSemantics(compilerResource)
+        }
       }
     })
 
