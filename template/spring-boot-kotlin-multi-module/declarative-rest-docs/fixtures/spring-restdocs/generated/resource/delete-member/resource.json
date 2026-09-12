@@ -1,0 +1,37 @@
+{
+  "operationId" : "delete-member",
+  "summary" : "회원 삭제",
+  "description" : "회원을 삭제하고 204 응답을 반환합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members/{memberId}",
+    "method" : "DELETE",
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ ],
+    "pathParameters" : [ {
+      "name" : "memberId",
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "type" : "INTEGER",
+      "optional" : false,
+      "default" : null
+    } ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ ],
+    "example" : null,
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 204,
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ ],
+    "responseFields" : [ ],
+    "example" : null
+  },
+  "tags" : [ "members" ]
+}

@@ -1,0 +1,45 @@
+{
+  "operationId" : "options-member",
+  "summary" : "회원 OPTIONS 조회",
+  "description" : "회원 리소스가 허용하는 HTTP 메서드를 조회합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members/{memberId}",
+    "method" : "OPTIONS",
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ ],
+    "pathParameters" : [ {
+      "name" : "memberId",
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "type" : "INTEGER",
+      "optional" : false,
+      "default" : null
+    } ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ ],
+    "example" : null,
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 200,
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ {
+      "name" : "Allow",
+      "attributes" : { },
+      "description" : "허용 HTTP 메서드",
+      "type" : "STRING",
+      "optional" : false,
+      "example" : "GET,HEAD,PATCH,DELETE,PUT,OPTIONS",
+      "default" : null
+    } ],
+    "responseFields" : [ ],
+    "example" : null
+  },
+  "tags" : [ "members" ]
+}

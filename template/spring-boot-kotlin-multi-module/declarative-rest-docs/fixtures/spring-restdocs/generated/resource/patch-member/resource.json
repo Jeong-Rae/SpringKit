@@ -1,0 +1,58 @@
+{
+  "operationId" : "patch-member",
+  "summary" : "회원 부분 수정",
+  "description" : "JSON Merge Patch로 회원 일부 정보를 수정합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members/{memberId}",
+    "method" : "PATCH",
+    "contentType" : "application/merge-patch+json",
+    "schema" : null,
+    "headers" : [ ],
+    "pathParameters" : [ {
+      "name" : "memberId",
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "type" : "INTEGER",
+      "optional" : false,
+      "default" : null
+    } ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ {
+      "attributes" : { },
+      "description" : "변경할 회원 이름",
+      "ignored" : false,
+      "path" : "name",
+      "type" : "STRING",
+      "optional" : false
+    } ],
+    "example" : "{\n  \"name\": \"Jane Smith\",\n  \"nickname\": null\n}",
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 200,
+    "contentType" : "application/json",
+    "schema" : null,
+    "headers" : [ ],
+    "responseFields" : [ {
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "path" : "id",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이름",
+      "ignored" : false,
+      "path" : "name",
+      "type" : "STRING",
+      "optional" : false
+    } ],
+    "example" : "{\"id\":1,\"name\":\"Jane Smith\",\"nickname\":null}"
+  },
+  "tags" : [ "members" ]
+}

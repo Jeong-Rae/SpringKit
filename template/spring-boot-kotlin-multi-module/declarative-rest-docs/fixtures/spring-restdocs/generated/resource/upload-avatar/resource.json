@@ -1,0 +1,59 @@
+{
+  "operationId" : "upload-avatar",
+  "summary" : "회원 아바타 업로드",
+  "description" : "multipart 요청으로 JSON metadata와 이미지 파일을 업로드합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members/{memberId}/avatar",
+    "method" : "POST",
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ {
+      "name" : "Content-Type",
+      "attributes" : { },
+      "description" : "multipart 요청 Content-Type",
+      "type" : "STRING",
+      "optional" : false,
+      "example" : "multipart/form-data",
+      "default" : null
+    } ],
+    "pathParameters" : [ {
+      "name" : "memberId",
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "type" : "INTEGER",
+      "optional" : false,
+      "default" : null
+    } ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ ],
+    "example" : null,
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 200,
+    "contentType" : "application/json",
+    "schema" : null,
+    "headers" : [ ],
+    "responseFields" : [ {
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "path" : "memberId",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "업로드 파일 이름",
+      "ignored" : false,
+      "path" : "filename",
+      "type" : "STRING",
+      "optional" : false
+    } ],
+    "example" : "{\"memberId\":1,\"filename\":\"avatar.png\"}"
+  },
+  "tags" : [ "members" ]
+}

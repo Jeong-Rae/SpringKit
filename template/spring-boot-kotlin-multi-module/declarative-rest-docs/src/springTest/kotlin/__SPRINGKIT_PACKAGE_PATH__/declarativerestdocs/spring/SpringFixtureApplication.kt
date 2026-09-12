@@ -2,5 +2,4 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 
-@SpringBootApplication(proxyBeanMethods = false)
-class SpringFixtureApplication
+@SpringBootApplication(proxyBeanMethods = false) class SpringFixtureApplication

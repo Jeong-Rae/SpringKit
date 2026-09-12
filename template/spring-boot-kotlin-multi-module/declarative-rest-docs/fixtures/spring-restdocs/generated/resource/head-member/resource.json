@@ -1,0 +1,37 @@
+{
+  "operationId" : "head-member",
+  "summary" : "회원 HEAD 조회",
+  "description" : "회원 리소스의 응답 헤더만 조회합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members/{memberId}",
+    "method" : "HEAD",
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ ],
+    "pathParameters" : [ {
+      "name" : "memberId",
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "type" : "INTEGER",
+      "optional" : false,
+      "default" : null
+    } ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ ],
+    "example" : null,
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 200,
+    "contentType" : null,
+    "schema" : null,
+    "headers" : [ ],
+    "responseFields" : [ ],
+    "example" : null
+  },
+  "tags" : [ "members" ]
+}

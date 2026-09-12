@@ -1,16 +1,15 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyDsl
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.Documentation
-import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.SpringRestDocsCompiler
-import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ValueMetadataResolver
-import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.FieldDescriptorCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.HeaderCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ParameterCompiler
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestLineCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.SpringRestDocsCompiler
+import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.ValueMetadataResolver
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.documentationDefinition
-import jakarta.servlet.http.Cookie
 import java.nio.file.Path
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -65,7 +64,6 @@ class SpringHttpFixtureDocumentationTest {
         documentation = getMemberDocumentation(),
         request =
             get("/api/members/{memberId}", 1)
-                .cookie(Cookie("SESSION", "session-token"))
                 .header(HttpHeaders.COOKIE, "SESSION=session-token")
                 .accept(MediaType.APPLICATION_JSON),
         expectedStatus = status().isOk,
@@ -92,7 +90,8 @@ class SpringHttpFixtureDocumentationTest {
                         "tags": ["java", "spring"]
                       }
                     }
-                    """.trimIndent()
+                    """
+                        .trimIndent()
                 ),
         expectedStatus = status().isCreated,
     )
@@ -118,7 +117,8 @@ class SpringHttpFixtureDocumentationTest {
                         "tags": []
                       }
                     }
-                    """.trimIndent()
+                    """
+                        .trimIndent()
                 ),
         expectedStatus = status().isOk,
     )
@@ -138,7 +138,8 @@ class SpringHttpFixtureDocumentationTest {
                       "name": "Jane Smith",
                       "nickname": null
                     }
-                    """.trimIndent()
+                    """
+                        .trimIndent()
                 ),
         expectedStatus = status().isOk,
     )
@@ -201,7 +202,9 @@ class SpringHttpFixtureDocumentationTest {
               },
               "public": true
             }
-            """.trimIndent().toByteArray(),
+            """
+                .trimIndent()
+                .toByteArray(),
         )
     val file =
         MockMultipartFile(
@@ -304,7 +307,9 @@ private fun createMemberDocumentation(): Documentation =
       requestHeader {
         header("Idempotency-Key", "멱등성 식별자", sample = "create-member-001")
       }
-      requestBody { memberWriteFields("Jane", "jane@example.com", true, 30, listOf("java", "spring")) }
+      requestBody {
+        memberWriteFields("Jane", "jane@example.com", true, 30, listOf("java", "spring"))
+      }
       responseHeader {
         header(HttpHeaders.LOCATION, "생성된 회원 URI", sample = "/api/members/1")
       }

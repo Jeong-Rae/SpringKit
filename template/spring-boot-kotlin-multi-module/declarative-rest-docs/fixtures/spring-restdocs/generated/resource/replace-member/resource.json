@@ -1,0 +1,134 @@
+{
+  "operationId" : "replace-member",
+  "summary" : "회원 전체 수정",
+  "description" : "If-Match 조건으로 회원 전체 정보를 수정합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members/{memberId}",
+    "method" : "PUT",
+    "contentType" : "application/json",
+    "schema" : null,
+    "headers" : [ {
+      "name" : "If-Match",
+      "attributes" : { },
+      "description" : "수정 전 ETag",
+      "type" : "STRING",
+      "optional" : false,
+      "example" : "\"member-1-v1\"",
+      "default" : null
+    } ],
+    "pathParameters" : [ {
+      "name" : "memberId",
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "type" : "INTEGER",
+      "optional" : false,
+      "default" : null
+    } ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ {
+      "attributes" : { },
+      "description" : "회원 이름",
+      "ignored" : false,
+      "path" : "name",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이메일",
+      "ignored" : false,
+      "path" : "email",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "활성 여부",
+      "ignored" : false,
+      "path" : "active",
+      "type" : "BOOLEAN",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 나이",
+      "ignored" : false,
+      "path" : "profile.age",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : {
+        "itemsType" : "STRING"
+      },
+      "description" : "회원 태그",
+      "ignored" : false,
+      "path" : "profile.tags",
+      "type" : "ARRAY",
+      "optional" : false
+    } ],
+    "example" : "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane.doe@example.com\",\n  \"active\": false,\n  \"profile\": {\n    \"age\": 31,\n    \"tags\": []\n  }\n}",
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 200,
+    "contentType" : "application/json",
+    "schema" : null,
+    "headers" : [ {
+      "name" : "ETag",
+      "attributes" : { },
+      "description" : "수정 후 ETag",
+      "type" : "STRING",
+      "optional" : false,
+      "example" : "\"member-1-v2\"",
+      "default" : null
+    } ],
+    "responseFields" : [ {
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "path" : "id",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이름",
+      "ignored" : false,
+      "path" : "name",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이메일",
+      "ignored" : false,
+      "path" : "email",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "활성 여부",
+      "ignored" : false,
+      "path" : "active",
+      "type" : "BOOLEAN",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 나이",
+      "ignored" : false,
+      "path" : "profile.age",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : {
+        "itemsType" : "STRING"
+      },
+      "description" : "회원 태그",
+      "ignored" : false,
+      "path" : "profile.tags",
+      "type" : "ARRAY",
+      "optional" : false
+    } ],
+    "example" : "{\"id\":1,\"name\":\"Jane Doe\",\"email\":\"jane.doe@example.com\",\"active\":false,\"profile\":{\"age\":31,\"tags\":[]}}"
+  },
+  "tags" : [ "members" ]
+}

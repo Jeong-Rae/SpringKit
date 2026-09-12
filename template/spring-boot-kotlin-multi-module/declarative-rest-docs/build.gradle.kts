@@ -60,6 +60,7 @@ kotlin.target.compilations
     .associateWith(kotlin.target.compilations.getByName("main"))
 
 springTestSourceSet.compileClasspath += sourceSets.main.get().output
+
 springTestSourceSet.runtimeClasspath += sourceSets.main.get().output
 
 configurations.named(springTestSourceSet.implementationConfigurationName) {
@@ -71,8 +72,14 @@ configurations.named(springTestSourceSet.runtimeOnlyConfigurationName) {
 }
 
 dependencies {
-  add(springTestSourceSet.implementationConfigurationName, "org.springframework.boot:spring-boot-starter-web")
-  add(springTestSourceSet.implementationConfigurationName, "org.springframework.boot:spring-boot-starter-test")
+  add(
+      springTestSourceSet.implementationConfigurationName,
+      "org.springframework.boot:spring-boot-starter-web",
+  )
+  add(
+      springTestSourceSet.implementationConfigurationName,
+      "org.springframework.boot:spring-boot-starter-test",
+  )
 }
 
 val cleanSpringFixtureSnippets =
@@ -87,7 +94,10 @@ val springTest =
       testClassesDirs = springTestSourceSet.output.classesDirs
       classpath = springTestSourceSet.runtimeClasspath
       outputs.dir(springFixtureSnippets)
-      systemProperty("springkit.spring-fixture.snippets", springFixtureSnippets.get().asFile.absolutePath)
+      systemProperty(
+          "springkit.spring-fixture.snippets",
+          springFixtureSnippets.get().asFile.absolutePath,
+      )
       dependsOn(cleanSpringFixtureSnippets)
       useJUnitPlatform()
     }
@@ -231,5 +241,10 @@ val openApiTest =
     }
 
 tasks.named("build") {
-  dependsOn(stageSpringFixtureResources, springFixtureOpenApiJson, springFixtureOpenApiYaml, openApiTest)
+  dependsOn(
+      stageSpringFixtureResources,
+      springFixtureOpenApiJson,
+      springFixtureOpenApiYaml,
+      openApiTest,
+  )
 }

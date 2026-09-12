@@ -1,0 +1,126 @@
+{
+  "operationId" : "create-member",
+  "summary" : "회원 생성",
+  "description" : "JSON 요청으로 회원을 생성합니다.",
+  "privateResource" : false,
+  "deprecated" : false,
+  "request" : {
+    "path" : "/api/members",
+    "method" : "POST",
+    "contentType" : "application/json",
+    "schema" : null,
+    "headers" : [ {
+      "name" : "Idempotency-Key",
+      "attributes" : { },
+      "description" : "멱등성 식별자",
+      "type" : "STRING",
+      "optional" : false,
+      "example" : "create-member-001",
+      "default" : null
+    } ],
+    "pathParameters" : [ ],
+    "queryParameters" : [ ],
+    "formParameters" : [ ],
+    "requestFields" : [ {
+      "attributes" : { },
+      "description" : "회원 이름",
+      "ignored" : false,
+      "path" : "name",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이메일",
+      "ignored" : false,
+      "path" : "email",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "활성 여부",
+      "ignored" : false,
+      "path" : "active",
+      "type" : "BOOLEAN",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 나이",
+      "ignored" : false,
+      "path" : "profile.age",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : {
+        "itemsType" : "STRING"
+      },
+      "description" : "회원 태그",
+      "ignored" : false,
+      "path" : "profile.tags",
+      "type" : "ARRAY",
+      "optional" : false
+    } ],
+    "example" : "{\n  \"name\": \"Jane\",\n  \"email\": \"jane@example.com\",\n  \"active\": true,\n  \"profile\": {\n    \"age\": 30,\n    \"tags\": [\"java\", \"spring\"]\n  }\n}",
+    "securityRequirements" : null
+  },
+  "response" : {
+    "status" : 201,
+    "contentType" : "application/json",
+    "schema" : null,
+    "headers" : [ {
+      "name" : "Location",
+      "attributes" : { },
+      "description" : "생성된 회원 URI",
+      "type" : "STRING",
+      "optional" : false,
+      "example" : "/api/members/1",
+      "default" : null
+    } ],
+    "responseFields" : [ {
+      "attributes" : { },
+      "description" : "회원 식별자",
+      "ignored" : false,
+      "path" : "id",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이름",
+      "ignored" : false,
+      "path" : "name",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 이메일",
+      "ignored" : false,
+      "path" : "email",
+      "type" : "STRING",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "활성 여부",
+      "ignored" : false,
+      "path" : "active",
+      "type" : "BOOLEAN",
+      "optional" : false
+    }, {
+      "attributes" : { },
+      "description" : "회원 나이",
+      "ignored" : false,
+      "path" : "profile.age",
+      "type" : "NUMBER",
+      "optional" : false
+    }, {
+      "attributes" : {
+        "itemsType" : "STRING"
+      },
+      "description" : "회원 태그",
+      "ignored" : false,
+      "path" : "profile.tags",
+      "type" : "ARRAY",
+      "optional" : false
+    } ],
+    "example" : "{\"id\":1,\"name\":\"Jane\",\"email\":\"jane@example.com\",\"active\":true,\"profile\":{\"age\":30,\"tags\":[\"java\",\"spring\"]}}"
+  },
+  "tags" : [ "members" ]
+}
