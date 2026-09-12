@@ -1,0 +1,90 @@
+{
+  "id": "sk-25",
+  "title": "Scalar API 문서와 local JSON 내보내기",
+  "type": "feature",
+  "status": "pending",
+  "goal": "presentation 애플리케이션이 모든 프로필에서 Scalar API 문서를 제공하고 local 프로필에서만 OpenAPI JSON 파일을 내보낼 수 있다.",
+  "depends_on": [
+    "sk-20"
+  ],
+  "requirements": [
+    "Spring REST Docs가 생성한 OpenAPI를 Scalar의 단일 문서 소스로 사용한다.",
+    "Scalar API 문서는 모든 프로필의 /api/docs에서 제공한다.",
+    "OpenAPI JSON 경로와 JSON 다운로드 기능은 local 프로필에서만 제공한다."
+  ],
+  "scope": {
+    "in": [
+      "presentation OpenAPI JSON 생성과 실행 JAR 패키징",
+      "Scalar API 문서 HTML과 JavaScript 제공",
+      "local 프로필의 OpenAPI JSON 내보내기"
+    ],
+    "out": [
+      "런타임 OpenAPI 자동 생성",
+      "Scalar 인증과 접근 제어",
+      "단일 모듈 템플릿 변경"
+    ]
+  },
+  "verification": [
+    "OpenAPI JSON이 실행 JAR에 포함된다.",
+    "모든 프로필에서 /api/docs가 Scalar API 문서를 반환한다.",
+    "local 프로필에서만 /openapi3.json과 JSON 다운로드 기능을 제공한다.",
+    "Task 범위 테스트와 전체 증분 Gradle build가 성공한다."
+  ],
+  "issues": [],
+  "references": [
+    "https://scalar.com/products/api-references/configuration",
+    "https://github.com/ePages-de/restdocs-api-spec"
+  ],
+  "steps": [
+    {
+      "id": "sk-25-1",
+      "title": "OpenAPI JSON 생성과 패키징",
+      "status": "done",
+      "objective": "presentation 문서 테스트의 OpenAPI JSON을 실행 JAR에서 읽을 수 있다.",
+      "work": [
+        "OpenAPI 출력 형식을 JSON으로 변경한다.",
+        "openapi3 작업 결과를 실행 JAR의 openapi/openapi3.json에 포함한다."
+      ],
+      "verification": [
+        "openapi3.json이 생성되고 실행 JAR의 지정한 classpath에 같은 내용으로 포함된다."
+      ],
+      "issues": [],
+      "references": [
+        "template/spring-boot-kotlin-multi-module/__SPRINGKIT_ARTIFACT__-presentation/build.gradle.kts"
+      ]
+    },
+    {
+      "id": "sk-25-2",
+      "title": "Scalar API 문서 연결",
+      "status": "pending",
+      "objective": "모든 프로필에서 패키징한 OpenAPI를 Scalar API 문서로 볼 수 있다.",
+      "work": [
+        "Scalar 자산을 presentation에 추가한다.",
+        "OpenAPI 내용을 Scalar content 설정에 삽입한 HTML과 JavaScript를 /api/docs 아래에 제공한다."
+      ],
+      "verification": [
+        "기본 프로필과 local 프로필에서 Scalar HTML과 JavaScript가 성공 응답을 반환하고 같은 OpenAPI 의미를 표시한다."
+      ],
+      "issues": [],
+      "references": [
+        "https://scalar.com/products/api-references/integrations/html-js"
+      ]
+    },
+    {
+      "id": "sk-25-3",
+      "title": "local OpenAPI JSON 내보내기",
+      "status": "pending",
+      "objective": "local 프로필에서만 OpenAPI JSON 파일과 Scalar JSON 다운로드 기능을 사용할 수 있다.",
+      "work": [
+        "local 프로필 전용 JSON 응답 경로를 추가한다.",
+        "Scalar JSON 다운로드 설정을 프로필에 따라 전환한다."
+      ],
+      "verification": [
+        "local 프로필은 /openapi3.json을 제공하고 다른 프로필은 404를 반환한다.",
+        "local 프로필에서만 Scalar JSON 다운로드 설정이 활성화된다."
+      ],
+      "issues": [],
+      "references": []
+    }
+  ]
+}

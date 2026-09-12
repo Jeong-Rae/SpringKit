@@ -40,6 +40,7 @@ tasks.withType<Test> {
 }
 
 val restDocsSnippets = layout.buildDirectory.dir("generated-snippets")
+val openApiDocument = layout.buildDirectory.file("api-spec/openapi3.json")
 val cleanRestDocsSnippets =
     tasks.register<Delete>("cleanRestDocsSnippets") {
       delete(restDocsSnippets)
@@ -55,7 +56,7 @@ configure<com.epages.restdocs.apispec.gradle.OpenApi3Extension> {
   title = "__SPRINGKIT_PROJECT_NAME__ API"
   description = "__SPRINGKIT_PROJECT_NAME__ REST API"
   version = "1.0.0"
-  format = "yaml"
+  format = "json"
   snippetsDirectory = restDocsSnippets.get().asFile.path
 }
 
@@ -68,4 +69,11 @@ tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach 
 
 tasks.named("build") {
   dependsOn(tasks.named("openapi3"))
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+  dependsOn(tasks.named("openapi3"))
+  from(openApiDocument) {
+    into("BOOT-INF/classes/openapi")
+  }
 }
