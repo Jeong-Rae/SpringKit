@@ -46,6 +46,8 @@ val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/com
 val compilerOpenApiSnippets = compilerContractSnippets.map { it.dir("compiler") }
 val compilerRepeatSnippets = compilerContractSnippets.map { it.dir("compiler-repeat") }
 val manualBaselineSnippets = compilerContractSnippets.map { it.dir("manual") }
+val compilerOpenApiDocument = layout.buildDirectory.file("api-spec/openapi3.yaml")
+val compilerRepeatOpenApiDocument = layout.buildDirectory.file("api-spec-repeat/openapi3.yaml")
 val compilerOpenApiTestSourceSet = sourceSets.create("compilerOpenApiTest")
 
 configurations.named(compilerOpenApiTestSourceSet.implementationConfigurationName) {
@@ -125,6 +127,7 @@ val openApiTest =
       testClassesDirs = openApiTestSourceSet.output.classesDirs
       classpath = openApiTestSourceSet.runtimeClasspath
       dependsOn(tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>())
+      inputs.files(compilerOpenApiDocument, compilerRepeatOpenApiDocument)
       useJUnitPlatform()
     }
 
