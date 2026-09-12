@@ -197,30 +197,26 @@ private fun createUserDocumentation(): Documentation =
       requestHeader {
         header("X-Request-Id", "요청 추적 식별자", sample = "request-123")
       }
-      requestBody {
-        field("name", "사용자 이름", sample = "Alice")
-        field("active", "활성 상태", sample = true)
-        field("score", "사용자 점수", sample = 1.5)
-        field("role", "사용자 역할", sample = ApiRole.ADMIN)
-        field("aliases", "사용자 별칭", sample = listOf("ally"))
-        field("roles", "사용자 역할 목록", sample = listOf(ApiRole.USER, ApiRole.ADMIN))
-        field("nickname", "사용자 별명", sample = "ally", optional = true)
-      }
+      requestBody { userFields() }
       responseHeader {
         header(HttpHeaders.LOCATION, "생성된 사용자 URI", sample = "/users/1")
         header("X-RateLimit", "요청 제한", sample = 100)
       }
       responseBody {
         field("id", "생성된 사용자 식별자", sample = "user-123")
-        field("name", "사용자 이름", sample = "Alice")
-        field("active", "활성 상태", sample = true)
-        field("score", "사용자 점수", sample = 1.5)
-        field("role", "사용자 역할", sample = ApiRole.ADMIN)
-        field("aliases", "사용자 별칭", sample = listOf("ally"))
-        field("roles", "사용자 역할 목록", sample = listOf(ApiRole.USER, ApiRole.ADMIN))
-        field("nickname", "사용자 별명", sample = "ally", optional = true)
+        userFields()
       }
     }
+
+private fun BodyDsl.userFields() {
+  field("name", "사용자 이름", sample = "Alice")
+  field("active", "활성 상태", sample = true)
+  field("score", "사용자 점수", sample = 1.5)
+  field("role", "사용자 역할", sample = ApiRole.ADMIN)
+  field("aliases", "사용자 별칭", sample = listOf("ally"))
+  field("roles", "사용자 역할 목록", sample = listOf(ApiRole.USER, ApiRole.ADMIN))
+  field("nickname", "사용자 별명", sample = "ally", optional = true)
+}
 
 private fun manualSnippets(): List<Snippet> {
   val requestFieldDescriptors = manualRequestFieldDescriptors()
