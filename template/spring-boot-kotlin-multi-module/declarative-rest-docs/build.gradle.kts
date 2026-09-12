@@ -48,6 +48,11 @@ tasks.withType<Test> {
   useJUnitPlatform()
 }
 
+val springFixtureSnippets = layout.buildDirectory.dir("generated-snippets/spring-fixtures")
+val springFixtureGenerated = layout.projectDirectory.dir("fixtures/spring-restdocs/generated")
+val springFixtureGeneratedResources = springFixtureGenerated.dir("resource")
+val springFixtureGeneratedOpenApiJson = springFixtureGenerated.dir("openapi/json")
+val springFixtureGeneratedOpenApiYaml = springFixtureGenerated.dir("openapi/yaml")
 val springTestSourceSet = sourceSets.create("springTest")
 
 kotlin.target.compilations
@@ -70,13 +75,32 @@ dependencies {
   add(springTestSourceSet.implementationConfigurationName, "org.springframework.boot:spring-boot-starter-test")
 }
 
+val cleanSpringFixtureSnippets =
+    tasks.register<Delete>("cleanSpringFixtureSnippets") {
+      delete(springFixtureSnippets)
+    }
+
 val springTest =
     tasks.register<Test>("springTest") {
       description = "Spring MVC fixture로 선언형 REST Docs 통합 동작을 검증합니다."
       group = "verification"
       testClassesDirs = springTestSourceSet.output.classesDirs
       classpath = springTestSourceSet.runtimeClasspath
+      outputs.dir(springFixtureSnippets)
+      systemProperty("springkit.spring-fixture.snippets", springFixtureSnippets.get().asFile.absolutePath)
+      dependsOn(cleanSpringFixtureSnippets)
       useJUnitPlatform()
+    }
+
+val stageSpringFixtureResources =
+    tasks.register<Sync>("stageSpringFixtureResources") {
+      description = "Spring fixture의 resource.json 기준선을 저장소에 반영합니다."
+      group = "verification"
+      dependsOn(springTest)
+      from(springFixtureSnippets) {
+        include("**/resource.json")
+      }
+      into(springFixtureGeneratedResources)
     }
 
 val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/compiler-contract")
@@ -148,6 +172,30 @@ val compilerRepeatOpenApi3 =
       outputDirectory = layout.buildDirectory.dir("api-spec-repeat").get().asFile.path
     }
 
+val springFixtureOpenApiJson =
+    tasks.register<com.epages.restdocs.apispec.gradle.OpenApi3Task>("springFixtureOpenApiJson") {
+      description = "Spring fixture resource.json을 OpenAPI JSON으로 집계합니다."
+      group = "verification"
+      applyExtension(openApi3Extension)
+      snippetsDirectory = springFixtureSnippets.get().asFile.path
+      outputDirectory = springFixtureGeneratedOpenApiJson.asFile.path
+      outputFileNamePrefix = "openapi3"
+      format = "json"
+      dependsOn(springTest)
+    }
+
+val springFixtureOpenApiYaml =
+    tasks.register<com.epages.restdocs.apispec.gradle.OpenApi3Task>("springFixtureOpenApiYaml") {
+      description = "Spring fixture resource.json을 OpenAPI YAML로 집계합니다."
+      group = "verification"
+      applyExtension(openApi3Extension)
+      snippetsDirectory = springFixtureSnippets.get().asFile.path
+      outputDirectory = springFixtureGeneratedOpenApiYaml.asFile.path
+      outputFileNamePrefix = "openapi3"
+      format = "yaml"
+      dependsOn(springTest)
+    }
+
 tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
   dependsOn(compilerOpenApiTest)
   notCompatibleWithConfigurationCache(
@@ -177,5 +225,5 @@ val openApiTest =
     }
 
 tasks.named("build") {
-  dependsOn(springTest, openApiTest)
+  dependsOn(stageSpringFixtureResources, springFixtureOpenApiJson, springFixtureOpenApiYaml, openApiTest)
 }
