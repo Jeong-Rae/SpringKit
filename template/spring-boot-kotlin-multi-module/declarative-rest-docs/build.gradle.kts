@@ -48,6 +48,37 @@ tasks.withType<Test> {
   useJUnitPlatform()
 }
 
+val springTestSourceSet = sourceSets.create("springTest")
+
+kotlin.target.compilations
+    .getByName(springTestSourceSet.name)
+    .associateWith(kotlin.target.compilations.getByName("main"))
+
+springTestSourceSet.compileClasspath += sourceSets.main.get().output
+springTestSourceSet.runtimeClasspath += sourceSets.main.get().output
+
+configurations.named(springTestSourceSet.implementationConfigurationName) {
+  extendsFrom(configurations.testImplementation.get())
+}
+
+configurations.named(springTestSourceSet.runtimeOnlyConfigurationName) {
+  extendsFrom(configurations.testRuntimeOnly.get())
+}
+
+dependencies {
+  add(springTestSourceSet.implementationConfigurationName, "org.springframework.boot:spring-boot-starter-web")
+  add(springTestSourceSet.implementationConfigurationName, "org.springframework.boot:spring-boot-starter-test")
+}
+
+val springTest =
+    tasks.register<Test>("springTest") {
+      description = "Spring MVC fixture로 선언형 REST Docs 통합 동작을 검증합니다."
+      group = "verification"
+      testClassesDirs = springTestSourceSet.output.classesDirs
+      classpath = springTestSourceSet.runtimeClasspath
+      useJUnitPlatform()
+    }
+
 val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/compiler-contract")
 val compilerOpenApiSnippets = compilerContractSnippets.map { it.dir("compiler") }
 val compilerRepeatSnippets = compilerContractSnippets.map { it.dir("compiler-repeat") }
@@ -146,5 +177,5 @@ val openApiTest =
     }
 
 tasks.named("build") {
-  dependsOn(openApiTest)
+  dependsOn(springTest, openApiTest)
 }
