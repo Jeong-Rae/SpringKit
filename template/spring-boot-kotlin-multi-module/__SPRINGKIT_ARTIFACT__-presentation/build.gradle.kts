@@ -44,6 +44,7 @@ tasks.withType<Test> {
 
 val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/compiler-contract")
 val compilerOpenApiSnippets = compilerContractSnippets.map { it.dir("compiler") }
+val compilerRepeatSnippets = compilerContractSnippets.map { it.dir("compiler-repeat") }
 val manualBaselineSnippets = compilerContractSnippets.map { it.dir("manual") }
 val compilerOpenApiTestSourceSet = sourceSets.create("compilerOpenApiTest")
 
@@ -72,6 +73,10 @@ val compilerOpenApiTest =
           compilerOpenApiSnippets.get().asFile.absolutePath,
       )
       systemProperty(
+          "springkit.compiler-repeat.snippets",
+          compilerRepeatSnippets.get().asFile.absolutePath,
+      )
+      systemProperty(
           "springkit.manual-baseline.snippets",
           manualBaselineSnippets.get().asFile.absolutePath,
       )
@@ -87,6 +92,14 @@ configure<com.epages.restdocs.apispec.gradle.OpenApi3Extension> {
   format = "yaml"
   snippetsDirectory = compilerOpenApiSnippets.get().asFile.path
 }
+
+val openApi3Extension = extensions.getByType<com.epages.restdocs.apispec.gradle.OpenApi3Extension>()
+val compilerRepeatOpenApi3 =
+    tasks.register<com.epages.restdocs.apispec.gradle.OpenApi3Task>("compilerRepeatOpenApi3") {
+      applyExtension(openApi3Extension)
+      snippetsDirectory = compilerRepeatSnippets.get().asFile.path
+      outputDirectory = layout.buildDirectory.dir("api-spec-repeat").get().asFile.path
+    }
 
 tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
   dependsOn(compilerOpenApiTest)

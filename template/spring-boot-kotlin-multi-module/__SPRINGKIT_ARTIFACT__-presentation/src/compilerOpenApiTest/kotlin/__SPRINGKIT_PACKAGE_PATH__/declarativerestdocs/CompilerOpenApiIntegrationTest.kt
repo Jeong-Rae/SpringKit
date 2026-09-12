@@ -48,6 +48,7 @@ import tools.jackson.databind.ObjectMapper
 class CompilerOpenApiIntegrationTest :
     FunSpec({
       val compilerSnippetsRoot = snippetsRoot("springkit.compiler-openapi.snippets")
+      val compilerRepeatRoot = snippetsRoot("springkit.compiler-repeat.snippets")
       val manualSnippetsRoot = snippetsRoot("springkit.manual-baseline.snippets")
       val objectMapper = ObjectMapper()
 
@@ -60,6 +61,11 @@ class CompilerOpenApiIntegrationTest :
             snippets = compiler(objectMapper).compile(documentation).snippets,
         )
         documentOperation(
+            snippetsRoot = compilerRepeatRoot,
+            testName = "compiler-repeat",
+            snippets = compiler(objectMapper).compile(documentation).snippets,
+        )
+        documentOperation(
             snippetsRoot = manualSnippetsRoot,
             testName = "manual",
             snippets = manualSnippets(),
@@ -69,8 +75,11 @@ class CompilerOpenApiIntegrationTest :
             listOf(compilerSnippetsRoot.resolve("create-user/resource.json"))
 
         val compilerResource = objectMapper.readTree(compilerSnippetsRoot.resourceFile().toFile())
+        val compilerRepeatResource =
+            objectMapper.readTree(compilerRepeatRoot.resourceFile().toFile())
         val manualResource = objectMapper.readTree(manualSnippetsRoot.resourceFile().toFile())
 
+        compilerResource shouldBe compilerRepeatResource
         compilerResource shouldBe manualResource
         assertResourceSemantics(compilerResource)
       }

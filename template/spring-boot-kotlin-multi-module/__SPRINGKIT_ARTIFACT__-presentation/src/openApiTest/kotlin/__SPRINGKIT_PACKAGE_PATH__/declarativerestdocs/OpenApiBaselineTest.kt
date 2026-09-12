@@ -15,10 +15,15 @@ class OpenApiBaselineTest :
               Files.newBufferedReader(Path.of("build/api-spec/openapi3.yaml")).use {
                 Yaml().load<Map<String, Any>>(it)
               }
+          val repeatedRoot =
+              Files.newBufferedReader(Path.of("build/api-spec-repeat/openapi3.yaml")).use {
+                Yaml().load<Map<String, Any>>(it)
+              }
           val paths = root.map("paths")
           val path = paths.map("/tenants/{tenantId}/users")
           val operation = path.map("post")
 
+          root shouldBe repeatedRoot
           root["openapi"] shouldBe "3.0.1"
           paths.keys shouldBe setOf("/tenants/{tenantId}/users")
           path.keys shouldBe setOf("post")
