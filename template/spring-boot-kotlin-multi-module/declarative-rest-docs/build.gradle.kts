@@ -56,6 +56,10 @@ val compilerOpenApiDocument = layout.buildDirectory.file("api-spec/openapi3.yaml
 val compilerRepeatOpenApiDocument = layout.buildDirectory.file("api-spec-repeat/openapi3.yaml")
 val compilerOpenApiTestSourceSet = sourceSets.create("compilerOpenApiTest")
 
+kotlin.target.compilations
+    .getByName(compilerOpenApiTestSourceSet.name)
+    .associateWith(kotlin.target.compilations.getByName("main"))
+
 compilerOpenApiTestSourceSet.compileClasspath += sourceSets.main.get().output
 
 compilerOpenApiTestSourceSet.runtimeClasspath += sourceSets.main.get().output

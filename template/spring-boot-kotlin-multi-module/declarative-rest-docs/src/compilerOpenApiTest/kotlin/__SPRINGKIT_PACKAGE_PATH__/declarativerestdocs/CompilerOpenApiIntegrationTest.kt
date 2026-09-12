@@ -12,7 +12,6 @@ import io.kotest.matchers.shouldBe
 import java.nio.file.Files
 import java.nio.file.Path
 import org.springframework.http.HttpHeaders
-import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -185,55 +184,39 @@ private fun Path.resourceFiles(): List<Path> =
 private fun Path.resourceFile(): Path = resolve("create-user/resource.json")
 
 private fun createUserDocumentation(): Documentation =
-    Documentation(
-        name = "create-user",
-        summary = "사용자 생성",
-        description = "테넌트에 새로운 사용자를 생성합니다.",
-        tags = setOf("users"),
-        requestLine =
-            RequestLine(
-                method = HttpMethod.POST,
-                uri = "/tenants/{tenantId}/users",
-                pathVariables =
-                    listOf(
-                        PathVariable(
-                            "tenantId",
-                            "사용자를 생성할 테넌트 식별자",
-                            sampleOf("tenant-1"),
-                        )
-                    ),
-                queryParameters =
-                    listOf(
-                        QueryParameter("dryRun", "사용자 생성 검증만 수행할지 여부", sampleOf(false)),
-                        QueryParameter("page", "결과 페이지", sampleOf(1), optional = true),
-                    ),
-            ),
-        requestHeaders =
-            Headers(listOf(Header("X-Request-Id", "요청 추적 식별자", sampleOf("request-123")))),
-        requestBody = Body(coreRequestFields()),
-        responseHeaders =
-            Headers(
-                listOf(
-                    Header(HttpHeaders.LOCATION, "생성된 사용자 URI", sampleOf("/users/1")),
-                    Header("X-RateLimit", "요청 제한", sampleOf(100)),
-                )
-            ),
-        responseBody = Body(coreResponseFields()),
-    )
+    documentationDefinition("create-user") {
+      summary = "사용자 생성"
+      description = "테넌트에 새로운 사용자를 생성합니다."
+      tags("users")
 
-private fun coreRequestFields(): List<Field> =
-    listOf(
-        Field("name", "사용자 이름", sampleOf("Alice")),
-        Field("active", "활성 상태", sampleOf(true)),
-        Field("score", "사용자 점수", sampleOf(1.5)),
-        Field("role", "사용자 역할", sampleOf(ApiRole.ADMIN)),
-        Field("aliases", "사용자 별칭", sampleOf(listOf("ally"))),
-        Field("roles", "사용자 역할 목록", sampleOf(listOf(ApiRole.USER, ApiRole.ADMIN))),
-        Field("nickname", "사용자 별명", sampleOf("ally"), optional = true),
-    )
+      requestLine(method = "post", path = "/tenants/{tenantId}/users") {
+        pathVariable("tenantId", "사용자를 생성할 테넌트 식별자", sample = "tenant-1")
+        queryParameter("dryRun", "사용자 생성 검증만 수행할지 여부", sample = false)
+        queryParameter("page", "결과 페이지", sample = 1, optional = true)
+      }
+      requestHeader {
+        header("X-Request-Id", "요청 추적 식별자", sample = "request-123")
+      }
+      requestBody { userFields() }
+      responseHeader {
+        header(HttpHeaders.LOCATION, "생성된 사용자 URI", sample = "/users/1")
+        header("X-RateLimit", "요청 제한", sample = 100)
+      }
+      responseBody {
+        field("id", "생성된 사용자 식별자", sample = "user-123")
+        userFields()
+      }
+    }
 
-private fun coreResponseFields(): List<Field> =
-    listOf(Field("id", "생성된 사용자 식별자", sampleOf("user-123"))) + coreRequestFields()
+private fun BodyDsl.userFields() {
+  field("name", "사용자 이름", sample = "Alice")
+  field("active", "활성 상태", sample = true)
+  field("score", "사용자 점수", sample = 1.5)
+  field("role", "사용자 역할", sample = ApiRole.ADMIN)
+  field("aliases", "사용자 별칭", sample = listOf("ally"))
+  field("roles", "사용자 역할 목록", sample = listOf(ApiRole.USER, ApiRole.ADMIN))
+  field("nickname", "사용자 별명", sample = "ally", optional = true)
+}
 
 private fun manualSnippets(): List<Snippet> {
   val requestFieldDescriptors = manualRequestFieldDescriptors()

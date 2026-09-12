@@ -23,7 +23,7 @@ class CreateUserDocumentationTest : DeclarativeRestDocsTest() {
 
       requestBody {
         field("name", "사용자 이름", sample = "Alice")
-        field<UserRole>("role", "사용자 역할", sample = UserRole.ADMIN)
+        field("role", "사용자 역할", sample = UserRole.ADMIN)
       }
 
       responseBody {
