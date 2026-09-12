@@ -23,6 +23,34 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.1.0'
+      - name: Align Cookie fixture with HTTP header semantics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('template/spring-boot-kotlin-multi-module/declarative-rest-docs/src/springTest/kotlin/__SPRINGKIT_PACKAGE_PATH__/declarativerestdocs/spring')
+
+          test = root / 'SpringHttpFixtureDocumentationTest.kt'
+          content = test.read_text()
+          content = content.replace('import jakarta.servlet.http.Cookie\n', '')
+          content = content.replace('                .cookie(Cookie("SESSION", "session-token"))\n', '')
+          test.write_text(content)
+
+          controller = root / 'HttpFixtureController.kt'
+          content = controller.read_text()
+          content = content.replace('import org.springframework.web.bind.annotation.CookieValue\n', '')
+          content = content.replace(
+              '      @CookieValue(name = "SESSION", required = false) session: String?,\n'
+              '  ): MemberResponse {\n'
+              '    if (session != null) {\n'
+              '      check(session == "session-token")\n'
+              '    }',
+              '      @RequestHeader(HttpHeaders.COOKIE) cookie: String,\n'
+              '  ): MemberResponse {\n'
+              '    check(cookie == "SESSION=session-token")',
+          )
+          controller.write_text(content)
+          PY
       - name: Generate fixture documentation
         working-directory: template/spring-boot-kotlin-multi-module
         run: |
@@ -32,13 +60,15 @@ jobs:
             exit 1
           fi
           gradle --no-configuration-cache build
-      - name: Commit generated JSON and YAML
+      - name: Commit fixture sources and generated JSON/YAML
         run: |
-          if git diff --quiet -- template/spring-boot-kotlin-multi-module/declarative-rest-docs/fixtures/spring-restdocs/generated; then
+          git add template/spring-boot-kotlin-multi-module/declarative-rest-docs/build.gradle.kts
+          git add template/spring-boot-kotlin-multi-module/declarative-rest-docs/src/springTest
+          git add template/spring-boot-kotlin-multi-module/declarative-rest-docs/fixtures/spring-restdocs/generated
+          if git diff --cached --quiet; then
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add template/spring-boot-kotlin-multi-module/declarative-rest-docs/fixtures/spring-restdocs/generated
           git commit -m 'Test: Spring REST Docs fixture 산출물 추가'
           git push origin HEAD:feature/sk-27
