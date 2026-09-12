@@ -35,7 +35,8 @@ class DocumentationDslTest :
                 }
                 responseBody {
                   field("id", "사용자 식별자", sample = "user-123")
-                  field<UserRole>("role", "사용자 역할", sample = UserRole.ADMIN)
+                  field("role", "사용자 역할", sample = UserRole.ADMIN)
+                  field("roles", "사용자 역할 목록", sample = listOf(UserRole.ADMIN))
                   field("permissions", "사용자 권한", sample = listOf("WRITE"))
                 }
               }
@@ -62,10 +63,12 @@ class DocumentationDslTest :
           actual.requestBody.fields.map(Field::ignored) shouldBe listOf(false, false, true)
           actual.responseHeaders.headers.map(ValueElement::key) shouldBe listOf("Location")
           actual.responseBody.fields.map(ValueElement::key) shouldBe
-              listOf("id", "role", "permissions")
+              listOf("id", "role", "roles", "permissions")
           actual.responseBody.fields[1].sample.value shouldBe UserRole.ADMIN
           actual.responseBody.fields[1].sample.type shouldBe typeOf<UserRole>()
-          actual.responseBody.fields[2].sample.type shouldBe typeOf<List<String>>()
+          actual.responseBody.fields[2].sample.value shouldBe listOf(UserRole.ADMIN)
+          actual.responseBody.fields[2].sample.type shouldBe typeOf<List<UserRole>>()
+          actual.responseBody.fields[3].sample.type shouldBe typeOf<List<String>>()
         }
 
         test("선택 context를 생략하면, 빈 header와 body를 생성합니다") {
