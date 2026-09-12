@@ -50,7 +50,6 @@ tasks.withType<Test> {
 
 val springFixtureSnippets = layout.buildDirectory.dir("generated-snippets/spring-fixtures")
 val springFixtureGenerated = layout.projectDirectory.dir("fixtures/spring-restdocs/generated")
-val springFixtureGeneratedResources = springFixtureGenerated.dir("resource")
 val springFixtureGeneratedOpenApiJson = springFixtureGenerated.dir("openapi/json")
 val springFixtureGeneratedOpenApiYaml = springFixtureGenerated.dir("openapi/yaml")
 val springTestSourceSet = sourceSets.create("springTest")
@@ -100,17 +99,6 @@ val springTest =
       )
       dependsOn(cleanSpringFixtureSnippets)
       useJUnitPlatform()
-    }
-
-val stageSpringFixtureResources =
-    tasks.register<Sync>("stageSpringFixtureResources") {
-      description = "Spring fixture의 resource.json 기준선을 저장소에 반영합니다."
-      group = "verification"
-      dependsOn(springTest)
-      from(springFixtureSnippets) {
-        include("**/resource.json")
-      }
-      into(springFixtureGeneratedResources)
     }
 
 val compilerContractSnippets = layout.buildDirectory.dir("generated-snippets/compiler-contract")
@@ -242,7 +230,6 @@ val openApiTest =
 
 tasks.named("build") {
   dependsOn(
-      stageSpringFixtureResources,
       springFixtureOpenApiJson,
       springFixtureOpenApiYaml,
       openApiTest,
