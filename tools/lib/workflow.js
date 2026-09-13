@@ -14,6 +14,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const {
+  ReviewService,
+  StackSyncService
+} = require('../workflow-review-stack.mjs');
 
 const WORKFLOW_VERSION = 1;
 
@@ -371,7 +375,15 @@ function success(data) { return { type: 'success', data }; }
 function failure(error) {
   const workflowError = error instanceof WorkflowError
     ? error
-    : new WorkflowError('INTERNAL_ERROR', error.message || String(error));
+    : (error && error.code
+      ? new WorkflowError(
+        error.code,
+        error.message || String(error),
+        error.data && error.data.blocked_by,
+        error.data && error.data.next,
+        error.data || {}
+      )
+      : new WorkflowError('INTERNAL_ERROR', error.message || String(error)));
   return {
     type: 'failure',
     data: {
@@ -390,6 +402,8 @@ class WorkflowApplication {
     this.repoRoot = path.resolve(repoRoot || repositoryRoot(this.cwd));
     this.store = store || new WorkflowStore(defaultStorePath(this.cwd));
     this.adapters = adapters || loadAdapters({ cwd: this.cwd, repoRoot: this.repoRoot, store: this.store });
+    this.reviewService = new ReviewService({ store: this.store, adapters: this.adapters });
+    this.stackSyncService = new StackSyncService({ store: this.store, adapters: this.adapters });
     // Later command families (stack, sync, status and gate) can be attached
     // without changing the parser or result contract.
     this.commands = new Map([
@@ -560,6 +574,9 @@ class WorkflowApplication {
     if (subcommand === 'open') return this.reviewOpen(args);
     if (subcommand === 'update') return this.reviewUpdate(args);
     if (subcommand === 'show') return this.reviewShow(args);
+    if (subcommand === 'comment') return this.reviewComment(args);
+    if (subcommand === 'reply') return this.reviewReply(args);
+    if (subcommand === 'resolve') return this.reviewResolve(args);
     throw new WorkflowError('UNKNOWN_COMMAND', `알 수 없는 review 명령입니다: ${subcommand}`);
   }
 
@@ -687,9 +704,82 @@ class WorkflowApplication {
     return success(this.reviewData(item, nextReview));
   }
 
-  reviewShow() {
+  reviewShow(args) {
     const { item } = this.reviewContext();
-    return success(this.reviewData(item, item.review));
+    const threads = args.options.threads || 'open';
+    if (!['open', 'all'].includes(threads)) {
+      throw new WorkflowError('INVALID_ARGUMENT', '--threads는 open 또는 all이어야 합니다.');
+    }
+    return success(this.reviewService.show({
+      subtaskId: item.id,
+      diff: Boolean(args.options.diff),
+      threads
+    }));
+  }
+
+  reviewBody(args) {
+    const body = args.options.body;
+    const bodyFile = args.options['body-file'];
+    if (Boolean(body) === Boolean(bodyFile)) {
+      throw new WorkflowError('INVALID_ARGUMENT', '--body와 --body-file 중 하나만 사용해야 합니다.');
+    }
+    return bodyFile ? fileContent(this.cwd, bodyFile) : body;
+  }
+
+  reviewComment(args) {
+    const { item } = this.reviewContext();
+    const result = this.reviewService.comment({
+      subtaskId: item.id,
+      revision: requireOption(args, '--revision'),
+      level: requireOption(args, '--level'),
+      body: this.reviewBody(args),
+      path: args.options.path,
+      line: args.options.line
+    });
+    return success(result);
+  }
+
+  reviewReply(args) {
+    const { item } = this.reviewContext();
+    return success(this.reviewService.reply({
+      subtaskId: item.id,
+      revision: requireOption(args, '--revision'),
+      thread: requireOption(args, '--thread'),
+      body: this.reviewBody(args)
+    }));
+  }
+
+  reviewResolve(args) {
+    const { item } = this.reviewContext();
+    return success(this.reviewService.resolve({
+      subtaskId: item.id,
+      revision: requireOption(args, '--revision'),
+      thread: requireOption(args, '--thread')
+    }));
+  }
+
+  stack(args) {
+    const state = this.store.load();
+    const item = managedSubtask(state, this.cwd, this.adapters.git);
+    const clear = Boolean(args.options.clear);
+    const requires = args.options.requires;
+    if (clear === Boolean(requires)) {
+      throw new WorkflowError('INVALID_ARGUMENT', '--requires와 --clear 중 하나만 사용해야 합니다.');
+    }
+    return success(this.stackSyncService.stack({ subtaskId: item.id, requires, clear }));
+  }
+
+  sync(args) {
+    const state = this.store.load();
+    const item = managedSubtask(state, this.cwd, this.adapters.git);
+    const continuing = Boolean(args.options.continue);
+    const aborting = Boolean(args.options.abort);
+    if (continuing && aborting) {
+      throw new WorkflowError('INVALID_ARGUMENT', '--continue과 --abort를 함께 사용할 수 없습니다.');
+    }
+    const mode = continuing ? 'continue' : (aborting ? 'abort' : 'start');
+    const result = this.stackSyncService.sync({ subtaskId: item.id, mode });
+    return result && result.type === 'failure' ? result : success(result);
   }
 
   reviewData(item, review) {
