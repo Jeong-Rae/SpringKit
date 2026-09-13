@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { fixture, appFor, assertSuccess } = require('./test-support');
+
+const f = fixture();
+const rootApp = appFor(f);
+const started = assertSuccess(assert, rootApp.execute(['start', '--task', 'TASK-42', '--request-id', 'one', '--title', 'first', '--json']));
+const app = appFor(f, started.workspace.path);
+const body = path.join(started.workspace.path, 'pr.md');
+fs.writeFileSync(body, 'Problem\n\nWhy now\n');
+assertSuccess(assert, app.execute(['check', '--json']));
+const opened = assertSuccess(assert, app.execute(['review', 'open', '--body-file', 'pr.md', '--risk', 'normal', '--exposure', 'unchanged', '--json']));
+assert.equal(opened.pr.title, '[sk-101] first');
+const oldReview = opened.review_revision;
+fs.writeFileSync(body, 'Updated body\n');
+const bodyOnly = assertSuccess(assert, app.execute(['review', 'update', '--revision', oldReview, '--body-file', 'pr.md', '--json']));
+assert.notEqual(bodyOnly.review_revision, oldReview);
+assert.equal(bodyOnly.change_revision, opened.change_revision);
+fs.appendFileSync(path.join(started.workspace.path, 'change.txt'), 'code\n');
+assertSuccess(assert, app.execute(['check', '--json']));
+const codeUpdate = assertSuccess(assert, app.execute(['review', 'update', '--revision', bodyOnly.review_revision, '--json']));
+assert.notEqual(codeUpdate.change_revision, opened.change_revision);
+const stale = app.execute(['review', 'update', '--revision', oldReview, '--json']);
+assert.equal(stale.data.code, 'STALE_REVISION');
+console.log('workflow-review-update-test: ok');

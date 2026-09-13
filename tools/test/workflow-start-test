@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+'use strict';
+
+const assert = require('node:assert/strict');
+const { fixture, appFor, assertSuccess } = require('./test-support');
+
+const f = fixture();
+const app = appFor(f);
+const first = assertSuccess(assert, app.execute(['start', '--task', 'TASK-42', '--request-id', 'one', '--title', 'first', '--json']));
+assert.equal(first.subtask, 'sk-101');
+assert.equal(first.branch, first.subtask);
+assert.equal(first.workspace.path, require('node:path').join(f.root, '.worktrees', first.subtask));
+assert.equal(f.store.load().subtasks[0].task, 'TASK-42');
+
+const retry = assertSuccess(assert, app.execute(['start', '--task', 'TASK-42', '--request-id', 'one', '--title', 'first', '--json']));
+assert.equal(retry.subtask, first.subtask);
+const conflict = app.execute(['start', '--task', 'TASK-42', '--request-id', 'one', '--title', 'different', '--json']);
+assert.equal(conflict.data.code, 'IDEMPOTENCY_CONFLICT');
+
+const child = assertSuccess(assert, app.execute(['start', '--task', 'TASK-42', '--request-id', 'two', '--title', 'child', '--requires', first.subtask, '--json']));
+assert.equal(child.requires, first.subtask);
+assert.equal(f.store.load().subtasks[1].base, first.subtask);
+console.log('workflow-start-test: ok');
