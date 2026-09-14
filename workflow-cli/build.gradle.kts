@@ -61,7 +61,7 @@ graalvmNative {
   binaries {
     named("main") {
       imageName = "workflow"
-      // Keep native builds deterministic and require a real native image.
+      /** 실제 Native Image만 만들며 JVM fallback 실행 파일은 허용하지 않습니다. */
       fallback = false
     }
   }
