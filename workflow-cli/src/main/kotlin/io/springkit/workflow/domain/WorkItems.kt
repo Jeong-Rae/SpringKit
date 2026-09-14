@@ -1,5 +1,8 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class SubTaskState {
   DEVELOPMENT,
   DRAFT,
@@ -11,6 +14,7 @@ enum class SubTaskState {
   MERGED,
 }
 
+@Serializable
 enum class TaskState {
   OPEN,
   IN_PROGRESS,
@@ -18,6 +22,7 @@ enum class TaskState {
   CANCELLED,
 }
 
+@Serializable
 data class Task(
     val id: TaskId,
     val externalId: ExternalTaskId,
@@ -32,6 +37,7 @@ data class Task(
   }
 }
 
+@Serializable
 data class Workspace(
     val id: WorkspaceId,
     val subTaskId: SubTaskId,
@@ -87,6 +93,7 @@ data class TaskGraph(
       copy(dependencies = dependencies.filterNot { it.subTaskId == subTaskId })
 }
 
+@Serializable
 data class SubTask(
     val id: SubTaskId,
     val taskId: TaskId,

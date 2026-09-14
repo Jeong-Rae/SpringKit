@@ -1,5 +1,7 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
 enum class FailureCode {
   UNKNOWN_COMMAND,
   INVALID_ARGUMENT,
@@ -70,17 +72,20 @@ sealed interface WorkflowResult<out T> {
   ) : WorkflowResult<Nothing>
 }
 
+@Serializable
 sealed interface DomainEvent {
   val targetId: String
   val occurredAtEpochMillis: Long
 }
 
+@Serializable
 data class SubTaskStarted(
     override val targetId: SubTaskId,
     val taskId: TaskId,
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class ReviewOpened(
     override val targetId: PullRequestId,
     val subTaskId: SubTaskId,
@@ -89,6 +94,7 @@ data class ReviewOpened(
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class ReviewChanged(
     override val targetId: PullRequestId,
     val reviewRevisionId: ReviewRevisionId,
@@ -97,6 +103,7 @@ data class ReviewChanged(
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class GateRecorded(
     override val targetId: String,
     val gate: GateType,
@@ -104,24 +111,28 @@ data class GateRecorded(
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class MergeRecorded(
     override val targetId: SubTaskId,
     val mainRevision: MainRevision,
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class DeploymentRecorded(
     override val targetId: CandidateId,
     val state: DeploymentCandidateState,
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class ReleaseRecorded(
     override val targetId: ReleaseId,
     val state: ReleaseState,
     override val occurredAtEpochMillis: Long = 0,
 ) : DomainEvent
 
+@Serializable
 data class AuditEntry(
     val id: String,
     val actor: Actor,
@@ -139,6 +150,7 @@ data class AuditEntry(
   }
 }
 
+@Serializable
 data class WorkflowCounters(
     val startedSubTasks: Int = 0,
     val openedReviews: Int = 0,
@@ -177,6 +189,7 @@ data class WorkflowCounters(
       }
 }
 
+@Serializable
 data class EventLog(
     val events: List<DomainEvent> = emptyList(),
     val audits: List<AuditEntry> = emptyList(),
@@ -190,6 +203,7 @@ data class EventLog(
       )
 }
 
+@Serializable
 enum class GateType {
   READY,
   APPROVE,

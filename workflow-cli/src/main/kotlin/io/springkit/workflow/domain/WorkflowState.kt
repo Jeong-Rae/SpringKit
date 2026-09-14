@@ -1,5 +1,8 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class StartRequestKey(
     val taskId: TaskId,
     val requestId: String,
@@ -10,6 +13,7 @@ data class StartRequestKey(
   }
 }
 
+@Serializable
 data class StartRequestRecord(
     val key: StartRequestKey,
     val subTaskId: SubTaskId,
@@ -22,6 +26,7 @@ data class StartRequestRecord(
   }
 }
 
+@Serializable
 data class SyncConflict(
     val subTaskId: SubTaskId,
     val before: SubTask,
@@ -38,6 +43,7 @@ data class SyncConflict(
   }
 }
 
+@Serializable
 data class IdSequence(
     val subTask: Long = 100,
     val review: Long = 0,
@@ -71,6 +77,7 @@ data class IdSequence(
   }
 }
 
+@Serializable
 data class WorkflowState(
     val schemaVersion: Int = 1,
     val storeRevision: Long = 0,

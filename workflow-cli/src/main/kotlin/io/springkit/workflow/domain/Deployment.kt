@@ -1,5 +1,8 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class DeploymentCandidateState {
   NOT_SELECTED,
   CANDIDATE,
@@ -10,6 +13,7 @@ enum class DeploymentCandidateState {
   FAILED,
 }
 
+@Serializable
 enum class ReleaseState {
   NOT_APPLICABLE,
   SAFE_DEFAULT,
@@ -20,6 +24,7 @@ enum class ReleaseState {
   CLEANUP_REQUIRED,
 }
 
+@Serializable
 data class DeploymentCandidate(
     val id: CandidateId,
     val mainRevision: MainRevision,
@@ -51,6 +56,7 @@ data class DeploymentCandidate(
     get() = risk == Risk.HIGH && state == DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL
 }
 
+@Serializable
 data class Release(
     val id: ReleaseId,
     val candidateId: CandidateId,

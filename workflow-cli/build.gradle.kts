@@ -1,5 +1,6 @@
 plugins {
-  kotlin("jvm") version "2.3.21"
+  kotlin("jvm") version "2.4.20"
+  kotlin("plugin.serialization") version "2.4.20"
   application
   id("com.diffplug.spotless") version "8.10.2"
   id("org.graalvm.buildtools.native") version "1.1.12"
@@ -25,8 +26,11 @@ application {
 
 dependencies {
   implementation("com.github.ajalt.clikt:clikt:5.0.1")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+  implementation("com.squareup.okio:okio:3.18.1")
 
   testImplementation(kotlin("test-junit5"))
+  testImplementation("com.squareup.okio:okio-fakefilesystem:3.18.1")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

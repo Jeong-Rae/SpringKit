@@ -1,5 +1,7 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
 /**
  * Domain identifiers are deliberately represented by strings. The aliases keep the domain
  * independent from a persistence or provider identifier type while making the intent of each field
@@ -35,12 +37,14 @@ typealias FeatureFlagId = String
 
 typealias MainRevision = String
 
+@Serializable
 data class ExternalTaskId(val value: String) {
   init {
     require(value.isNotBlank()) { "external task id must not be blank" }
   }
 }
 
+@Serializable
 data class WorkspacePath(val value: String) {
   init {
     require(value.isNotBlank()) { "workspace path must not be blank" }

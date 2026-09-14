@@ -1,7 +1,6 @@
 package io.springkit.workflow.domain
 
-import io.springkit.workflow.adapter.json.JsonRenderer
-import io.springkit.workflow.adapter.json.toJsonValue
+import io.springkit.workflow.adapter.json.encodeToString
 import kotlin.test.Test
 import kotlin.test.assertContains
 
@@ -17,7 +16,7 @@ class WorkflowResultTest {
         )
 
     assertContains(
-        JsonRenderer.render(result.toJsonValue()),
+        result.encodeToString(),
         "\"code\":\"IDEMPOTENCY_CONFLICT\"",
     )
   }

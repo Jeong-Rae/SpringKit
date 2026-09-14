@@ -1,5 +1,8 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class MergeQueueState {
   NOT_QUEUED,
   QUEUED,
@@ -9,6 +12,7 @@ enum class MergeQueueState {
   MERGED,
 }
 
+@Serializable
 enum class IntegrationState {
   NOT_MERGED,
   QUEUED,
@@ -16,6 +20,7 @@ enum class IntegrationState {
   MERGED,
 }
 
+@Serializable
 data class MergeQueueEntry(
     val id: String,
     val subTaskId: SubTaskId,
@@ -32,6 +37,7 @@ data class MergeQueueEntry(
   }
 }
 
+@Serializable
 data class Integration(
     val subTaskId: SubTaskId,
     val state: IntegrationState = IntegrationState.NOT_MERGED,

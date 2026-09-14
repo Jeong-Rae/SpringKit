@@ -1,15 +1,20 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class Risk {
   NORMAL,
   HIGH,
 }
 
+@Serializable
 enum class Exposure {
   UNCHANGED,
   FEATURE_FLAG,
 }
 
+@Serializable
 enum class PullRequestState {
   DRAFT,
   READY,
@@ -21,23 +26,27 @@ enum class PullRequestState {
   CLOSED,
 }
 
+@Serializable
 enum class ReviewLevel {
   R,
   C,
   A,
 }
 
+@Serializable
 enum class ThreadState {
   OPEN,
   RESOLVED,
 }
 
+@Serializable
 enum class ActorKind {
   HUMAN,
   AGENT,
   WORKFLOW,
 }
 
+@Serializable
 data class Actor(
     val id: String,
     val kind: ActorKind,
@@ -51,6 +60,7 @@ data class Actor(
     get() = kind == ActorKind.HUMAN
 }
 
+@Serializable
 data class ReviewComment(
     val id: String,
     val author: Actor,
@@ -67,6 +77,7 @@ data class ReviewComment(
   }
 }
 
+@Serializable
 data class ReviewThread(
     val id: ThreadId,
     val level: ReviewLevel,
@@ -102,6 +113,7 @@ data class ReviewThread(
   }
 }
 
+@Serializable
 data class Diff(
     val identity: DiffIdentity,
     val files: List<String> = emptyList(),
@@ -115,6 +127,7 @@ data class Diff(
   }
 }
 
+@Serializable
 data class ReviewRevision(
     val id: ReviewRevisionId,
     val number: Long,
@@ -138,6 +151,7 @@ data class ReviewRevision(
     get() = openThreads.filter { it.level == ReviewLevel.R }
 }
 
+@Serializable
 data class ChangeRevision(
     val id: ChangeRevisionId,
     val number: Long,
@@ -150,6 +164,7 @@ data class ChangeRevision(
   }
 }
 
+@Serializable
 data class PullRequest(
     val id: PullRequestId,
     val subTaskId: SubTaskId,
@@ -178,6 +193,7 @@ data class PullRequest(
   }
 }
 
+@Serializable
 data class Approval(
     val id: String,
     val actor: Actor,
@@ -194,6 +210,7 @@ data class Approval(
   }
 }
 
+@Serializable
 enum class CiStatus {
   PENDING,
   RUNNING,
@@ -201,6 +218,7 @@ enum class CiStatus {
   FAILED,
 }
 
+@Serializable
 enum class AiReviewStatus {
   PENDING,
   RUNNING,

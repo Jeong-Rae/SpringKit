@@ -1,5 +1,8 @@
 package io.springkit.workflow.domain
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class ValidationStatus {
   PENDING,
   RUNNING,
@@ -8,6 +11,7 @@ enum class ValidationStatus {
   SKIPPED,
 }
 
+@Serializable
 data class Validation(
     val id: ValidationId,
     val name: String,
@@ -28,6 +32,7 @@ data class Validation(
     get() = status == ValidationStatus.PASSED
 }
 
+@Serializable
 data class CheckResult(
     val id: CheckId,
     val name: String,
@@ -47,6 +52,7 @@ data class CheckResult(
   }
 }
 
+@Serializable
 data class CheckSummary(
     val fingerprint: String,
     val revision: String,
