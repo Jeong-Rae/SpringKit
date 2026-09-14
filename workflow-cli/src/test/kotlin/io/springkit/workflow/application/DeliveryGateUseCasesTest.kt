@@ -1,0 +1,372 @@
+package io.springkit.workflow.application
+
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.domain.Actor
+import io.springkit.workflow.domain.ActorKind
+import io.springkit.workflow.domain.AuditEntry
+import io.springkit.workflow.domain.DeploymentCandidate
+import io.springkit.workflow.domain.DeploymentCandidateState
+import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.GateRecorded
+import io.springkit.workflow.domain.GateType
+import io.springkit.workflow.domain.Release
+import io.springkit.workflow.domain.ReleaseState
+import io.springkit.workflow.domain.Risk
+import io.springkit.workflow.domain.Validation
+import io.springkit.workflow.domain.ValidationStatus
+import io.springkit.workflow.domain.WorkflowResult
+
+class DeliveryGateUseCasesTest :
+    FunSpec({
+      context("고위험 배포 Gate를 실행할 때") {
+        test("사람이 AWAITING_DEPLOY_APPROVAL 후보를 승인하면, Canary와 Gate 감사 정보를 함께 저장합니다") {
+          val candidate = deployCandidate()
+          val store =
+              RecordingGateStore(WorkflowStoreSnapshot("store-1", candidates = listOf(candidate)))
+          val deployment = RecordingDeploymentPort(candidate)
+          val useCase = useCase(store, deployment = deployment)
+
+          val result = useCase.deploy(DeployGateRequest(candidate.id, "request-1"))
+          val success = result.shouldBeInstanceOf<WorkflowResult.Success<StartCanaryResponse>>()
+
+          success.data.candidate.state shouldBe DeploymentCandidateState.CANARY
+          deployment.startedActor shouldBe human
+          store.written?.candidates?.single()?.state shouldBe DeploymentCandidateState.CANARY
+          store.written?.eventLog?.events.orEmpty() shouldContain
+              GateRecorded(candidate.id, GateType.DEPLOY, human, 1_000)
+          store.written?.eventLog?.audits.orEmpty() shouldContain
+              AuditEntry(
+                  id = "audit-1",
+                  actor = human,
+                  action = "deploy",
+                  targetId = candidate.id,
+                  mainRevision = candidate.mainRevision,
+                  occurredAtEpochMillis = 1_000,
+              )
+        }
+
+        test("사람이 NORMAL 후보를 승인하면, 배포 Gate 차단 오류와 롤백을 반환합니다") {
+          val candidate = deployCandidate(risk = Risk.NORMAL)
+          val store =
+              RecordingGateStore(WorkflowStoreSnapshot("store-1", candidates = listOf(candidate)))
+          val deployment = RecordingDeploymentPort(candidate)
+          val result =
+              useCase(store, deployment = deployment).deploy(DeployGateRequest(candidate.id))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.DEPLOYMENT_GATE_BLOCKED
+          deployment.startCalls shouldBe 0
+          store.calls shouldBe listOf("begin", "snapshot", "rollback")
+        }
+
+        test("Agent가 배포 Gate를 실행하면, 사람 필요 오류와 상태 불변 결과를 반환합니다") {
+          val candidate = deployCandidate()
+          val store =
+              RecordingGateStore(WorkflowStoreSnapshot("store-1", candidates = listOf(candidate)))
+          val identity = RecordingIdentityPort(Actor("agent-1", ActorKind.AGENT), allowed = false)
+          val result =
+              DeliveryGateUseCases(
+                      store,
+                      RecordingDeploymentPort(candidate),
+                      RecordingReleasePort(),
+                      identity,
+                  )
+                  .deploy(DeployGateRequest(candidate.id))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.HUMAN_REQUIRED
+          store.calls shouldBe emptyList()
+          identity.authorizedCapability shouldBe Capability.DEPLOY
+        }
+
+        test("Store 쓰기가 실패하면, 시작한 Canary 변경을 보상하고 커밋하지 않습니다") {
+          val candidate = deployCandidate()
+          val store =
+              RecordingGateStore(
+                  WorkflowStoreSnapshot("store-1", candidates = listOf(candidate)),
+                  failWrite = true,
+              )
+          val compensation = DeliveryRecordingCompensationPort()
+          val deployment = RecordingDeploymentPort(candidate, compensatable = true)
+          val result =
+              useCase(store, deployment = deployment, compensation = compensation)
+                  .deploy(DeployGateRequest(candidate.id, "request-1"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.STALE_REVISION
+          compensation.operations shouldBe listOf("start-canary")
+          store.calls shouldBe listOf("begin", "snapshot", "write", "rollback")
+          store.written shouldBe null
+        }
+      }
+
+      context("외부 공개 Gate를 실행할 때") {
+        test("productionReady와 내부 검수를 통과한 공개 대상을 승인하면, Rollout과 Gate 감사 정보를 함께 저장합니다") {
+          val candidate = productionCandidate()
+          val release = release()
+          val store =
+              RecordingGateStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      candidates = listOf(candidate),
+                      releases = listOf(release),
+                  )
+              )
+          val releasePort = RecordingReleasePort(release)
+          val result =
+              useCase(store, release = releasePort)
+                  .release(ReleaseGateRequest(release.id, "request-2"))
+          val success = result.shouldBeInstanceOf<WorkflowResult.Success<StartReleaseResponse>>()
+
+          success.data.release.state shouldBe ReleaseState.ROLLOUT
+          releasePort.startedActor shouldBe human
+          store.written?.releases?.single()?.state shouldBe ReleaseState.ROLLOUT
+          store.written?.eventLog?.events.orEmpty() shouldContain
+              GateRecorded(release.id, GateType.RELEASE, human, 1_000)
+          store.written?.eventLog?.audits.orEmpty() shouldContain
+              AuditEntry(
+                  id = "audit-1",
+                  actor = human,
+                  action = "release",
+                  targetId = release.id,
+                  mainRevision = candidate.mainRevision,
+                  occurredAtEpochMillis = 1_000,
+              )
+        }
+
+        test("내부 검수가 끝나지 않은 공개 대상을 승인하면, 공개 Gate 차단 오류와 롤백을 반환합니다") {
+          val candidate = productionCandidate()
+          val release = release(internalValidationPassed = false)
+          val store =
+              RecordingGateStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      candidates = listOf(candidate),
+                      releases = listOf(release),
+                  )
+              )
+          val releasePort = RecordingReleasePort(release)
+          val result = useCase(store, release = releasePort).release(ReleaseGateRequest(release.id))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.RELEASE_GATE_BLOCKED
+          releasePort.startCalls shouldBe 0
+          store.calls shouldBe listOf("begin", "snapshot", "rollback")
+        }
+      }
+    })
+
+private val human = Actor("human-1", ActorKind.HUMAN)
+
+private fun useCase(
+    store: RecordingGateStore,
+    deployment: DeploymentPort = RecordingDeploymentPort(),
+    release: ReleasePort = RecordingReleasePort(),
+    compensation: CompensationPort = DeliveryRecordingCompensationPort(),
+): DeliveryGateUseCases =
+    DeliveryGateUseCases(
+        store,
+        deployment,
+        release,
+        RecordingIdentityPort(human),
+        idPort = RecordingIdPort(),
+        clockPort = RecordingClockPort(),
+        compensationPort = compensation,
+    )
+
+private fun deployCandidate(
+    risk: Risk = Risk.HIGH,
+    state: DeploymentCandidateState = DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL,
+): DeploymentCandidate =
+    DeploymentCandidate(
+        id = "candidate-1",
+        mainRevision = "main-1",
+        includedSubTasks = listOf("sk-101"),
+        risks = mapOf("sk-101" to risk),
+        state = state,
+    )
+
+private fun productionCandidate(): DeploymentCandidate =
+    DeploymentCandidate(
+        id = "candidate-1",
+        mainRevision = "main-1",
+        includedSubTasks = listOf("sk-101"),
+        risks = mapOf("sk-101" to Risk.NORMAL),
+        validations = listOf(Validation("validation-1", "test", ValidationStatus.PASSED)),
+        state = DeploymentCandidateState.PRODUCTION,
+    )
+
+private fun release(
+    productionReady: Boolean = true,
+    internalValidationPassed: Boolean = true,
+    state: ReleaseState = ReleaseState.AWAITING_RELEASE_APPROVAL,
+): Release =
+    Release(
+        id = "release-1",
+        candidateId = "candidate-1",
+        featureFlagId = "recommendation-v2",
+        state = state,
+        productionReady = productionReady,
+        internalValidationPassed = internalValidationPassed,
+    )
+
+private class RecordingIdentityPort(
+    private val actor: Actor,
+    private val allowed: Boolean = true,
+) : IdentityPort {
+  var authorizedCapability: Capability? = null
+
+  override fun currentActor(request: CurrentActorRequest): PortResult<CurrentActorResponse> =
+      PortResult.Success(CurrentActorResponse(actor))
+
+  override fun authorize(request: AuthorizeRequest): PortResult<AuthorizeResponse> {
+    authorizedCapability = request.capability
+    return PortResult.Success(AuthorizeResponse(allowed))
+  }
+}
+
+private class RecordingDeploymentPort(
+    private var candidate: DeploymentCandidate = deployCandidate(),
+    private val compensatable: Boolean = false,
+) : DeploymentPort {
+  var startCalls: Int = 0
+  var startedActor: Actor? = null
+
+  override fun createCandidate(
+      request: CreateCandidateRequest
+  ): PortResult<CreateCandidateResponse> = unsupported()
+
+  override fun getCandidate(request: GetCandidateRequest): PortResult<GetCandidateResponse> =
+      PortResult.Success(GetCandidateResponse(candidate))
+
+  override fun validate(request: ValidateCandidateRequest): PortResult<ValidateCandidateResponse> =
+      unsupported()
+
+  override fun startCanary(request: StartCanaryRequest): PortResult<StartCanaryResponse> {
+    startCalls += 1
+    startedActor = request.actor
+    candidate = candidate.copy(state = DeploymentCandidateState.CANARY)
+    return PortResult.Success(
+        StartCanaryResponse(candidate, change("start-canary", compensatable)),
+    )
+  }
+
+  override fun promoteProduction(
+      request: PromoteProductionRequest
+  ): PortResult<PromoteProductionResponse> = unsupported()
+
+  private fun <T> unsupported(): PortResult<T> =
+      PortResult.Failure(PortError(FailureCode.STATE_CONFLICT.name, "지원하지 않는 테스트 동작입니다."))
+}
+
+private class RecordingReleasePort(
+    private var release: Release? = null,
+) : ReleasePort {
+  var startCalls: Int = 0
+  var startedActor: Actor? = null
+
+  override fun get(request: GetReleaseRequest): PortResult<GetReleaseResponse> =
+      PortResult.Success(GetReleaseResponse(listOfNotNull(release)))
+
+  override fun create(request: CreateReleaseRequest): PortResult<CreateReleaseResponse> =
+      unsupported()
+
+  override fun validateInternal(
+      request: ValidateReleaseRequest
+  ): PortResult<ValidateReleaseResponse> = unsupported()
+
+  override fun start(request: StartReleaseRequest): PortResult<StartReleaseResponse> {
+    startCalls += 1
+    startedActor = request.actor
+    val started = release!!.copy(state = ReleaseState.ROLLOUT)
+    release = started
+    return PortResult.Success(StartReleaseResponse(started, change("start-release")))
+  }
+
+  override fun continueRollout(
+      request: ContinueReleaseRequest
+  ): PortResult<ContinueReleaseResponse> = unsupported()
+
+  private fun <T> unsupported(): PortResult<T> =
+      PortResult.Failure(PortError(FailureCode.STATE_CONFLICT.name, "지원하지 않는 테스트 동작입니다."))
+}
+
+private class RecordingGateStore(
+    private var snapshot: WorkflowStoreSnapshot,
+    private val failWrite: Boolean = false,
+) : WorkflowStorePort {
+  val calls = mutableListOf<String>()
+  var written: WorkflowStoreSnapshot? = null
+
+  override fun begin(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> {
+    calls += "begin"
+    return PortResult.Success(
+        StoreTransactionResponse(request.transactionId, StoreTransactionState.OPEN)
+    )
+  }
+
+  override fun snapshot(request: StoreSnapshotRequest): PortResult<StoreSnapshotResponse> {
+    calls += "snapshot"
+    return PortResult.Success(StoreSnapshotResponse(snapshot))
+  }
+
+  override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> {
+    calls += "write"
+    if (failWrite) {
+      return PortResult.Failure(
+          PortError(FailureCode.STALE_REVISION.name, "저장소 revision이 변경되었습니다.")
+      )
+    }
+    written = request.snapshot
+    snapshot = request.snapshot
+    return PortResult.Success(StoreWriteResponse("store-2"))
+  }
+
+  override fun append(request: StoreEventRequest): PortResult<StoreEventResponse> =
+      PortResult.Failure(PortError(FailureCode.STATE_CONFLICT.name, "원자 쓰기 테스트에서는 호출하지 않습니다."))
+
+  override fun commit(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> {
+    calls += "commit"
+    return PortResult.Success(
+        StoreTransactionResponse(request.transactionId, StoreTransactionState.COMMITTED)
+    )
+  }
+
+  override fun rollback(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> {
+    calls += "rollback"
+    return PortResult.Success(
+        StoreTransactionResponse(request.transactionId, StoreTransactionState.ROLLED_BACK)
+    )
+  }
+}
+
+private class DeliveryRecordingCompensationPort : CompensationPort {
+  val operations = mutableListOf<String>()
+
+  override fun compensate(request: CompensateRequest): PortResult<CompensateResponse> {
+    operations += request.change.operation
+    return PortResult.Success(CompensateResponse(request.change))
+  }
+}
+
+private class RecordingIdPort : IdPort {
+  override fun issue(request: IssueIdRequest): PortResult<IssueIdResponse> =
+      PortResult.Success(IssueIdResponse(listOf(IssuedId(request.kind, "audit-1"))))
+}
+
+private class RecordingClockPort : ClockPort {
+  override fun now(request: NowRequest): PortResult<NowResponse> =
+      PortResult.Success(NowResponse(1_000))
+}
+
+private fun change(operation: String, compensatable: Boolean = false): ChangeReceipt =
+    ChangeReceipt(
+        id = "change-$operation",
+        operation = operation,
+        compensation =
+            if (compensatable) Compensation("comp-$operation", "undo-$operation", operation)
+            else null,
+    )
