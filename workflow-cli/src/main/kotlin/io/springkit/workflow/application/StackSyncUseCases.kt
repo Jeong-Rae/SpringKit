@@ -12,6 +12,7 @@ import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.SubTaskId
+import io.springkit.workflow.domain.SyncConflict
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
 
@@ -77,8 +78,6 @@ class StackSyncUseCases(
     private val compensationPort: CompensationPort? = null,
     private val clockPort: ClockPort? = null,
 ) {
-  private val pendingConflicts = mutableMapOf<SubTaskId, PendingConflict>()
-
   constructor(
       storePort: WorkflowStorePort,
       gitPort: GitPort,
@@ -172,11 +171,11 @@ class StackSyncUseCases(
                     ),
             pullRequests =
                 snapshot.pullRequests.replaceByIdOrKeep(review.value.pullRequest) { it.id },
+            syncConflicts = snapshot.syncConflicts - request.subTaskId,
         )
     if (!writeAndCommit(tx, snapshot, updatedSnapshot)) {
       return recover(tx, changes, lastFailure.data)
     }
-    pendingConflicts.remove(request.subTaskId)
     return WorkflowResult.Success(
         StackResponse(
             updatedSubTask,
@@ -196,30 +195,20 @@ class StackSyncUseCases(
     if (request.continueSync && request.abort) {
       return failure(FailureCode.INVALID_ARGUMENT, "sync accepts at most one recovery action")
     }
-    if (request.abort) return abortSync(request)
-
-    val pending = pendingConflicts[request.subTaskId]
-    if (pending != null && !request.continueSync) {
-      return conflictFailure(request.subTaskId, pending.paths)
-    }
-    if (request.continueSync) {
-      if (pending == null) {
-        return failure(
-            FailureCode.STATE_CONFLICT,
-            "sync --continue is only available for an active SYNC_CONFLICT recovery",
-        )
-      }
-      val target =
-          findTarget(snapshot() ?: return lastFailure, request.subTaskId) ?: return lastFailure
-      val status = inspect(target.workspace) ?: return lastFailure
-      if (status.conflicts.isNotEmpty()) {
-        return conflictFailure(request.subTaskId, status.conflicts)
-      }
-    }
-
     val snapshot = snapshot() ?: return lastFailure
     staleIfNeeded(request.expectedStoreRevision, snapshot.revision)?.let {
       return it
+    }
+    val pending = snapshot.syncConflicts[request.subTaskId]
+    if (request.abort) return abortSync(request, snapshot)
+    if (pending != null && !request.continueSync) {
+      return conflictFailure(request.subTaskId, pending.conflictPaths)
+    }
+    if (request.continueSync && pending == null) {
+      return failure(
+          FailureCode.STATE_CONFLICT,
+          "sync --continue is only available for an active SYNC_CONFLICT recovery",
+      )
     }
     val target = findTarget(snapshot, request.subTaskId) ?: return lastFailure
     val parent =
@@ -236,30 +225,43 @@ class StackSyncUseCases(
     if (childStatus.conflicts.isNotEmpty()) {
       return conflictFailure(request.subTaskId, childStatus.conflicts)
     }
+    if (request.continueSync) {
+      return continueAndPersist(
+          snapshot,
+          target,
+          base,
+          request.subTaskId,
+          pending?.conflictPaths.orEmpty(),
+      )
+    }
     return restackAndPersist(snapshot, target, base, request.subTaskId)
   }
 
-  private fun abortSync(request: SyncRequest): WorkflowResult<SyncResponse> {
-    val pending =
-        pendingConflicts[request.subTaskId]
-            ?: return failure(
-                FailureCode.STATE_CONFLICT,
-                "sync --abort is only available for SYNC_CONFLICT",
-            )
-    val failures = compensate(pending.changes, "abort sync for ${request.subTaskId}")
-    if (failures.isNotEmpty()) {
+  private fun abortSync(
+      request: SyncRequest,
+      snapshot: WorkflowStoreSnapshot,
+  ): WorkflowResult<SyncResponse> {
+    if (snapshot.syncConflicts[request.subTaskId] == null) {
       return failure(
           FailureCode.STATE_CONFLICT,
-          "could not abort sync: ${failures.joinToString { it.message }}",
-          next = listOf(NextAction(ActorKind.WORKFLOW, "reconcile_sync")),
+          "sync --abort is only available for SYNC_CONFLICT",
       )
     }
-    pendingConflicts.remove(request.subTaskId)
-    val snapshot = snapshot() ?: return lastFailure
     val target = findTarget(snapshot, request.subTaskId) ?: return lastFailure
     val parent =
         target.subTask.requires?.let { id -> snapshot.subTasks.firstOrNull { it.id == id } }
     val base = resolveBase(snapshot, parent) ?: return lastFailure
+    val aborted =
+        when (val result = gitPort.abortRestack(AbortRestackRequest(target.workspace.id))) {
+          is PortResult.Success -> result
+          is PortResult.Failure -> return WorkflowResult.Failure(failureFrom(result.error))
+        }
+    val tx = transaction("sync-abort:${request.subTaskId}", snapshot)
+    if (!begin(tx)) return lastFailure
+    val updatedSnapshot = snapshot.copy(syncConflicts = snapshot.syncConflicts - request.subTaskId)
+    if (!writeAndCommit(tx, snapshot, updatedSnapshot)) {
+      return recover(tx, listOf(aborted.value.change), lastFailure.data)
+    }
     return WorkflowResult.Success(
         SyncResponse(
             target.subTask,
@@ -268,6 +270,76 @@ class StackSyncUseCases(
             base.revision,
             snapshot.pullRequests.firstOrNull { it.subTaskId == target.subTask.id },
             recovery = null,
+        ),
+        next = listOf(NextAction(ActorKind.AGENT, "check")),
+    )
+  }
+
+  private fun continueAndPersist(
+      snapshot: WorkflowStoreSnapshot,
+      target: Target,
+      base: Base,
+      subTaskId: SubTaskId,
+      previousConflictPaths: List<String>,
+  ): WorkflowResult<SyncResponse> {
+    val continued =
+        when (val result = gitPort.continueRestack(ContinueRestackRequest(target.workspace.id))) {
+          is PortResult.Success -> result
+          is PortResult.Failure ->
+              return if (result.error.code.uppercase() == "SYNC_CONFLICT") {
+                conflictFailure(
+                    subTaskId,
+                    (previousConflictPaths + conflictPaths(target.workspace, result.error)).distinct(),
+                )
+              } else {
+                WorkflowResult.Failure(failureFrom(result.error))
+              }
+        }
+    val status = inspect(target.workspace) ?: return lastFailure
+    if (status.conflicts.isNotEmpty()) {
+      return conflictFailure(subTaskId, status.conflicts)
+    }
+    val tx = transaction("sync-continue:$subTaskId", snapshot)
+    if (!begin(tx)) return lastFailure
+    val changes = mutableListOf(continued.value.change)
+    val review = synchronizeReview(snapshot, target.subTask, base, true, changes)
+    if (review is PortResult.Failure) return recover(tx, changes, failureFrom(review.error))
+    review as PortResult.Success
+    val parent =
+        target.subTask.requires?.let { id -> snapshot.subTasks.firstOrNull { it.id == id } }
+    val parentMerged =
+        parent != null &&
+            (parent.state == io.springkit.workflow.domain.SubTaskState.MERGED ||
+                snapshot.integrations.any {
+                  it.subTaskId == parent.id && it.state == IntegrationState.MERGED
+                })
+    val updatedSubTask = if (parentMerged) target.subTask.copy(requires = null) else target.subTask
+    val updatedSnapshot =
+        snapshot.copy(
+            subTasks = snapshot.subTasks.replaceById(updatedSubTask) { it.id },
+            dependencies =
+                snapshot.dependencies.filterNot { it.subTaskId == updatedSubTask.id } +
+                    listOfNotNull(
+                        updatedSubTask.requires?.let { Dependency(updatedSubTask.id, it) }
+                    ),
+            pullRequests =
+                snapshot.pullRequests.replaceByIdOrKeep(review.value.pullRequest) { it.id },
+            syncConflicts = snapshot.syncConflicts - subTaskId,
+        )
+    if (!writeAndCommit(tx, snapshot, updatedSnapshot)) {
+      return recover(tx, changes, lastFailure.data)
+    }
+    return WorkflowResult.Success(
+        SyncResponse(
+            updatedSubTask,
+            target.workspace,
+            base.branch,
+            base.revision,
+            review.value.pullRequest,
+            diffIdentitySame = false,
+            changeRevisionRetained = false,
+            approvalRetained = false,
+            invalidatedState = invalidatedStateFor(true),
         ),
         next = listOf(NextAction(ActorKind.AGENT, "check")),
     )
@@ -337,10 +409,10 @@ class StackSyncUseCases(
                     ),
             pullRequests =
                 snapshot.pullRequests.replaceByIdOrKeep(review.value.pullRequest) { it.id },
+            syncConflicts = snapshot.syncConflicts - subTaskId,
         )
     if (!writeAndCommit(tx, snapshot, updatedSnapshot))
         return recover(tx, changes, lastFailure.data)
-    pendingConflicts.remove(subTaskId)
     return WorkflowResult.Success(
         SyncResponse(
             updatedSubTask,
@@ -579,7 +651,23 @@ class StackSyncUseCases(
       changes: List<ChangeReceipt>,
   ): WorkflowResult.Failure {
     storePort.rollback(transaction)
-    pendingConflicts[subTaskId] = PendingConflict(before, paths.distinct(), changes)
+    val conflictSnapshot = snapshot() ?: return lastFailure
+    val conflictTransaction = transaction("sync-conflict:$subTaskId", conflictSnapshot)
+    if (!begin(conflictTransaction)) return lastFailure
+    val conflict =
+        SyncConflict(
+            subTaskId = subTaskId,
+            before = before,
+            conflictPaths = paths.distinct(),
+            startedAtEpochMillis = now("sync-conflict:$subTaskId"),
+        )
+    val updatedSnapshot =
+        conflictSnapshot.copy(
+            syncConflicts = conflictSnapshot.syncConflicts + (subTaskId to conflict)
+        )
+    if (!writeAndCommit(conflictTransaction, conflictSnapshot, updatedSnapshot)) {
+      return recover(conflictTransaction, emptyList(), lastFailure.data)
+    }
     return conflictFailure(subTaskId, paths)
   }
 
@@ -641,6 +729,13 @@ class StackSyncUseCases(
           is PortResult.Success -> null
           is PortResult.Failure -> result.error
         }
+      }
+
+  private fun now(requestId: String): Long =
+      when (val result = clockPort?.now(NowRequest(requestId))) {
+        is PortResult.Success -> result.value.epochMillis
+        is PortResult.Failure,
+        null -> 0L
       }
 
   private fun failureFrom(error: PortError, target: String? = error.target): FailureData =
@@ -714,12 +809,6 @@ class StackSyncUseCases(
   private data class Target(val subTask: SubTask, val workspace: Workspace)
 
   private data class ReviewSync(val pullRequest: PullRequest?, val same: Boolean)
-
-  private data class PendingConflict(
-      val before: SubTask,
-      val paths: List<String>,
-      val changes: List<ChangeReceipt>,
-  )
 
   private var lastFailure: WorkflowResult.Failure =
       WorkflowResult.Failure(FailureData(FailureCode.STATE_CONFLICT, "workflow operation failed"))

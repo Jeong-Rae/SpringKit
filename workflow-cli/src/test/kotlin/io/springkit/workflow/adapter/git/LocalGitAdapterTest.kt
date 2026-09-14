@@ -6,6 +6,8 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeTypeOf
+import io.springkit.workflow.application.AbortRestackRequest
+import io.springkit.workflow.application.ContinueRestackRequest
 import io.springkit.workflow.application.CreateBranchRequest
 import io.springkit.workflow.application.CreateWorktreeRequest
 import io.springkit.workflow.application.GitInspectRequest
@@ -257,6 +259,38 @@ class LocalGitAdapterTest :
           failure.error.message shouldContain "src/Main.kt"
           runner.commands.last() shouldBe
               Invocation(listOf("git", "diff", "--name-only", "--diff-filter=U"), workspace)
+        }
+      }
+
+      context("충돌 복구를 요청하면") {
+        test("동기화 계속을 요청하면, git rebase --continue를 workspace에서 실행합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "", ""))
+          val workspace = Path.of("/workspace/sk-107")
+          val adapter = adapter(runner) { workspace }
+
+          val result = adapter.continueRestack(ContinueRestackRequest("workspace-7"))
+
+          result.shouldBeTypeOf<PortResult.Success<*>>()
+          runner.commands shouldBe
+              listOf(
+                  Invocation(
+                      listOf("git", "-c", "core.editor=true", "rebase", "--continue"),
+                      workspace,
+                  )
+              )
+        }
+
+        test("동기화 취소를 요청하면, git rebase --abort를 workspace에서 실행합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "", ""))
+          val workspace = Path.of("/workspace/sk-108")
+          val adapter = adapter(runner) { workspace }
+
+          val result = adapter.abortRestack(AbortRestackRequest("workspace-8"))
+
+          result.shouldBeTypeOf<PortResult.Success<*>>()
+          runner.commands shouldBe listOf(Invocation(listOf("git", "rebase", "--abort"), workspace))
         }
       }
 

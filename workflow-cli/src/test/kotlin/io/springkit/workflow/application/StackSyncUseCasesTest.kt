@@ -7,6 +7,7 @@ import io.springkit.workflow.domain.Dependency
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.SubTaskState
+import io.springkit.workflow.domain.SyncConflict
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspacePath
@@ -74,7 +75,7 @@ class StackSyncUseCasesTest :
           git.lastRestack?.baseBranch shouldBe "main"
         }
 
-        test("동기화 충돌이 발생하면, 복구 상태를 유지하고 두 번째 자동 동기화를 막습니다") {
+        test("동기화 충돌 상태에서 프로세스를 재시작하면, 저장된 복구 상태로 두 번째 자동 동기화를 막습니다") {
           val child = subTask("sk-child")
           val store = RecordingStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(child)))
           val git =
@@ -90,13 +91,84 @@ class StackSyncUseCasesTest :
           val useCase = StackSyncUseCases(git, NoopReviewPort(), store)
 
           val first = useCase.sync(SyncRequest(child.id))
-          val second = useCase.sync(SyncRequest(child.id))
+          val restarted = StackSyncUseCases(git, NoopReviewPort(), store)
+          val second = restarted.sync(SyncRequest(child.id))
 
           first.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
               FailureCode.SYNC_CONFLICT
           second.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
               FailureCode.SYNC_CONFLICT
           git.restackCalls shouldBe 1
+          store.current.syncConflicts.keys shouldBe setOf(child.id)
+        }
+
+        test("충돌이 해결된 상태에서 sync --continue를 실행하면, rebase continue 후 충돌 상태를 제거합니다") {
+          val child = subTask("sk-child")
+          val conflict = SyncConflict(child.id, child, listOf("src/main.kt"), 21)
+          val store =
+              RecordingStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(child),
+                      syncConflicts = mapOf(child.id to conflict),
+                  ),
+              )
+          val git = RecordingGit()
+          val useCase = StackSyncUseCases(git, NoopReviewPort(), store)
+
+          val result = useCase.sync(SyncRequest(child.id, continueSync = true))
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<SyncResponse>>()
+          git.continueCalls shouldBe 1
+          git.restackCalls shouldBe 0
+          store.current.syncConflicts shouldBe emptyMap()
+        }
+
+        test("활성 충돌 상태에서 sync --abort를 실행하면, rebase abort 후 충돌 상태를 제거합니다") {
+          val child = subTask("sk-child")
+          val conflict = SyncConflict(child.id, child, listOf("src/main.kt"), 21)
+          val store =
+              RecordingStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(child),
+                      syncConflicts = mapOf(child.id to conflict),
+                  ),
+              )
+          val git = RecordingGit()
+          val useCase = StackSyncUseCases(git, NoopReviewPort(), store)
+
+          val result = useCase.sync(SyncRequest(child.id, abort = true))
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<SyncResponse>>()
+          git.abortCalls shouldBe 1
+          store.current.syncConflicts shouldBe emptyMap()
+        }
+
+        test("동기화 취소 전에 기준 revision을 확인하지 못하면, rebase abort와 충돌 상태 변경을 수행하지 않습니다") {
+          val child = subTask("sk-child")
+          val conflict = SyncConflict(child.id, child, listOf("src/main.kt"), 21)
+          val store =
+              RecordingStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(child),
+                      syncConflicts = mapOf(child.id to conflict),
+                  ),
+              )
+          val git =
+              RecordingGit(
+                  refreshMainResult =
+                      PortResult.Failure(PortError("REMOTE_FAILURE", "main 조회에 실패했습니다."))
+              )
+          val useCase = StackSyncUseCases(git, NoopReviewPort(), store)
+
+          val result = useCase.sync(SyncRequest(child.id, abort = true))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.EXTERNAL_FAILURE
+          git.abortCalls shouldBe 0
+          store.current.syncConflicts.keys shouldBe setOf(child.id)
         }
       }
     })
@@ -123,12 +195,15 @@ private class RecordingGit(
             diffChanged = false,
             change = ChangeReceipt("restack-1", "restack"),
         ),
+    var refreshMainResult: PortResult<MainRevisionResponse> =
+        PortResult.Success(MainRevisionResponse("main-revision")),
 ) : GitPort {
   var restackCalls = 0
+  var continueCalls = 0
+  var abortCalls = 0
   var lastRestack: RestackRequest? = null
 
-  override fun refreshMain(request: MainRevisionRequest) =
-      PortResult.Success(MainRevisionResponse("main-revision"))
+  override fun refreshMain(request: MainRevisionRequest) = refreshMainResult
 
   override fun inspect(request: GitInspectRequest) =
       PortResult.Success(
@@ -151,6 +226,16 @@ private class RecordingGit(
     restackCalls += 1
     lastRestack = request
     return PortResult.Success(restackResponse)
+  }
+
+  override fun continueRestack(request: ContinueRestackRequest): PortResult<ContinueRestackResponse> {
+    continueCalls += 1
+    return PortResult.Success(ContinueRestackResponse(ChangeReceipt("continue-1", "continue")))
+  }
+
+  override fun abortRestack(request: AbortRestackRequest): PortResult<AbortRestackResponse> {
+    abortCalls += 1
+    return PortResult.Success(AbortRestackResponse(ChangeReceipt("abort-1", "abort")))
   }
 
   override fun removeBranch(request: RemoveBranchRequest) = error("not used")

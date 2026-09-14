@@ -1,6 +1,10 @@
 package io.springkit.workflow.adapter.git
 
+import io.springkit.workflow.application.AbortRestackRequest
+import io.springkit.workflow.application.AbortRestackResponse
 import io.springkit.workflow.application.ChangeReceipt
+import io.springkit.workflow.application.ContinueRestackRequest
+import io.springkit.workflow.application.ContinueRestackResponse
 import io.springkit.workflow.application.CreateBranchRequest
 import io.springkit.workflow.application.CreateBranchResponse
 import io.springkit.workflow.application.CreateWorktreeRequest
@@ -168,6 +172,60 @@ class LocalGitAdapter(
     )
   }
 
+  override fun continueRestack(
+      request: ContinueRestackRequest
+  ): PortResult<ContinueRestackResponse> {
+    val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
+    val result = run(listOf("git", "-c", "core.editor=true", "rebase", "--continue"), path)
+    if (result is Execution.Failure) {
+      val conflicts = unresolvedPaths(path)
+      return failure(
+          code = if (conflicts.isEmpty()) "RESTACK_CONTINUE_FAILED" else "SYNC_CONFLICT",
+          message =
+              buildString {
+                append("git rebase --continue에 실패했습니다")
+                if (result.result.error.message.isNotBlank()) {
+                  append(": ").append(result.result.error.message)
+                }
+                if (conflicts.isNotEmpty()) {
+                  append("; 충돌 파일: ").append(conflicts.joinToString(", "))
+                }
+              },
+          target = request.workspaceId,
+      )
+    }
+    return PortResult.Success(
+        ContinueRestackResponse(
+            change =
+                ChangeReceipt(
+                    id = "git-restack-continue-${request.workspaceId}",
+                    operation = "restack-continue",
+                )
+        )
+    )
+  }
+
+  override fun abortRestack(request: AbortRestackRequest): PortResult<AbortRestackResponse> {
+    val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
+    val result = run(listOf("git", "rebase", "--abort"), path)
+    if (result is Execution.Failure) {
+      return failure(
+          code = "RESTACK_ABORT_FAILED",
+          message = "git rebase --abort에 실패했습니다: ${result.result.error.message}",
+          target = request.workspaceId,
+      )
+    }
+    return PortResult.Success(
+        AbortRestackResponse(
+            change =
+                ChangeReceipt(
+                    id = "git-restack-abort-${request.workspaceId}",
+                    operation = "restack-abort",
+                )
+        )
+    )
+  }
+
   override fun removeBranch(request: RemoveBranchRequest): PortResult<RemoveBranchResponse> {
     if (request.expectedRevision != null) {
       val revision = run(listOf("git", "rev-parse", "refs/heads/${request.branch}"), repositoryRoot)
@@ -216,11 +274,7 @@ class LocalGitAdapter(
       rebase: PortResult.Failure,
       path: Path,
   ): PortResult.Failure {
-    val conflicts =
-        run(listOf("git", "diff", "--name-only", "--diff-filter=U"), path).let { result ->
-          if (result is Execution.Success) result.result.stdout.lines().filter(String::isNotBlank)
-          else emptyList()
-        }
+    val conflicts = unresolvedPaths(path)
     val detail = rebase.error.message
     return failure(
         code = if (conflicts.isEmpty()) "RESTACK_FAILED" else "SYNC_CONFLICT",
@@ -233,6 +287,12 @@ class LocalGitAdapter(
         target = workspaceId,
     )
   }
+
+  private fun unresolvedPaths(path: Path): List<String> =
+      run(listOf("git", "diff", "--name-only", "--diff-filter=U"), path).let { result ->
+        if (result is Execution.Success) result.result.stdout.lines().filter(String::isNotBlank)
+        else emptyList()
+      }
 
   private fun run(command: List<String>, workingDirectory: Path): Execution {
     return try {

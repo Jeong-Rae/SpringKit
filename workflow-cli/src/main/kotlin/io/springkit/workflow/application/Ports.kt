@@ -378,6 +378,14 @@ data class RestackResponse(
     override val change: ChangeReceipt,
 ) : ChangeResponse
 
+data class ContinueRestackRequest(val workspaceId: WorkspaceId)
+
+data class ContinueRestackResponse(override val change: ChangeReceipt) : ChangeResponse
+
+data class AbortRestackRequest(val workspaceId: WorkspaceId)
+
+data class AbortRestackResponse(override val change: ChangeReceipt) : ChangeResponse
+
 data class RemoveBranchRequest(val branch: BranchName, val expectedRevision: String? = null)
 
 data class RemoveBranchResponse(val branch: BranchName, override val change: ChangeReceipt) :
@@ -393,6 +401,24 @@ interface GitPort {
   fun createWorktree(request: CreateWorktreeRequest): PortResult<CreateWorktreeResponse>
 
   fun restack(request: RestackRequest): PortResult<RestackResponse>
+
+  fun continueRestack(request: ContinueRestackRequest): PortResult<ContinueRestackResponse> =
+      PortResult.Failure(
+          PortError(
+              code = "GIT_RECOVERY_UNSUPPORTED",
+              message = "Git rebase 복구 동작을 지원하지 않습니다.",
+              target = request.workspaceId,
+          )
+      )
+
+  fun abortRestack(request: AbortRestackRequest): PortResult<AbortRestackResponse> =
+      PortResult.Failure(
+          PortError(
+              code = "GIT_RECOVERY_UNSUPPORTED",
+              message = "Git rebase 복구 동작을 지원하지 않습니다.",
+              target = request.workspaceId,
+          )
+      )
 
   fun removeBranch(request: RemoveBranchRequest): PortResult<RemoveBranchResponse>
 }
