@@ -1,0 +1,347 @@
+package io.springkit.workflow.adapter.git
+
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeTypeOf
+import io.springkit.workflow.application.CreateBranchRequest
+import io.springkit.workflow.application.CreateWorktreeRequest
+import io.springkit.workflow.application.GitInspectRequest
+import io.springkit.workflow.application.MainRevisionRequest
+import io.springkit.workflow.application.PortResult
+import io.springkit.workflow.application.RemoveBranchRequest
+import io.springkit.workflow.application.RestackRequest
+import io.springkit.workflow.common.CommandResult
+import io.springkit.workflow.common.CommandRunner
+import io.springkit.workflow.common.LocalCommandRunner
+import io.springkit.workflow.domain.WorkspacePath
+import java.nio.file.Files
+import java.nio.file.Path
+
+class LocalGitAdapterTest :
+    FunSpec({
+      context("로컬 Git 명령을 실행하면") {
+        test("유효하지 않은 Git 옵션을 실행하면, stdout와 stderr와 종료 코드를 분리합니다") {
+          val result = LocalCommandRunner().run(listOf("git", "--definitely-invalid"), Path.of("."))
+
+          result.exitCode shouldBe 129
+          result.stdout shouldBe ""
+          result.stderr shouldContain "unknown option"
+        }
+      }
+
+      context("workspace를 조회하면") {
+        test("workspaceId로 경로를 찾으면, 해당 경로의 revision과 변경 상태를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "revision-1\n", ""))
+          runner.enqueue(CommandResult(0, " M src/Main.kt\n?? notes.md\n", ""))
+          runner.enqueue(CommandResult(0, "diff-content\n", ""))
+          runner.enqueue(CommandResult(0, "notes.md\u0000", ""))
+          runner.enqueue(CommandResult(0, "hash-notes\n", ""))
+          val path = Path.of("/tmp/workspace/sk-101")
+          val adapter = adapter(runner) { path }
+
+          val result = adapter.inspect(GitInspectRequest("workspace-1"))
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.GitInspectResponse>()
+          response shouldBe
+              io.springkit.workflow.application.GitInspectResponse(
+                  io.springkit.workflow.application.GitStatus(
+                      revision = "revision-1",
+                      fingerprint = response.status.fingerprint,
+                      dirty = true,
+                  )
+              )
+          runner.commands shouldContainExactly
+              listOf(
+                  Invocation(listOf("git", "rev-parse", "HEAD"), path),
+                  Invocation(
+                      listOf("git", "status", "--porcelain=v1", "--untracked-files=all"),
+                      path,
+                  ),
+                  Invocation(listOf("git", "diff", "--binary", "HEAD"), path),
+                  Invocation(
+                      listOf("git", "ls-files", "--others", "--exclude-standard", "-z"),
+                      path,
+                  ),
+                  Invocation(listOf("git", "hash-object", "--", "notes.md"), path),
+              )
+        }
+
+        test("같은 파일의 내용이 달라지면, fingerprint도 달라집니다") {
+          val firstRunner = RecordingCommandRunner()
+          enqueueInspect(firstRunner, "diff-a\n", "")
+          val secondRunner = RecordingCommandRunner()
+          enqueueInspect(secondRunner, "diff-b\n", "")
+          val first = adapter(firstRunner) { Path.of("/workspace/sk-101") }
+          val second = adapter(secondRunner) { Path.of("/workspace/sk-101") }
+
+          val firstStatus = first.inspect(GitInspectRequest("workspace-1"))
+          val secondStatus = second.inspect(GitInspectRequest("workspace-1"))
+
+          firstStatus
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<io.springkit.workflow.application.GitInspectResponse>()
+              .status
+              .fingerprint shouldNotBe
+              secondStatus
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.GitInspectResponse>()
+                  .status
+                  .fingerprint
+        }
+
+        test("untracked 파일의 내용이 달라지면, fingerprint도 달라집니다") {
+          val firstRunner = RecordingCommandRunner()
+          enqueueInspect(firstRunner, "same-diff\n", "hash-a\n")
+          val secondRunner = RecordingCommandRunner()
+          enqueueInspect(secondRunner, "same-diff\n", "hash-b\n")
+          val first = adapter(firstRunner) { Path.of("/workspace/sk-101") }
+          val second = adapter(secondRunner) { Path.of("/workspace/sk-101") }
+
+          val firstStatus = first.inspect(GitInspectRequest("workspace-1"))
+          val secondStatus = second.inspect(GitInspectRequest("workspace-1"))
+
+          firstStatus
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<io.springkit.workflow.application.GitInspectResponse>()
+              .status
+              .fingerprint shouldNotBe
+              secondStatus
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.GitInspectResponse>()
+                  .status
+                  .fingerprint
+        }
+      }
+
+      context("main revision을 갱신하면") {
+        test("원격 main fetch가 성공하면, 원격 ref의 revision을 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "", ""))
+          runner.enqueue(CommandResult(0, "revision-2\n", ""))
+          val repositoryRoot = Path.of("/repo")
+          val adapter = adapter(runner, repositoryRoot) { Path.of("/workspace") }
+
+          val result = adapter.refreshMain(MainRevisionRequest("origin", "main"))
+
+          result.shouldBeTypeOf<PortResult.Success<*>>().value shouldBe
+              io.springkit.workflow.application.MainRevisionResponse("revision-2")
+          runner.commands shouldContainExactly
+              listOf(
+                  Invocation(listOf("git", "fetch", "origin", "main"), repositoryRoot),
+                  Invocation(
+                      listOf("git", "rev-parse", "refs/remotes/origin/main"),
+                      repositoryRoot,
+                  ),
+              )
+        }
+
+        test("원격 main fetch가 실패하면, 로컬 ref를 사용하지 않고 실패를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(1, "", "network unavailable"))
+          val repositoryRoot = Path.of("/repo")
+          val adapter = adapter(runner, repositoryRoot) { Path.of("/workspace") }
+
+          val result = adapter.refreshMain(MainRevisionRequest("origin", "main"))
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "MAIN_REVISION_REFRESH_FAILED"
+          runner.commands shouldContainExactly
+              listOf(Invocation(listOf("git", "fetch", "origin", "main"), repositoryRoot))
+        }
+      }
+
+      context("branch를 생성하면") {
+        test("base revision에서 branch를 생성하면, Git 명령과 변경 영수증을 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "", ""))
+          val repositoryRoot = Path.of("/repo")
+          val adapter = adapter(runner, repositoryRoot) { Path.of("/workspace") }
+
+          val result =
+              adapter.createBranch(CreateBranchRequest("feature/sk-101", "main", "revision-3"))
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.CreateBranchResponse>()
+          response.branch shouldBe "feature/sk-101"
+          response.revision shouldBe "revision-3"
+          response.change.operation shouldBe "create-branch"
+          runner.commands shouldContainExactly
+              listOf(
+                  Invocation(
+                      listOf("git", "branch", "feature/sk-101", "revision-3"),
+                      repositoryRoot,
+                  )
+              )
+        }
+      }
+
+      context("worktree를 생성하면") {
+        test("worktree 생성을 요청하면, 경로와 branch를 Git 명령 토큰으로 전달합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "", ""))
+          val repositoryRoot = Files.createTempDirectory("local-git-adapter")
+          val requestedPath = WorkspacePath("workspaces/sk-102")
+          val adapter = adapter(runner, repositoryRoot) { Path.of("/workspace") }
+
+          val result =
+              adapter.createWorktree(
+                  CreateWorktreeRequest("workspace-2", "feature/sk-102", requestedPath)
+              )
+
+          result
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<io.springkit.workflow.application.CreateWorktreeResponse>()
+              .path shouldBe requestedPath
+          runner.commands shouldContainExactly
+              listOf(
+                  Invocation(
+                      listOf("git", "worktree", "add", "workspaces/sk-102", "feature/sk-102"),
+                      repositoryRoot,
+                  )
+              )
+        }
+      }
+
+      context("현재 revision이 예상 revision과 다르면") {
+        test("현재 revision이 예상 revision과 다르면, restack 없이 재시도 가능한 오류를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "actual\n", ""))
+          val workspace = Path.of("/workspace/sk-103")
+          val adapter = adapter(runner) { workspace }
+
+          val result =
+              adapter.restack(
+                  RestackRequest("workspace-3", "feature/sk-103", "main", "base", "expected")
+              )
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "STALE_REVISION"
+          failure.error.retryable shouldBe true
+          runner.commands shouldBe listOf(Invocation(listOf("git", "rev-parse", "HEAD"), workspace))
+        }
+      }
+
+      context("restack 중 충돌이 발생하면") {
+        test("restack 중 충돌이 발생하면, unmerged 파일 목록이 있는 오류를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "expected\n", ""))
+          runner.enqueue(CommandResult(0, "before\n", ""))
+          runner.enqueue(CommandResult(1, "", "CONFLICT (content): conflict\n"))
+          runner.enqueue(CommandResult(0, "src/Main.kt\n", ""))
+          val workspace = Path.of("/workspace/sk-104")
+          val adapter = adapter(runner) { workspace }
+
+          val result =
+              adapter.restack(
+                  RestackRequest("workspace-4", "feature/sk-104", "main", "base", "expected")
+              )
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "SYNC_CONFLICT"
+          failure.error.message shouldContain "src/Main.kt"
+          runner.commands.last() shouldBe
+              Invocation(listOf("git", "diff", "--name-only", "--diff-filter=U"), workspace)
+        }
+      }
+
+      context("expectedRevision이 일치하는 상태에서 restack하면") {
+        test("expectedRevision이 일치하면, rebase 이후 revision과 diff 변경 여부를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "expected\n", ""))
+          runner.enqueue(CommandResult(0, "same-diff\n", ""))
+          runner.enqueue(CommandResult(0, "", ""))
+          runner.enqueue(CommandResult(0, "after\n", ""))
+          runner.enqueue(CommandResult(0, "changed-diff\n", ""))
+          val workspace = Path.of("/workspace/sk-105")
+          val adapter = adapter(runner) { workspace }
+
+          val result =
+              adapter.restack(
+                  RestackRequest("workspace-5", "feature/sk-105", "main", "base", "expected")
+              )
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.RestackResponse>()
+          response.revision shouldBe "after"
+          response.diffChanged shouldBe true
+          response.change.beforeRevision shouldBe "expected"
+          response.change.afterRevision shouldBe "after"
+          runner.commands[2] shouldBe Invocation(listOf("git", "rebase", "base"), workspace)
+        }
+      }
+
+      context("expectedRevision과 함께 branch를 제거하면") {
+        test("expectedRevision과 함께 branch 제거를 요청하면, revision을 검증한 뒤 제거합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "revision-6\n", ""))
+          runner.enqueue(CommandResult(0, "", ""))
+          val repositoryRoot = Path.of("/repo")
+          val adapter = adapter(runner, repositoryRoot) { Path.of("/workspace") }
+
+          val result = adapter.removeBranch(RemoveBranchRequest("feature/sk-106", "revision-6"))
+
+          result
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<io.springkit.workflow.application.RemoveBranchResponse>()
+              .branch shouldBe "feature/sk-106"
+          runner.commands shouldContainExactly
+              listOf(
+                  Invocation(
+                      listOf("git", "rev-parse", "refs/heads/feature/sk-106"),
+                      repositoryRoot,
+                  ),
+                  Invocation(listOf("git", "branch", "-D", "feature/sk-106"), repositoryRoot),
+              )
+        }
+      }
+    })
+
+private fun adapter(
+    runner: RecordingCommandRunner,
+    repositoryRoot: Path = Path.of("/repo"),
+    workspacePath: (String) -> Path,
+): LocalGitAdapter = LocalGitAdapter(repositoryRoot, workspacePath, runner)
+
+private data class Invocation(val command: List<String>, val workingDirectory: Path)
+
+private class RecordingCommandRunner : CommandRunner {
+  val commands = mutableListOf<Invocation>()
+  private val results = ArrayDeque<CommandResult>()
+
+  fun enqueue(result: CommandResult) {
+    results.addLast(result)
+  }
+
+  override fun run(command: List<String>, workingDirectory: Path): CommandResult {
+    commands += Invocation(command, workingDirectory)
+    return results.removeFirst()
+  }
+}
+
+private fun enqueueInspect(runner: RecordingCommandRunner, diff: String, hash: String) {
+  runner.enqueue(CommandResult(0, "revision-1\n", ""))
+  runner.enqueue(CommandResult(0, " M src/Main.kt\n?? notes.md\n", ""))
+  runner.enqueue(CommandResult(0, diff, ""))
+  runner.enqueue(CommandResult(0, "notes.md\u0000", ""))
+  runner.enqueue(CommandResult(0, hash, ""))
+}
