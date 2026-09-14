@@ -11,11 +11,10 @@ import io.springkit.workflow.domain.ThreadId
 import io.springkit.workflow.domain.WorkflowResult
 
 /**
- * Application boundary for the review lifecycle.
+ * 리뷰 생명주기를 처리하는 애플리케이션 경계입니다.
  *
- * The service deliberately accepts and returns provider-neutral port contracts. Providers own
- * remote identifiers and transport details; this class owns optimistic revision checks and the
- * rules that make a review revision different from a code change revision.
+ * 공급자 중립적인 포트 계약만 주고받습니다. 외부 식별자와 전송 방식은 어댑터가 소유합니다. 이 클래스는 낙관적 revision 검사와 리뷰 revision 및 코드 변경
+ * revision을 구분하는 규칙을 소유합니다.
  */
 class ReviewUseCases(
     private val reviewPort: ReviewPort,
@@ -53,9 +52,9 @@ class ReviewUseCases(
       }
 
   /**
-   * Updates the review while retaining CI, AI review, approval and the change revision for a
-   * documentation-only update. A code update receives a new change revision and invalidates all
-   * checks and approvals that refer to the previous code.
+   * 문서만 변경하면 CI, AI 리뷰, 승인과 코드 변경 revision을 유지합니다.
+   *
+   * 코드가 변경되면 새 변경 revision을 부여하고 이전 코드를 가리키는 검사와 승인을 무효화합니다.
    */
   fun update(request: UpdateReviewRequest): WorkflowResult<UpdateReviewResponse> {
     if (request.body?.isBlank() == true) {
@@ -313,7 +312,6 @@ class ReviewUseCases(
       )
     }
 
-    // A review-revision-only change must not silently invalidate code gates.
     if (after.changeRevision.id != before.changeRevision.id) return null
     return response.copy(
         pullRequest =
@@ -392,16 +390,20 @@ class ReviewUseCases(
       )
 }
 
-// These aliases keep the application vocabulary available to inbound adapters without creating a
-// second provider-facing request model.
+/** 인바운드 어댑터가 별도 공급자 요청 모델 없이 사용하는 리뷰 생성 요청 별칭입니다. */
 typealias ReviewOpenUseCaseRequest = OpenReviewRequest
 
+/** 인바운드 어댑터가 별도 공급자 요청 모델 없이 사용하는 리뷰 조회 요청 별칭입니다. */
 typealias ReviewShowUseCaseRequest = GetReviewRequest
 
+/** 인바운드 어댑터가 별도 공급자 요청 모델 없이 사용하는 리뷰 갱신 요청 별칭입니다. */
 typealias ReviewUpdateUseCaseRequest = UpdateReviewRequest
 
+/** 인바운드 어댑터가 별도 공급자 요청 모델 없이 사용하는 리뷰 댓글 요청 별칭입니다. */
 typealias ReviewCommentUseCaseRequest = AddReviewCommentRequest
 
+/** 인바운드 어댑터가 별도 공급자 요청 모델 없이 사용하는 리뷰 답글 요청 별칭입니다. */
 typealias ReviewReplyUseCaseRequest = ReplyReviewThreadRequest
 
+/** 인바운드 어댑터가 별도 공급자 요청 모델 없이 사용하는 리뷰 스레드 해결 요청 별칭입니다. */
 typealias ReviewResolveUseCaseRequest = ResolveReviewThreadRequest
