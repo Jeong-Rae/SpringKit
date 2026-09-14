@@ -57,7 +57,9 @@ CLI는 Inbound Adapter입니다. 인자 해석과 출력만 담당하며 Workflo
 
 Native Image 구성은 빌드에 포함합니다. reflection, resource, dynamic proxy 또는 serialization metadata가 필요하면 선언된 설정과 테스트로 고정합니다. 런타임 module 경로나 script를 통해 Adapter 구현을 동적으로 불러오지 않습니다.
 
-JSON parser, renderer, 파일 시스템과 범용 네트워크 기능을 직접 구현하지 않습니다. Kotlin 친화성, 공개 검증 이력과 가벼운 의존성 순서로 라이브러리를 선택합니다. JSON과 상태 직렬화에는 reflection이 필요 없는 `kotlinx.serialization`을 사용하고, 파일 I/O는 Okio, HTTP는 필요한 Ktor Client 모듈을 우선합니다. 라이브러리로 해결되지 않는 얇은 공통 유틸리티만 `io.springkit.workflow.comoon` 패키지에 둡니다.
+JSON parser, renderer, 파일 시스템과 범용 네트워크 기능을 직접 구현하지 않습니다. Kotlin 친화성, 공개 검증 이력과 가벼운 의존성 순서로 라이브러리를 선택합니다. JSON과 상태 직렬화에는 reflection이 필요 없는 `kotlinx.serialization`을 사용하고, 파일 I/O는 Okio, HTTP는 필요한 Ktor Client 모듈을 우선합니다. 라이브러리로 해결되지 않는 얇은 공통 유틸리티만 `io.springkit.workflow.common` 패키지에 둡니다.
+
+Git Adapter는 설치된 `git` CLI를 호출하고 GitHub Adapter는 설치된 `gh` CLI를 호출합니다. 각 CLI가 제공하는 Worktree, 인증, PR과 리뷰 기능을 다시 구현하지 않습니다. 명령 실행에는 `io.springkit.workflow.common`의 최소 프로세스 유틸리티만 사용합니다. 이 유틸리티는 작업 디렉터리, 종료 코드, 표준 출력과 표준 오류만 다루며 shell DSL이나 Git 정책을 제공하지 않습니다.
 
 | 명령 | 책임 |
 | --- | --- |
