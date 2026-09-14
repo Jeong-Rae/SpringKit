@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 
-/** JSON codec for the durable workflow state. */
+/** 영속 Workflow 상태를 위한 JSON 코덱입니다. */
 object WorkflowStateJsonCodec {
   const val CURRENT_SCHEMA_VERSION: Int = 1
 
@@ -50,7 +50,7 @@ object WorkflowStateJsonCodec {
       }
 }
 
-/** Signals malformed serialized state or a violation of a workflow state invariant. */
+/** 직렬화된 상태가 잘못되었거나 Workflow 상태 불변식을 위반했음을 나타냅니다. */
 class StateDecodeException(message: String, cause: Throwable? = null) :
     SerializationException(message) {
   init {

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** JSON settings shared by workflow command output and durable state. */
+/** Workflow 명령 출력과 영속 상태가 공유하는 JSON 설정입니다. */
 object WorkflowJson {
   val format: Json = Json {
     explicitNulls = false
@@ -55,7 +55,7 @@ fun WorkflowResult<JsonObject>.toJsonObject(): JsonObject =
           }
     }
 
-/** Encodes a result using the stable `{type, data}` workflow output contract. */
+/** 안정적인 `{type, data}` Workflow 출력 계약에 따라 결과를 인코딩합니다. */
 fun WorkflowResult<JsonObject>.encodeToString(): String =
     WorkflowJson.format.encodeToString(JsonObject.serializer(), toJsonObject())
 

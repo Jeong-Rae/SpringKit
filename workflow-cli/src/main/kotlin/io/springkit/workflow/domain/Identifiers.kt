@@ -2,11 +2,7 @@ package io.springkit.workflow.domain
 
 import kotlinx.serialization.Serializable
 
-/**
- * Domain identifiers are deliberately represented by strings. The aliases keep the domain
- * independent from a persistence or provider identifier type while making the intent of each field
- * explicit at call sites.
- */
+/** 도메인 식별자는 의도적으로 문자열로 표현합니다. 별칭을 사용해 저장소나 제공자 식별자 타입과 도메인을 분리하고 호출부에서 각 필드의 의미를 명확히 합니다. */
 typealias TaskId = String
 
 typealias SubTaskId = String

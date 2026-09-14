@@ -13,7 +13,7 @@ import io.springkit.workflow.domain.WorkflowResult
 import java.io.PrintStream
 import kotlinx.serialization.json.JsonObject
 
-/** Requests understood by the CLI adapter. Application and domain code do not depend on Clikt. */
+/** CLI 어댑터가 이해하는 요청입니다. Application과 도메인 코드는 Clikt에 의존하지 않습니다. */
 sealed interface WorkflowCommandRequest {
   data class Start(
       val task: String,
@@ -94,7 +94,7 @@ sealed interface WorkflowCommandRequest {
   data class GateRelease(val target: String) : WorkflowCommandRequest
 }
 
-// Short names keep the request model convenient for adapter users without exposing Clikt types.
+/** 어댑터 사용자가 요청 모델을 간편하게 사용하도록 짧은 이름을 제공하며 Clikt 타입은 노출하지 않습니다. */
 typealias StartCommandRequest = WorkflowCommandRequest.Start
 
 typealias CheckCommandRequest = WorkflowCommandRequest.Check
@@ -125,12 +125,12 @@ typealias GateDeployCommandRequest = WorkflowCommandRequest.GateDeploy
 
 typealias GateReleaseCommandRequest = WorkflowCommandRequest.GateRelease
 
-/** Boundary used by the CLI. Runtime composition supplies the application-backed implementation. */
+/** CLI의 경계입니다. 런타임 조합에서 Application 기반 구현을 제공합니다. */
 fun interface WorkflowCommandGateway {
   fun execute(request: WorkflowCommandRequest): WorkflowResult<JsonObject>
 }
 
-/** Clikt inbound adapter for the public Workflow command contract. */
+/** 공개 Workflow 명령 계약을 위한 Clikt 인바운드 어댑터입니다. */
 class WorkflowCli(
     private val gateway: WorkflowCommandGateway,
     private val stdout: PrintStream = System.out,

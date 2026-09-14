@@ -24,7 +24,7 @@ import io.springkit.workflow.domain.WorkspaceId
 import java.nio.file.Path
 import java.security.MessageDigest
 
-/** A [GitPort] implementation that delegates Git behavior to the installed git executable. */
+/** 설치된 git 실행 파일에 Git 동작을 위임하는 [GitPort] 구현입니다. */
 class LocalGitAdapter(
     private val repositoryRoot: Path,
     private val workspacePath: (WorkspaceId) -> Path,

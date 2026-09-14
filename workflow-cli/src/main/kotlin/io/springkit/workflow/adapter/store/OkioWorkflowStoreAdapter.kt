@@ -24,7 +24,7 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.buffer
 
-/** Durable [WorkflowStorePort] backed by one atomically replaced Okio JSON document. */
+/** 원자적으로 교체하는 하나의 Okio JSON 문서로 영속화하는 [WorkflowStorePort] 구현입니다. */
 class OkioWorkflowStoreAdapter(
     private val statePath: Path,
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
@@ -45,9 +45,10 @@ class OkioWorkflowStoreAdapter(
   private val completed = mutableMapOf<String, StoreTransactionResponse>()
   private val completedKeys = mutableMapOf<String, String?>()
 
-  // FakeFileSystem has no relationship with the host file system. Real inter-process locking is
-  // therefore enabled only for Okio's system file system; FileChannel itself remains isolated in
-  // ExclusiveFileLock.
+  /**
+   * `FakeFileSystem`은 호스트 파일 시스템과 연결되지 않습니다. 따라서 실제 프로세스 간 잠금은 Okio 시스템 파일 시스템에서만 사용하며,
+   * `FileChannel` 자체의 격리는 [ExclusiveFileLock]이 담당합니다.
+   */
   private val useProcessLock: Boolean = fileSystem === FileSystem.SYSTEM
 
   @Synchronized
@@ -97,8 +98,7 @@ class OkioWorkflowStoreAdapter(
       return failure(Codes.LOCK_UNAVAILABLE, "workflow store is locked", retryable = true)
     }
 
-    // The lock must be acquired before the revision is accepted. Another process can commit
-    // between the initial read and lock acquisition.
+    /** 잠금을 얻은 뒤 revision을 확인해야 합니다. 최초 읽기와 잠금 획득 사이에 다른 프로세스가 커밋할 수 있습니다. */
     val lockedState =
         if (useProcessLock) {
           try {

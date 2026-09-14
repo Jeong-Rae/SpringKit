@@ -7,7 +7,7 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.WRITE
 import okio.Path
 
-/** A small Java NIO wrapper for the inter-process lock that Okio does not expose. */
+/** Okio가 제공하지 않는 프로세스 간 잠금을 감싸는 Java NIO 래퍼입니다. */
 class ExclusiveFileLock
 private constructor(
     private val channel: FileChannel,
@@ -22,7 +22,7 @@ private constructor(
     fun acquire(path: Path): ExclusiveFileLock =
         tryAcquire(path) ?: throw IllegalStateException("file is already locked: $path")
 
-    /** Returns null when another process currently owns the lock. */
+    /** 다른 프로세스가 잠금을 보유하고 있으면 `null`을 반환합니다. */
     fun tryAcquire(path: Path): ExclusiveFileLock? {
       path.parent?.toNioPath()?.let { java.nio.file.Files.createDirectories(it) }
       val channel = FileChannel.open(path.toNioPath(), CREATE, WRITE)

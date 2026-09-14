@@ -1,6 +1,6 @@
 package io.springkit.workflow.domain
 
-/** Pure policy functions used by Application use cases. */
+/** Application 유스케이스에서 사용하는 순수 정책 함수입니다. */
 object WorkflowRules {
   fun hasOpenRequiredThread(threads: Iterable<ReviewThread>): Boolean = threads.any {
     it.isOpen && it.level == ReviewLevel.R
