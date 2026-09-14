@@ -1,8 +1,8 @@
 package io.springkit.workflow.adapter.json
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -13,39 +13,50 @@ import kotlinx.serialization.json.put
 @kotlinx.serialization.Serializable private data class KnownJsonValue(val value: String)
 
 @OptIn(ExperimentalSerializationApi::class)
-class JsonContractTest {
-  @Test
-  fun `kotlinx json handles JsonObject primitives and compact output`() {
-    val value = buildJsonObject {
-      put("name", JsonPrimitive("workflow"))
-      put("enabled", true)
-      put("count", 2)
-    }
+class JsonContractTest :
+    FunSpec({
+      context("kotlinx Json의 원시값과 출력 형식을 확인할 때") {
+        test("JsonObject에 원시값을 입력하면, 값을 보존한 compact JSON을 생성합니다") {
+          val value = buildJsonObject {
+            put("name", JsonPrimitive("workflow"))
+            put("enabled", true)
+            put("count", 2)
+          }
 
-    assertEquals("workflow", value["name"]?.jsonPrimitive?.content)
-    assertEquals("{\"name\":\"workflow\",\"enabled\":true,\"count\":2}", value.toString())
-  }
+          value["name"]?.jsonPrimitive?.content shouldBe "workflow"
+          value.toString() shouldBe "{\"name\":\"workflow\",\"enabled\":true,\"count\":2}"
+        }
+      }
 
-  @Test
-  fun `workflow Json configuration rejects unknown keys and stays compact`() {
-    assertFailsWith<kotlinx.serialization.json.JsonDecodingException> {
-      WorkflowJson.format.decodeFromString<KnownJsonValue>("{\"value\":\"ok\",\"extra\":true}")
-    }
-    assertEquals(
-        "{\"value\":\"ok\"}",
-        WorkflowJson.format.encodeToString(KnownJsonValue("ok")),
-    )
-    assertEquals(false, WorkflowJson.format.configuration.explicitNulls)
-    assertEquals(true, WorkflowJson.format.configuration.encodeDefaults)
-    assertEquals(false, WorkflowJson.format.configuration.ignoreUnknownKeys)
-    assertEquals("type", WorkflowJson.format.configuration.classDiscriminator)
-    assertEquals(false, WorkflowJson.format.configuration.prettyPrint)
-  }
+      context("WorkflowJson의 설정을 확인할 때") {
+        test("알 수 없는 키를 입력하면, JSON 역직렬화를 거부합니다") {
+          shouldThrow<kotlinx.serialization.json.JsonDecodingException> {
+            WorkflowJson.format.decodeFromString<KnownJsonValue>(
+                "{\"value\":\"ok\",\"extra\":true}"
+            )
+          }
+        }
 
-  @Test
-  fun `library parser rejects malformed JSON`() {
-    assertFailsWith<kotlinx.serialization.json.JsonDecodingException> {
-      Json.parseToJsonElement("{\"value\":}")
-    }
-  }
-}
+        test("기본값을 포함한 값을 인코딩하면, compact JSON을 생성합니다") {
+          WorkflowJson.format.encodeToString(KnownJsonValue("ok")) shouldBe "{\"value\":\"ok\"}"
+        }
+
+        test("WorkflowJson 설정을 조회하면, 계약에 맞는 옵션을 반환합니다") {
+          val configuration = WorkflowJson.format.configuration
+
+          configuration.explicitNulls shouldBe false
+          configuration.encodeDefaults shouldBe true
+          configuration.ignoreUnknownKeys shouldBe false
+          configuration.classDiscriminator shouldBe "type"
+          configuration.prettyPrint shouldBe false
+        }
+      }
+
+      context("JSON parser의 입력을 확인할 때") {
+        test("잘못된 JSON을 입력하면, JSONDecodingException을 발생시킵니다") {
+          shouldThrow<kotlinx.serialization.json.JsonDecodingException> {
+            Json.parseToJsonElement("{\"value\":}")
+          }
+        }
+      }
+    })

@@ -21,6 +21,7 @@ import io.springkit.workflow.domain.EventLog
 import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.FeatureFlagId
+import io.springkit.workflow.domain.IdSequence
 import io.springkit.workflow.domain.Integration
 import io.springkit.workflow.domain.MainRevision
 import io.springkit.workflow.domain.MergeQueueEntry
@@ -33,9 +34,12 @@ import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.ReviewRevisionId
 import io.springkit.workflow.domain.Risk
+import io.springkit.workflow.domain.StartRequestKey
+import io.springkit.workflow.domain.StartRequestRecord
 import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.SubTaskId
 import io.springkit.workflow.domain.SubTaskState
+import io.springkit.workflow.domain.SyncConflict
 import io.springkit.workflow.domain.Task
 import io.springkit.workflow.domain.TaskId
 import io.springkit.workflow.domain.ThreadId
@@ -113,18 +117,25 @@ enum class StoreScope {
 
 data class WorkflowStoreSnapshot(
     val revision: String,
+    val schemaVersion: Int = 1,
+    val sequence: IdSequence = IdSequence(),
     val tasks: List<Task> = emptyList(),
     val subTasks: List<SubTask> = emptyList(),
     val dependencies: List<Dependency> = emptyList(),
     val workspaces: List<Workspace> = emptyList(),
     val pullRequests: List<PullRequest> = emptyList(),
+    val checks: Map<SubTaskId, CheckSummary> = emptyMap(),
     val integrations: List<Integration> = emptyList(),
+    val mergeQueue: List<MergeQueueEntry> = emptyList(),
     val candidates: List<DeploymentCandidate> = emptyList(),
     val releases: List<Release> = emptyList(),
+    val startRequests: Map<StartRequestKey, StartRequestRecord> = emptyMap(),
+    val syncConflicts: Map<SubTaskId, SyncConflict> = emptyMap(),
     val eventLog: EventLog = EventLog(),
 ) {
   init {
     require(revision.isNotBlank()) { "store revision must not be blank" }
+    require(schemaVersion == 1) { "unsupported store snapshot schema version: $schemaVersion" }
   }
 }
 

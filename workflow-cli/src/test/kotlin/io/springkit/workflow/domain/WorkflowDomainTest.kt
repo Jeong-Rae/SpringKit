@@ -1,86 +1,135 @@
 package io.springkit.workflow.domain
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 
-class WorkflowDomainTest {
-  private val human = Actor("alice", ActorKind.HUMAN)
-  private val agent = Actor("agent", ActorKind.AGENT)
+class WorkflowDomainTest :
+    FunSpec({
+      val human = Actor("alice", ActorKind.HUMAN)
+      val agent = Actor("agent", ActorKind.AGENT)
 
-  @Test
-  fun `open R threads are the only blocking threads`() {
-    val comment = ReviewComment("comment-1", agent, "fix this")
-    val required = ReviewThread("thread-r", ReviewLevel.R, listOf(comment))
-    val resolved = ReviewThread("thread-c", ReviewLevel.C, listOf(comment), ThreadState.RESOLVED)
+      context("열린 R thread를 확인할 때") {
+        test("열린 R thread가 있으면, 차단 thread로 반환합니다") {
+          val comment = ReviewComment("comment-1", agent, "fix this")
+          val required = ReviewThread("thread-r", ReviewLevel.R, listOf(comment))
+          val resolved =
+              ReviewThread("thread-c", ReviewLevel.C, listOf(comment), ThreadState.RESOLVED)
 
-    assertTrue(hasOpenRequiredThread(listOf(required, resolved)))
-    assertEquals(listOf(required), WorkflowRules.openRequiredThreads(listOf(required, resolved)))
-    assertFalse(hasOpenRequiredThread(listOf(resolved)))
-  }
+          hasOpenRequiredThread(listOf(required, resolved)) shouldBe true
+          WorkflowRules.openRequiredThreads(listOf(required, resolved)) shouldBe listOf(required)
+        }
 
-  @Test
-  fun `approval applies only to the exact active change and diff`() {
-    val change = ChangeRevision("cr-1", 1, Diff("diff-1"))
-    val approval = Approval("approval-1", human, "cr-1", "diff-1")
+        test("열린 R thread가 없으면, 차단 thread가 없다고 판단합니다") {
+          val comment = ReviewComment("comment-1", agent, "fix this")
+          val resolved =
+              ReviewThread("thread-c", ReviewLevel.C, listOf(comment), ThreadState.RESOLVED)
 
-    assertTrue(approvalApplies(approval, change))
-    assertFalse(approvalApplies(approval.copy(diffIdentity = "diff-2"), change))
-    assertFalse(approvalApplies(approval.copy(active = false), change))
-    assertFailsWith<IllegalArgumentException> { approval.copy(actor = agent) }
-  }
+          hasOpenRequiredThread(listOf(resolved)) shouldBe false
+        }
+      }
 
-  @Test
-  fun `dependency cycle is reported as a closed path`() {
-    val cycle =
-        dependencyCycle(
-            listOf(
-                Dependency("b", "a"),
-                Dependency("c", "b"),
-                Dependency("a", "c"),
-            ),
-        )
+      context("Approval이 현재 변경을 가리키는지 확인할 때") {
+        test("활성 변경과 diff가 모두 일치하면, Approval을 적용합니다") {
+          val change = ChangeRevision("cr-1", 1, Diff("diff-1"))
+          val approval = Approval("approval-1", human, "cr-1", "diff-1")
 
-    assertTrue(cycle.isNotEmpty())
-    assertEquals(cycle.first(), cycle.last())
-    assertFalse(hasDependencyCycle(listOf(Dependency("b", "a"))))
-  }
+          approvalApplies(approval, change) shouldBe true
+        }
 
-  @Test
-  fun `human gates reject agent decisions`() {
-    val failure = humanGateCondition(GateType.READY, agent)
+        test("diff가 다르면, Approval을 적용하지 않습니다") {
+          val change = ChangeRevision("cr-1", 1, Diff("diff-1"))
+          val approval = Approval("approval-1", human, "cr-1", "diff-1")
 
-    assertNotNull(failure)
-    assertEquals(FailureCode.HUMAN_REQUIRED, failure.code)
-  }
+          approvalApplies(approval.copy(diffIdentity = "diff-2"), change) shouldBe false
+        }
 
-  @Test
-  fun `candidate risk is high when any included subtask is high`() {
-    assertEquals(Risk.NORMAL, candidateRisk(listOf(Risk.NORMAL, Risk.NORMAL)))
-    assertEquals(Risk.HIGH, candidateRisk(listOf(Risk.NORMAL, Risk.HIGH)))
-  }
+        test("변경이 비활성이면, Approval을 적용하지 않습니다") {
+          val change = ChangeRevision("cr-1", 1, Diff("diff-1"))
+          val approval = Approval("approval-1", human, "cr-1", "diff-1")
 
-  @Test
-  fun `release requests cleanup after rollout is released`() {
-    val release =
-        Release(
-            id = "rel-1",
-            candidateId = "dc-1",
-            featureFlagId = "flag-v2",
-            state = ReleaseState.CLEANUP_REQUIRED,
-            productionReady = true,
-            internalValidationPassed = true,
-        )
+          approvalApplies(approval.copy(active = false), change) shouldBe false
+        }
 
-    val action = nextReleaseAction(release)
+        test("actor가 agent이면, Approval 생성을 거부합니다") {
+          shouldThrow<IllegalArgumentException> {
+            Approval("approval-1", agent, "cr-1", "diff-1")
+          }
+        }
+      }
 
-    assertNotNull(action)
-    assertEquals("create_cleanup_subtask", action.action)
-    assertNull(action.command)
-    assertNull(nextReleaseAction(release.copy(state = ReleaseState.RELEASED)))
-  }
-}
+      context("dependency cycle을 확인할 때") {
+        test("순환 의존성이 있으면, 시작점으로 닫힌 경로를 반환합니다") {
+          val cycle =
+              dependencyCycle(
+                  listOf(
+                      Dependency("b", "a"),
+                      Dependency("c", "b"),
+                      Dependency("a", "c"),
+                  ),
+              )
+
+          cycle shouldNotBe emptyList<String>()
+          cycle.first() shouldBe cycle.last()
+        }
+
+        test("순환 의존성이 없으면, 순환 경로를 반환하지 않습니다") {
+          hasDependencyCycle(listOf(Dependency("b", "a"))) shouldBe false
+        }
+      }
+
+      context("human gate 조건을 확인할 때") {
+        test("agent가 결정을 시도하면, HUMAN_REQUIRED 실패를 반환합니다") {
+          val failure = humanGateCondition(GateType.READY, agent)
+
+          failure.shouldNotBeNull().code shouldBe FailureCode.HUMAN_REQUIRED
+        }
+      }
+
+      context("candidate risk를 계산할 때") {
+        test("모든 subtask의 위험도가 NORMAL이면, NORMAL을 반환합니다") {
+          candidateRisk(listOf(Risk.NORMAL, Risk.NORMAL)) shouldBe Risk.NORMAL
+        }
+
+        test("HIGH 위험도의 subtask가 하나라도 있으면, HIGH를 반환합니다") {
+          candidateRisk(listOf(Risk.NORMAL, Risk.HIGH)) shouldBe Risk.HIGH
+        }
+      }
+
+      context("release 후속 작업을 결정할 때") {
+        test("rollout이 해제된 release이면, cleanup subtask 생성 작업을 반환합니다") {
+          val release =
+              Release(
+                  id = "rel-1",
+                  candidateId = "dc-1",
+                  featureFlagId = "flag-v2",
+                  state = ReleaseState.CLEANUP_REQUIRED,
+                  productionReady = true,
+                  internalValidationPassed = true,
+              )
+
+          val action = nextReleaseAction(release)
+
+          val actual = action.shouldNotBeNull()
+
+          actual.action shouldBe "create_cleanup_subtask"
+          actual.command shouldBe null
+        }
+
+        test("release 상태가 RELEASED이면, 후속 작업을 반환하지 않습니다") {
+          val release =
+              Release(
+                  id = "rel-1",
+                  candidateId = "dc-1",
+                  featureFlagId = "flag-v2",
+                  state = ReleaseState.RELEASED,
+                  productionReady = true,
+                  internalValidationPassed = true,
+              )
+
+          nextReleaseAction(release) shouldBe null
+        }
+      }
+    })
