@@ -47,6 +47,14 @@ Workflow 도구는 Kotlin으로 구현합니다. CLI(Command line interface) 계
 
 Domain과 Application은 Clikt, 파일 시스템, 프로세스 실행, 네트워크와 provider SDK에 의존하지 않습니다. 외부 상태는 소유 Adapter의 Port를 통해서만 읽고 변경합니다. CLI 표현과 provider 응답 형식은 Adapter에서 Domain 모델로 변환합니다.
 
+기반 기능은 직접 다시 구현하지 않고 다음 기준에 따라 외부 라이브러리를 우선 사용합니다.
+
+1. Kotlin API와 컴파일 시점 타입 검증을 자연스럽게 지원합니다.
+2. 충분한 사용자와 공개 검증 이력이 있는 안정적인 라이브러리입니다.
+3. 필요한 기능만 선택할 수 있고 Native Image와 실행 바이너리에 불필요한 무게를 더하지 않습니다.
+
+JSON은 `kotlinx.serialization`, 파일 시스템 I/O는 Okio, HTTP 연동은 필요한 Ktor Client 모듈을 우선 사용합니다. Git이나 provider 연동도 같은 기준을 충족하는 라이브러리를 먼저 평가합니다. 라이브러리로 표현할 수 없는 작은 공통 변환과 검증만 `io.springkit.workflow.comoon` 패키지에 두며, 이 패키지가 Domain 정책이나 Adapter 책임을 대신하지 않게 합니다.
+
 Native Image 빌드는 reflection, resource, dynamic proxy와 동적 class loading 요구를 명시적으로 관리해야 합니다. 런타임에 임의 코드를 불러오는 plugin 방식은 사용하지 않습니다. 필요한 Adapter는 컴파일 시점의 구성 또는 명시적인 런타임 설정으로 선택합니다.
 
 ## 작업 흐름

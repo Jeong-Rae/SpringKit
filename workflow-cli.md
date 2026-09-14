@@ -57,6 +57,8 @@ CLI는 Inbound Adapter입니다. 인자 해석과 출력만 담당하며 Workflo
 
 Native Image 구성은 빌드에 포함합니다. reflection, resource, dynamic proxy 또는 serialization metadata가 필요하면 선언된 설정과 테스트로 고정합니다. 런타임 module 경로나 script를 통해 Adapter 구현을 동적으로 불러오지 않습니다.
 
+JSON parser, renderer, 파일 시스템과 범용 네트워크 기능을 직접 구현하지 않습니다. Kotlin 친화성, 공개 검증 이력과 가벼운 의존성 순서로 라이브러리를 선택합니다. JSON과 상태 직렬화에는 reflection이 필요 없는 `kotlinx.serialization`을 사용하고, 파일 I/O는 Okio, HTTP는 필요한 Ktor Client 모듈을 우선합니다. 라이브러리로 해결되지 않는 얇은 공통 유틸리티만 `io.springkit.workflow.comoon` 패키지에 둡니다.
+
 | 명령 | 책임 |
 | --- | --- |
 | `start` | SubTask와 전용 Worktree 시작 |
@@ -74,6 +76,7 @@ Native Image 구성은 빌드에 포함합니다. reflection, resource, dynamic 
 - Domain 단위 테스트: 외부 시스템 없이 상태 전이, 차단 조건, revision과 diff identity 규칙 검증
 - Application 단위 테스트: 가짜 Port를 사용한 명령 use case와 실패 시 원자성 검증
 - Adapter 계약 테스트: Store와 각 외부 시스템의 요청 및 응답 변환 검증
+- 라이브러리 경계 테스트: JSON, 파일과 네트워크의 표준 동작을 재구현하지 않고 선택한 라이브러리 설정과 Domain 변환만 검증
 - CLI 통합 테스트: Clikt 인자, 종료 코드, 표준 출력과 표준 오류 계약 검증
 - Native Image smoke test: 생성한 `tools/workflow` 바이너리의 시작, JSON 출력과 대표 실패 경로 검증
 
