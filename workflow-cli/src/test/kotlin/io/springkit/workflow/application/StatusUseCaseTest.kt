@@ -1,0 +1,123 @@
+package io.springkit.workflow.application
+
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.WorkflowResult
+
+class StatusUseCaseTest :
+    FunSpec({
+      context("CLI 선택자를 검증하는 상황에서") {
+        test("두 개 이상의 선택자를 지정하면, 잘못된 대상 선택으로 거부합니다") {
+          val result =
+              StatusUseCase(FakeStatusStore())
+                  .execute(
+                      StatusRequest(subTaskId = "sk-101", taskId = "TASK-1"),
+                  )
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.INVALID_TARGET_SELECTION
+        }
+
+        test("잘못된 선택자를 지정하면, 저장소를 읽기 전에 잘못된 대상 선택으로 거부합니다") {
+          val result =
+              StatusUseCase(FailingStatusStore())
+                  .execute(StatusRequest(subTaskId = "sk-101", taskId = "TASK-1"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.INVALID_TARGET_SELECTION
+        }
+      }
+
+      context("상태 저장소 조회가 실패하는 상황에서") {
+        test("저장소가 실패를 반환하면, 저장소 실패 코드와 메시지를 반환합니다") {
+          val result =
+              StatusUseCase(FailingStatusStore()).execute(StatusRequest(subTaskId = "sk-101"))
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
+          failure.code shouldBe FailureCode.STORE_FAILURE
+          failure.message shouldBe "store is unavailable"
+        }
+      }
+
+      context("상태 대상이 존재하지 않는 상황에서") {
+        test("없는 subtask를 조회하면, 대상이 지정된 subtask 없음 오류를 반환합니다") {
+          val result = StatusUseCase(FakeStatusStore()).execute(StatusRequest(subTaskId = "sk-404"))
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
+          failure.code shouldBe FailureCode.SUBTASK_NOT_FOUND
+          failure.blockedBy.single().target shouldBe "sk-404"
+        }
+
+        test("없는 deployment candidate와 release를 조회하면, 서로 다른 없음 오류를 반환합니다") {
+          val candidateResult =
+              StatusUseCase(FakeStatusStore()).execute(StatusRequest(candidateId = "dc-404"))
+          val releaseResult =
+              StatusUseCase(FakeStatusStore()).execute(StatusRequest(releaseId = "rel-404"))
+
+          candidateResult.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.DEPLOYMENT_NOT_FOUND
+          releaseResult.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.RELEASE_NOT_FOUND
+        }
+
+        test("현재 workspace를 조회할 때 workspace가 없으면, workspace 없음 오류를 반환합니다") {
+          val result = StatusUseCase(FakeStatusStore()).execute()
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.WORKSPACE_NOT_FOUND
+        }
+      }
+
+      context("애플리케이션 호출자의 선택자를 확인하는 상황에서") {
+        test("typed selector를 지정하면, 동일한 선택자를 보존합니다") {
+          val request = StatusRequest(selector = StatusSelector.SubTask("sk-101"))
+
+          request.selected().shouldBeInstanceOf<StatusSelection.Typed>().selector shouldBe
+              StatusSelector.SubTask("sk-101")
+        }
+      }
+    })
+
+private class FakeStatusStore : WorkflowStorePort {
+  override fun snapshot(request: StoreSnapshotRequest) =
+      PortResult.Success(StoreSnapshotResponse(WorkflowStoreSnapshot("store-1")))
+
+  override fun begin(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
+      unused()
+
+  override fun commit(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
+      unused()
+
+  override fun rollback(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
+      unused()
+
+  override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> = unused()
+
+  override fun append(request: StoreEventRequest): PortResult<StoreEventResponse> = unused()
+
+  private fun <T> unused(): PortResult<T> =
+      PortResult.Failure(PortError("UNUSED", "not used by this test"))
+}
+
+private class FailingStatusStore : WorkflowStorePort {
+  override fun snapshot(request: StoreSnapshotRequest): PortResult<StoreSnapshotResponse> =
+      PortResult.Failure(PortError("STORE_DOWN", "store is unavailable"))
+
+  override fun begin(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
+      unused()
+
+  override fun commit(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
+      unused()
+
+  override fun rollback(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
+      unused()
+
+  override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> = unused()
+
+  override fun append(request: StoreEventRequest): PortResult<StoreEventResponse> = unused()
+
+  private fun <T> unused(): PortResult<T> =
+      PortResult.Failure(PortError("UNUSED", "not used by this test"))
+}
