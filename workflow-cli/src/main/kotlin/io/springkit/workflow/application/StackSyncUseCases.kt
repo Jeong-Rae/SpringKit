@@ -15,7 +15,7 @@ import io.springkit.workflow.domain.SubTaskId
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
 
-/** Changes the one direct dependency of a managed SubTask. */
+/** 관리 SubTask의 직접 의존성 하나를 변경합니다. */
 data class StackRequest(
     val subTaskId: SubTaskId,
     val requires: SubTaskId? = null,
@@ -32,11 +32,11 @@ data class StackResponse(
     val diffIdentitySame: Boolean = true,
     val changeRevisionRetained: Boolean = true,
     val approvalRetained: Boolean = true,
-    /** Store fields which are not available in WorkflowStoreSnapshot and need re-checking. */
+    /** WorkflowStoreSnapshot에 없어 다시 확인해야 하는 저장소 필드입니다. */
     val invalidatedState: List<String> = emptyList(),
 )
 
-/** Synchronizes a managed Worktree with main or its direct dependency. */
+/** 관리 Worktree를 main 또는 직접 의존성과 동기화합니다. */
 data class SyncRequest(
     val subTaskId: SubTaskId,
     val continueSync: Boolean = false,
@@ -68,7 +68,7 @@ typealias StackCommand = StackRequest
 
 typealias SyncCommand = SyncRequest
 
-/** Application facade for the stack and sync commands. */
+/** stack과 sync 명령을 위한 애플리케이션 진입점입니다. */
 class StackSyncUseCases(
     private val gitPort: GitPort,
     private val reviewPort: ReviewPort,
@@ -706,8 +706,6 @@ class StackSyncUseCases(
 
   private fun invalidatedStateFor(diffChanged: Boolean): List<String> =
       if (diffChanged) {
-        // WorkflowStoreSnapshot has no checks/validation collection. The adapter must re-run
-        // check after a changed diff; the response makes that non-persisted state explicit.
         listOf("change_revision", "approval", "ci", "ai_review", "validation")
       } else emptyList()
 

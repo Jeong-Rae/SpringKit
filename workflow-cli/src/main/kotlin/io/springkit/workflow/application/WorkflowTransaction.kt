@@ -12,11 +12,10 @@ data class TransactionMutation<T>(
 )
 
 /**
- * Coordinates state persistence and compensatable adapter effects without knowing their provider.
+ * 공급자를 알지 못한 채 상태 저장과 어댑터 변경의 보상을 조정합니다.
  *
- * The store owns the transaction. Provider changes are compensated in reverse order when the
- * application cannot persist the resulting state. A commit failure is deliberately not compensated:
- * the store may already have committed and must resolve the ambiguous result by transaction id.
+ * 트랜잭션은 저장소가 소유합니다. 애플리케이션이 결과 상태를 저장하지 못하면 공급자 변경을 역순으로 보상합니다. 커밋 실패는 저장소가 이미 커밋했을 수 있으므로 보상하지 않고
+ * 트랜잭션 ID로 모호한 결과를 해결합니다.
  */
 class WorkflowTransaction(
     private val store: WorkflowStorePort,

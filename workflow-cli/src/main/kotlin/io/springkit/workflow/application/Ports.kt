@@ -48,7 +48,7 @@ import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspaceId
 import io.springkit.workflow.domain.WorkspacePath
 
-/** Result shared by every application/outbound port without leaking provider failures. */
+/** 공급자 오류를 노출하지 않고 애플리케이션과 외부 포트가 공유하는 결과입니다. */
 sealed interface PortResult<out T> {
   data class Success<T>(val value: T, val change: ChangeReceipt? = null) : PortResult<T>
 
@@ -65,7 +65,7 @@ data class PortError(
     val target: String? = null,
 )
 
-/** A reversible effect recorded by an adapter or a store transaction. */
+/** 어댑터 또는 저장소 트랜잭션이 기록하는 되돌릴 수 있는 변경입니다. */
 data class ChangeReceipt(
     val id: String,
     val operation: String,
@@ -187,7 +187,7 @@ data class StoreEventRequest(
 
 data class StoreEventResponse(val event: DomainEvent, val revision: String)
 
-/** Durable Workflow state and its transaction boundary. */
+/** 영속화된 Workflow 상태와 트랜잭션 경계를 제공합니다. */
 interface WorkflowStorePort : StoreTransactionPort {
   fun snapshot(request: StoreSnapshotRequest): PortResult<StoreSnapshotResponse>
 
@@ -242,7 +242,7 @@ data class UpdateExternalSubTaskResponse(
     override val change: ChangeReceipt,
 ) : ChangeResponse
 
-/** External task tracking is kept separate from Workflow Store state. */
+/** 외부 작업 추적을 Workflow Store 상태와 분리합니다. */
 interface TaskPort {
   fun get(request: TaskLookupRequest): PortResult<TaskLookupResponse>
 
@@ -812,7 +812,7 @@ data class CompensateRequest(
 
 data class CompensateResponse(val change: ChangeReceipt)
 
-/** Executes the compensation plan exposed by a previous mutating port response. */
+/** 이전 변경 포트 응답에 포함된 보상 계획을 실행합니다. */
 interface CompensationPort {
   fun compensate(request: CompensateRequest): PortResult<CompensateResponse>
 }
@@ -854,7 +854,7 @@ data class AcknowledgeEventRequest(
 
 data class AcknowledgeEventResponse(val eventId: String)
 
-/** Inbound event delivery remains provider-neutral and idempotent. */
+/** 인바운드 이벤트를 공급자와 무관하게 멱등적으로 전달합니다. */
 interface WorkflowEventPort {
   fun receive(request: ReceiveEventRequest): PortResult<ReceiveEventResponse>
 

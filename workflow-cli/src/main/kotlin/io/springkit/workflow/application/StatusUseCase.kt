@@ -36,7 +36,7 @@ import io.springkit.workflow.domain.ValidationStatus
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
 
-/** A typed target for the status query. Exactly one target is evaluated per request. */
+/** 상태 조회 대상의 타입입니다. 요청마다 대상 하나만 평가합니다. */
 sealed interface StatusSelector {
   data object CurrentWorkspace : StatusSelector
 
@@ -49,7 +49,7 @@ sealed interface StatusSelector {
   data class Release(val id: ReleaseId) : StatusSelector
 }
 
-/** Input accepted by the application boundary and by the CLI adapter. */
+/** 애플리케이션 경계와 CLI 어댑터가 받는 입력입니다. */
 data class StatusRequest(
     val selector: StatusSelector? = null,
     val subTaskId: SubTaskId? = null,
@@ -65,7 +65,7 @@ data class StatusRequest(
       }
 }
 
-/** The unambiguous selector after CLI-style optional values have been validated. */
+/** CLI 방식의 선택적 값을 검증한 뒤 만든 모호하지 않은 선택자입니다. */
 sealed interface StatusSelection {
   data class Typed(val selector: StatusSelector) : StatusSelection
 
@@ -130,7 +130,7 @@ data class StatusRelease(
     val gateRequired: Boolean = release.state == ReleaseState.AWAITING_RELEASE_APPROVAL,
 )
 
-/** Provider-independent status assembled from Workflow and owned system ports. */
+/** Workflow와 소유 시스템 포트로 구성한 공급자 독립적인 상태입니다. */
 data class StatusResponse(
     val task: Task? = null,
     val subTask: SubTask? = null,
@@ -147,7 +147,7 @@ data class StatusResponse(
     get() = subTask
 }
 
-/** Reads a consistent status without mutating any provider or Workflow Store. */
+/** 공급자나 Workflow Store를 변경하지 않고 일관된 상태를 조회합니다. */
 class StatusUseCase(
     private val storePort: WorkflowStorePort,
     private val taskPort: TaskPort? = null,

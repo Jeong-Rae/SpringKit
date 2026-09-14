@@ -18,7 +18,7 @@ import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspaceId
 import io.springkit.workflow.domain.WorkspacePath
 
-/** Input for the provider-independent start application service. */
+/** 공급자와 무관한 시작 애플리케이션 서비스의 입력입니다. */
 data class StartRequest(
     val taskId: io.springkit.workflow.domain.ExternalTaskId,
     val requestId: String,
@@ -36,7 +36,7 @@ data class StartRequest(
     get() = taskId
 }
 
-/** Result returned after a SubTask, Branch and managed Worktree have been created. */
+/** SubTask, Branch, 관리 Worktree를 생성한 뒤 반환하는 결과입니다. */
 data class StartResponse(
     val task: Task,
     val subTask: SubTask,
@@ -46,7 +46,7 @@ data class StartResponse(
     val idempotent: Boolean = false,
 )
 
-/** Input for checking one managed Worktree. */
+/** 관리 Worktree 하나를 검사하는 입력입니다. */
 data class CheckRequest(
     val workspaceId: WorkspaceId? = null,
     val subTaskId: SubTaskId? = null,
@@ -54,7 +54,7 @@ data class CheckRequest(
     val expectedStoreRevision: String? = null,
 )
 
-/** The check result is publishable only when every check applies to the final content. */
+/** 모든 검사가 최종 콘텐츠에 적용된 경우에만 검사 결과를 게시할 수 있습니다. */
 data class CheckResponse(
     val workspace: Workspace,
     val revision: String,
@@ -68,10 +68,7 @@ typealias StartCommand = StartRequest
 
 typealias CheckCommand = CheckRequest
 
-/**
- * Application service for wf-02. It deliberately knows only domain objects and outbound ports.
- * Adapters own provider-specific idempotency, filesystem and process details.
- */
+/** wf-02 애플리케이션 서비스입니다. 도메인 객체와 외부 포트만 알고 어댑터의 공급자별 멱등성, 파일 시스템, 프로세스 세부 사항은 알지 않습니다. */
 class StartUseCase(
     private val taskPort: TaskPort,
     private val gitPort: GitPort,
@@ -561,8 +558,8 @@ class StartUseCase(
 }
 
 /**
- * Application service for wf-03. ValidationPort executes commands; this service supplies the
- * repository-defined read-only checks and accepts a result only for the content it inspected.
+ * wf-03 애플리케이션 서비스입니다. ValidationPort가 명령을 실행하고, 이 서비스는 저장소가 정의한 읽기 전용 검사를 제공하며 검사한 콘텐츠에 대한 결과만
+ * 받습니다.
  */
 class CheckUseCase(
     private val workspacePort: WorkspacePort,
@@ -791,7 +788,7 @@ class CheckUseCase(
       )
 }
 
-/** Facade used by inbound adapters that expose both commands from one application boundary. */
+/** 두 명령을 하나의 애플리케이션 경계로 노출하는 인바운드 어댑터용 진입점입니다. */
 class StartCheckUseCases(
     taskPort: TaskPort,
     gitPort: GitPort,
