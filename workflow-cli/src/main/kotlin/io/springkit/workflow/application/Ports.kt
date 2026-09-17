@@ -217,10 +217,17 @@ data class SubTaskLookupResponse(val subTask: SubTask)
 
 data class CreateSubTaskRequest(
     val externalTaskId: ExternalTaskId,
+    val subTaskId: SubTaskId,
     val title: String,
     val requestId: String,
     val requires: SubTaskId? = null,
-)
+) {
+  init {
+    require(subTaskId.isNotBlank()) { "subtask id must not be blank" }
+    require(title.isNotBlank()) { "subtask title must not be blank" }
+    require(requestId.isNotBlank()) { "subtask request id must not be blank" }
+  }
+}
 
 data class CreateSubTaskResponse(
     val task: Task,
@@ -421,6 +428,53 @@ interface GitPort {
       )
 
   fun removeBranch(request: RemoveBranchRequest): PortResult<RemoveBranchResponse>
+}
+
+/** 현재 Worktree의 변경을 원격 Branch에 게시하는 요청입니다. */
+data class PublishBranchRequest(
+    val workspaceId: WorkspaceId,
+    val branch: BranchName,
+    val commitTitle: String,
+    val remote: String = "origin",
+    val expectedRevision: String? = null,
+    val expectedFingerprint: String? = null,
+) {
+  init {
+    require(branch.isNotBlank()) { "publish branch must not be blank" }
+    require(commitTitle.isNotBlank()) { "publish commit title must not be blank" }
+    require(remote.isNotBlank()) { "publish remote must not be blank" }
+  }
+}
+
+/** 원격 Branch 게시 결과입니다. */
+data class PublishBranchResponse(
+    val branch: BranchName,
+    val revision: String,
+    val fingerprint: String,
+    val committed: Boolean,
+    override val change: ChangeReceipt,
+) : ChangeResponse {
+  init {
+    require(branch.isNotBlank()) { "published branch must not be blank" }
+    require(revision.isNotBlank()) { "published revision must not be blank" }
+    require(fingerprint.isNotBlank()) { "published fingerprint must not be blank" }
+  }
+}
+
+/** 설치된 Git CLI에 Branch 게시를 위임하는 포트입니다. */
+interface GitPublishPort {
+  fun publish(request: PublishBranchRequest): PortResult<PublishBranchResponse>
+}
+
+/** Feature Flag의 안전한 기본 동작을 확인하는 요청입니다. */
+data class ValidateFeatureFlagRequest(val featureFlagId: FeatureFlagId)
+
+/** Feature Flag 기본 동작 검증 결과입니다. */
+data class ValidateFeatureFlagResponse(val safeDefault: Boolean)
+
+/** Feature Flag 공급자의 안전 기본 동작 검증 포트입니다. */
+interface FeatureFlagPort {
+  fun validateDefault(request: ValidateFeatureFlagRequest): PortResult<ValidateFeatureFlagResponse>
 }
 
 data class OpenReviewRequest(
@@ -797,6 +851,7 @@ enum class IdKind {
   REVIEW_REVISION,
   CHANGE_REVISION,
   THREAD,
+  COMMENT,
   VALIDATION,
   CHECK,
   MERGE_QUEUE,

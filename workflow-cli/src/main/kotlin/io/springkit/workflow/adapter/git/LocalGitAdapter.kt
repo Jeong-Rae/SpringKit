@@ -12,11 +12,14 @@ import io.springkit.workflow.application.CreateWorktreeResponse
 import io.springkit.workflow.application.GitInspectRequest
 import io.springkit.workflow.application.GitInspectResponse
 import io.springkit.workflow.application.GitPort
+import io.springkit.workflow.application.GitPublishPort
 import io.springkit.workflow.application.GitStatus
 import io.springkit.workflow.application.MainRevisionRequest
 import io.springkit.workflow.application.MainRevisionResponse
 import io.springkit.workflow.application.PortError
 import io.springkit.workflow.application.PortResult
+import io.springkit.workflow.application.PublishBranchRequest
+import io.springkit.workflow.application.PublishBranchResponse
 import io.springkit.workflow.application.RemoveBranchRequest
 import io.springkit.workflow.application.RemoveBranchResponse
 import io.springkit.workflow.application.RestackRequest
@@ -33,7 +36,7 @@ class LocalGitAdapter(
     private val repositoryRoot: Path,
     private val workspacePath: (WorkspaceId) -> Path,
     private val commandRunner: CommandRunner = LocalCommandRunner(),
-) : GitPort {
+) : GitPort, GitPublishPort {
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> {
     val fetch = run(listOf("git", "fetch", request.remote, request.branch), repositoryRoot)
     if (fetch is Execution.Failure) return fetch.result
@@ -251,6 +254,89 @@ class LocalGitAdapter(
     )
   }
 
+  /** 변경을 한 번 커밋한 뒤 원격 Branch 게시를 설치된 Git CLI에 위임합니다. */
+  override fun publish(request: PublishBranchRequest): PortResult<PublishBranchResponse> {
+    val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
+    val before =
+        when (val result = inspect(GitInspectRequest(request.workspaceId))) {
+          is PortResult.Failure -> return result
+          is PortResult.Success -> result.value.status
+        }
+    if (request.expectedRevision != null && before.revision != request.expectedRevision) {
+      return failure(
+          code = "STALE_REVISION",
+          message =
+              "예상 revision과 현재 revision이 다릅니다: expected=${request.expectedRevision}, current=${before.revision}",
+          retryable = true,
+          target = request.workspaceId,
+      )
+    }
+    if (request.expectedFingerprint != null && before.fingerprint != request.expectedFingerprint) {
+      return failure(
+          code = "STALE_DIFF_IDENTITY",
+          message =
+              "예상 fingerprint와 현재 fingerprint가 다릅니다: expected=${request.expectedFingerprint}, current=${before.fingerprint}",
+          retryable = true,
+          target = request.workspaceId,
+      )
+    }
+    if (before.conflicts.isNotEmpty()) {
+      return failure(
+          code = "SYNC_CONFLICT",
+          message = "게시할 Worktree에 해결되지 않은 충돌이 있습니다.",
+          target = request.workspaceId,
+      )
+    }
+    val plannedChange = publishReceipt(request)
+
+    val add = run(listOf("git", "add", "--all"), path)
+    if (add is Execution.Failure) return add.result.withChange(plannedChange)
+    val staged = run(listOf("git", "diff", "--cached", "--name-only"), path)
+    if (staged is Execution.Failure) return staged.result.withChange(plannedChange)
+    val hasStagedChanges =
+        (staged as Execution.Success).result.stdout.lineSequence().any { it.isNotBlank() }
+    if (hasStagedChanges) {
+      val commit = run(listOf("git", "commit", "-m", request.commitTitle), path)
+      if (commit is Execution.Failure) return commit.result.withChange(plannedChange)
+    }
+    val push =
+        run(
+            listOf("git", "push", "--set-upstream", request.remote, request.branch),
+            path,
+        )
+    if (push is Execution.Failure) return push.result.withChange(plannedChange)
+    val afterRevision = run(listOf("git", "rev-parse", "HEAD"), path)
+    if (afterRevision is Execution.Failure) return afterRevision.result.withChange(plannedChange)
+    val revision = (afterRevision as Execution.Success).result.stdout.trim()
+    if (revision.isBlank()) {
+      return PortResult.Failure(
+          PortError("GIT_PUBLISH_FAILED", "게시 이후 revision이 비어 있습니다.", target = request.workspaceId),
+          change = plannedChange,
+      )
+    }
+    val after =
+        when (val result = inspect(GitInspectRequest(request.workspaceId))) {
+          is PortResult.Failure -> return result.copy(change = plannedChange)
+          is PortResult.Success -> result.value.status
+        }
+    return PortResult.Success(
+        PublishBranchResponse(
+            branch = request.branch,
+            revision = revision,
+            fingerprint = after.fingerprint,
+            committed = hasStagedChanges,
+            change =
+                ChangeReceipt(
+                    id = plannedChange.id,
+                    operation = plannedChange.operation,
+                    compensation = plannedChange.compensation,
+                    beforeRevision = before.revision,
+                    afterRevision = revision,
+                ),
+        )
+    )
+  }
+
   private fun findRevision(request: MainRevisionRequest): String? {
     val refs = listOf("refs/remotes/${request.remote}/${request.branch}", "FETCH_HEAD")
     refs.forEach { ref ->
@@ -347,6 +433,21 @@ class LocalGitAdapter(
 
   private fun receipt(id: String, operation: String): ChangeReceipt =
       ChangeReceipt(id = id, operation = operation)
+
+  private fun publishReceipt(request: PublishBranchRequest): ChangeReceipt =
+      ChangeReceipt(
+          id = "git-publish-${request.workspaceId}-${request.branch}",
+          operation = "publish-branch",
+          compensation =
+              io.springkit.workflow.application.Compensation(
+                  id = "git-publish-compensation-${request.workspaceId}-${request.branch}",
+                  operation = "compensate-publish-branch",
+                  idempotencyKey = "git-publish:${request.workspaceId}:${request.branch}",
+              ),
+      )
+
+  private fun PortResult.Failure.withChange(change: ChangeReceipt): PortResult.Failure =
+      copy(change = change)
 
   private fun workspaceFailure(workspaceId: WorkspaceId): PortResult.Failure =
       failure("WORKSPACE_NOT_FOUND", "workspace 경로를 확인할 수 없습니다: $workspaceId", workspaceId)
