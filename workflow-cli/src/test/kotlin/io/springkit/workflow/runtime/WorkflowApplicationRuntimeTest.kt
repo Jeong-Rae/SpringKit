@@ -124,6 +124,7 @@ class WorkflowApplicationRuntimeTest :
           stored.subTasks[subTaskId]?.state shouldBe SubTaskState.MERGED
           stored.pullRequests[pullRequest.id]?.state shouldBe PullRequestState.MERGED
           stored.integrations[subTaskId]?.mainRevision shouldBe "main-1"
+          stored.deploymentCandidates shouldBe emptyMap()
         }
 
         test("MAIN_MERGED 이벤트를 수신하면, 병합 후 정리 유스케이스로 연결합니다") {
@@ -178,6 +179,63 @@ class WorkflowApplicationRuntimeTest :
 
           val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>()
           failure.data.code.name shouldBe "INVALID_ARGUMENT"
+          eventPort.acknowledged?.accepted shouldBe false
+        }
+
+        test("provider가 구성되면 DEPLOYMENT_CHANGED 이벤트를 Deployment lifecycle로 전달합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-deployment-event-")
+          val eventPort = RecordingWorkflowEventPort()
+          val runtime =
+              createDefaultApplicationRuntime(
+                  currentDirectory = root,
+                  environment =
+                      mapOf(
+                          "WORKFLOW_REPO_ROOT" to root.toString(),
+                          "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
+                          "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
+                          "WORKFLOW_FEATURE_FLAG_COMMAND" to "[\"feature\"]",
+                      ),
+                  commandRunner = RuntimeCommandRunnerForComposition,
+                  eventPort = eventPort,
+              )
+
+          val event =
+              ExternalEvent(
+                  id = "deployment-event-1",
+                  kind = ExternalEventKind.DEPLOYMENT_CHANGED,
+                  targetId = "candidate-1",
+                  occurredAtEpochMillis = 1,
+              )
+          val result = runtime.eventUseCases.handle(ReceiveEventRequest(event))
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>()
+          failure.data.code.name shouldBe "DEPLOYMENT_NOT_FOUND"
+          eventPort.acknowledged shouldBe
+              AcknowledgeEventRequest(event.id, false, failure.data.message)
+        }
+
+        test("provider가 미구성되면 DEPLOYMENT_CHANGED 이벤트를 지원하지 않습니다") {
+          val eventPort = RecordingWorkflowEventPort()
+          val runtime =
+              createDefaultApplicationRuntime(
+                  currentDirectory =
+                      Files.createTempDirectory("workflow-runtime-deployment-disabled-"),
+                  environment = emptyMap(),
+                  commandRunner = RuntimeCommandRunnerForComposition,
+                  eventPort = eventPort,
+              )
+          val event =
+              ExternalEvent(
+                  id = "deployment-event-2",
+                  kind = ExternalEventKind.DEPLOYMENT_CHANGED,
+                  targetId = "candidate-1",
+                  occurredAtEpochMillis = 1,
+              )
+
+          val result = runtime.eventUseCases.handle(ReceiveEventRequest(event))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code.name shouldBe
+              "INVALID_ARGUMENT"
           eventPort.acknowledged?.accepted shouldBe false
         }
       }

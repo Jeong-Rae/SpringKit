@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.testing.test
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
@@ -98,6 +99,73 @@ class RuntimeFactoryTest :
                 commandRunner = RuntimeCommandRunner(root),
             )
           }
+        }
+      }
+
+      context("외부 provider CLI를 런타임에 연결할 때") {
+        test("세 provider 명령을 JSON 배열로 설정하면 Application lifecycle을 구성합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-providers-")
+          val environment =
+              mapOf(
+                  "WORKFLOW_REPO_ROOT" to root.toString(),
+                  "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
+                  "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
+                  "WORKFLOW_FEATURE_FLAG_COMMAND" to "[\"feature\"]",
+              )
+
+          val runtime =
+              createDefaultApplicationRuntime(
+                  currentDirectory = root,
+                  environment = environment,
+                  commandRunner = RuntimeCommandRunner(root),
+              )
+
+          runtime.deploymentLifecycle shouldNotBe null
+          runtime.releaseLifecycle shouldNotBe null
+        }
+
+        test("provider 명령 하나가 빠지면 명확한 IllegalArgumentException을 반환합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-provider-missing-")
+          val environment =
+              mapOf(
+                  "WORKFLOW_REPO_ROOT" to root.toString(),
+                  "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
+                  "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
+              )
+
+          val failure =
+              shouldThrow<IllegalArgumentException> {
+                createDefaultApplicationRuntime(
+                    currentDirectory = root,
+                    environment = environment,
+                    commandRunner = RuntimeCommandRunner(root),
+                )
+              }
+
+          failure.message shouldContain "WORKFLOW_FEATURE_FLAG_COMMAND"
+        }
+
+        test("provider 명령이 JSON 배열이 아니면 명확한 IllegalArgumentException을 반환합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-provider-json-")
+          val environment =
+              mapOf(
+                  "WORKFLOW_REPO_ROOT" to root.toString(),
+                  "WORKFLOW_DEPLOYMENT_COMMAND" to "deploy",
+                  "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
+                  "WORKFLOW_FEATURE_FLAG_COMMAND" to "[\"feature\"]",
+              )
+
+          val failure =
+              shouldThrow<IllegalArgumentException> {
+                createDefaultApplicationRuntime(
+                    currentDirectory = root,
+                    environment = environment,
+                    commandRunner = RuntimeCommandRunner(root),
+                )
+              }
+
+          failure.message shouldContain "WORKFLOW_DEPLOYMENT_COMMAND"
+          failure.message shouldContain "JSON"
         }
       }
 

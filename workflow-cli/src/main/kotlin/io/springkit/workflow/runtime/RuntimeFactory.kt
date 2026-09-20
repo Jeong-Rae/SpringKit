@@ -9,6 +9,9 @@ import io.springkit.workflow.adapter.local.EnvironmentIdentityAdapter
 import io.springkit.workflow.adapter.local.LocalWorkspaceAdapter
 import io.springkit.workflow.adapter.local.SnapshotTaskAdapter
 import io.springkit.workflow.adapter.local.SystemClockAdapter
+import io.springkit.workflow.adapter.provider.ProviderDeploymentAdapter
+import io.springkit.workflow.adapter.provider.ProviderFeatureFlagAdapter
+import io.springkit.workflow.adapter.provider.ProviderReleaseAdapter
 import io.springkit.workflow.adapter.store.OkioWorkflowStoreAdapter
 import io.springkit.workflow.adapter.store.StoreIdAdapter
 import io.springkit.workflow.adapter.validation.LocalValidationAdapter
@@ -20,8 +23,11 @@ import io.springkit.workflow.application.CreateCandidateRequest
 import io.springkit.workflow.application.CreateCandidateResponse
 import io.springkit.workflow.application.CreateReleaseRequest
 import io.springkit.workflow.application.CreateReleaseResponse
+import io.springkit.workflow.application.DeploymentLifecycleRequest
+import io.springkit.workflow.application.DeploymentLifecycleUseCase
 import io.springkit.workflow.application.DeploymentPort
 import io.springkit.workflow.application.ExternalEventKind
+import io.springkit.workflow.application.FeatureFlagPort
 import io.springkit.workflow.application.GetCandidateRequest
 import io.springkit.workflow.application.GetCandidateResponse
 import io.springkit.workflow.application.GetReleaseRequest
@@ -33,6 +39,7 @@ import io.springkit.workflow.application.PortError
 import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.application.PostMergeCleanupRequest
 import io.springkit.workflow.application.PostMergeCleanupUseCase
+import io.springkit.workflow.application.ReleaseLifecycleUseCases
 import io.springkit.workflow.application.ReleasePort
 import io.springkit.workflow.application.ReviewLifecycleUseCases
 import io.springkit.workflow.application.ReviewUseCases
@@ -57,7 +64,16 @@ import io.springkit.workflow.application.WorkflowEventUseCases
 import io.springkit.workflow.application.WorkflowStorePort
 import io.springkit.workflow.application.WorkflowStoreSnapshot
 import io.springkit.workflow.common.CommandRunner
+import io.springkit.workflow.domain.BlockedBy
+import io.springkit.workflow.domain.DeploymentRecorded
+import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.FailureData
+import io.springkit.workflow.domain.ReleaseRecorded
+import io.springkit.workflow.domain.ReleaseState
+import io.springkit.workflow.domain.WorkflowResult
 import java.nio.file.Path
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import okio.Path.Companion.toPath
 
 /** 런타임 구성을 외부 환경과 분리해 테스트할 수 있는 구성 경계입니다. */
@@ -110,9 +126,9 @@ fun createDefaultApplicationRuntime(
           humanActorIds = environment.humanActorIds(),
       )
   val idPort = StoreIdAdapter(store)
-  val workspacePort = LocalWorkspaceAdapter(store) { workingDirectory }
+  val workspacePort = LocalWorkspaceAdapter(store, { workingDirectory }, repositoryRoot)
   val workspacePath = workspacePathResolver(store, repositoryRoot)
-  val git = LocalGitAdapter(repositoryRoot, workspacePath, commandRunner)
+  val git = LocalGitAdapter(repositoryRoot, workspacePath, commandRunner, repositoryRoot)
   val task =
       createTaskPort(
           repositoryRoot = repositoryRoot,
@@ -120,6 +136,31 @@ fun createDefaultApplicationRuntime(
           commandRunner = commandRunner,
           snapshotProvider = { snapshot(store) },
       )
+  val providerCommands = providerCommands(environment)
+  val deploymentPort: DeploymentPort =
+      providerCommands?.deployment?.let {
+        ProviderDeploymentAdapter(
+            commandPrefix = it,
+            workingDirectory = repositoryRoot,
+            commandRunner = commandRunner,
+        )
+      } ?: UnavailableDeploymentPort
+  val releasePort: ReleasePort =
+      providerCommands?.release?.let {
+        ProviderReleaseAdapter(
+            commandPrefix = it,
+            workingDirectory = repositoryRoot,
+            commandRunner = commandRunner,
+        )
+      } ?: UnavailableReleasePort
+  val featureFlagPort: FeatureFlagPort? =
+      providerCommands?.featureFlag?.let {
+        ProviderFeatureFlagAdapter(
+            commandPrefix = it,
+            workingDirectory = repositoryRoot,
+            commandRunner = commandRunner,
+        )
+      }
   val validation = LocalValidationAdapter(workspacePath, commandRunner = commandRunner)
   val reviewAdapter =
       io.springkit.workflow.adapter.github.GithubReviewAdapter(
@@ -164,6 +205,7 @@ fun createDefaultApplicationRuntime(
           ciPort = ci,
           storePort = store,
           clockPort = clock,
+          featureFlagPort = featureFlagPort,
       )
   val stackSync = StackSyncUseCases(git, reviewAdapter, store, idPort, clockPort = clock)
   val mergeQueueLifecycle =
@@ -173,6 +215,22 @@ fun createDefaultApplicationRuntime(
           taskPort = task,
           idPort = idPort,
           clockPort = clock,
+      )
+  val deploymentLifecycle =
+      DeploymentLifecycleUseCase(
+          storePort = store,
+          deploymentPort = deploymentPort,
+          idPort = idPort,
+          clockPort = clock,
+          compensationPort = RuntimeCompensationPort,
+      )
+  val releaseLifecycle =
+      ReleaseLifecycleUseCases(
+          storePort = store,
+          releasePort = releasePort,
+          idPort = idPort,
+          clockPort = clock,
+          compensationPort = RuntimeCompensationPort,
       )
   val status =
       StatusUseCase(
@@ -185,6 +243,8 @@ fun createDefaultApplicationRuntime(
           validationPort = validation,
           ciPort = ci,
           mergeQueuePort = mergeQueue,
+          deploymentPort = deploymentPort.takeIf { providerCommands != null },
+          releasePort = releasePort.takeIf { providerCommands != null },
       )
   val reviewGate =
       io.springkit.workflow.application.ReviewGateUseCases(
@@ -198,8 +258,8 @@ fun createDefaultApplicationRuntime(
   val deliveryGate =
       io.springkit.workflow.application.DeliveryGateUseCases(
           storePort = store,
-          deploymentPort = UnavailableDeploymentPort,
-          releasePort = UnavailableReleasePort,
+          deploymentPort = deploymentPort,
+          releasePort = releasePort,
           identityPort = identity,
           idPort = idPort,
           clockPort = clock,
@@ -255,15 +315,23 @@ fun createDefaultApplicationRuntime(
                             )
                         when (val merged = mergeQueueLifecycle.execute(mergeRequest)) {
                           is io.springkit.workflow.domain.WorkflowResult.Failure -> merged
-                          is io.springkit.workflow.domain.WorkflowResult.Success ->
-                              when (
-                                  val cleanup =
-                                      postMergeCleanup.execute(
-                                          PostMergeCleanupRequest(
-                                              mergedSubTaskId = merged.data.subTask.id
-                                          )
-                                      )
-                              ) {
+                          is io.springkit.workflow.domain.WorkflowResult.Success -> {
+                            val mainRevision = merged.data.integration.mainRevision
+                            if (mainRevision.isNullOrBlank()) {
+                              return@WorkflowEventHandler runtimeEventFailure(
+                                  FailureCode.INVARIANT_VIOLATION,
+                                  "통합 결과에 정확한 main revision이 없습니다.",
+                                  merged.data.subTask.id,
+                              )
+                            }
+                            val cleanup =
+                                postMergeCleanup.execute(
+                                    PostMergeCleanupRequest(
+                                        mergedSubTaskId = merged.data.subTask.id
+                                    )
+                                )
+                            if (providerCommands == null) {
+                              return@WorkflowEventHandler when (cleanup) {
                                 is io.springkit.workflow.domain.WorkflowResult.Success ->
                                     io.springkit.workflow.domain.WorkflowResult.Success(
                                         MergeQueueEventResponse(
@@ -290,22 +358,253 @@ fun createDefaultApplicationRuntime(
                                             ),
                                     )
                               }
+                            }
+                            val deployment =
+                                deploymentLifecycle.create(
+                                    DeploymentLifecycleRequest(
+                                        mainRevision = mainRevision,
+                                        requestId = event.id,
+                                    )
+                                )
+                            if (deployment is io.springkit.workflow.domain.WorkflowResult.Failure) {
+                              return@WorkflowEventHandler deployment
+                            }
+                            val deploymentSuccess =
+                                deployment
+                                    as
+                                    io.springkit.workflow.domain.WorkflowResult.Success<
+                                        io.springkit.workflow.application.DeploymentLifecycleResponse
+                                    >
+                            when (cleanup) {
+                              is io.springkit.workflow.domain.WorkflowResult.Success ->
+                                  io.springkit.workflow.domain.WorkflowResult.Success(
+                                      MergeQueueEventResponse(
+                                          merge = merged.data,
+                                          cleanup = cleanup.data,
+                                          deployment = deploymentSuccess.data,
+                                      ),
+                                      next = cleanup.next + deploymentSuccess.next,
+                                  )
+                              is io.springkit.workflow.domain.WorkflowResult.Failure ->
+                                  io.springkit.workflow.domain.WorkflowResult.Success(
+                                      MergeQueueEventResponse(
+                                          merge = merged.data,
+                                          cleanup =
+                                              cleanup.data.toBlockedCleanup(merged.data.subTask.id),
+                                          deployment = deploymentSuccess.data,
+                                      ),
+                                      next =
+                                          listOf(
+                                              io.springkit.workflow.domain.NextAction(
+                                                  io.springkit.workflow.domain.ActorKind.WORKFLOW,
+                                                  "retry_cleanup",
+                                              )
+                                          ) + deploymentSuccess.next,
+                                  )
+                            }
+                          }
                         }
                       },
                   ExternalEventKind.MAIN_MERGED to
                       WorkflowEventHandler { event ->
-                        postMergeCleanup.execute(
-                            PostMergeCleanupRequest(mergedSubTaskId = event.targetId)
-                        )
+                        if (providerCommands == null) {
+                          return@WorkflowEventHandler postMergeCleanup.execute(
+                              PostMergeCleanupRequest(mergedSubTaskId = event.targetId)
+                          )
+                        }
+                        val mainRevision =
+                            snapshot(store)
+                                .integrations
+                                .firstOrNull { it.subTaskId == event.targetId }
+                                ?.mainRevision
+                                ?.takeIf(String::isNotBlank)
+                                ?: event.attributes.optionalAttribute("main_revision")
+                        if (mainRevision == null) {
+                          return@WorkflowEventHandler runtimeEventFailure(
+                              FailureCode.INVALID_ARGUMENT,
+                              "MAIN_MERGED 이벤트에 정확한 main revision이 없습니다.",
+                              event.targetId,
+                          )
+                        }
+                        val cleanup =
+                            postMergeCleanup.execute(
+                                PostMergeCleanupRequest(mergedSubTaskId = event.targetId)
+                            )
+                        val deployment =
+                            deploymentLifecycle.create(
+                                DeploymentLifecycleRequest(
+                                    mainRevision = mainRevision,
+                                    requestId = event.id,
+                                )
+                            )
+                        if (deployment is io.springkit.workflow.domain.WorkflowResult.Failure) {
+                          return@WorkflowEventHandler deployment
+                        }
+                        when (cleanup) {
+                          is io.springkit.workflow.domain.WorkflowResult.Success -> deployment
+                          is io.springkit.workflow.domain.WorkflowResult.Failure -> {
+                            val deployed =
+                                deployment
+                                    as
+                                    io.springkit.workflow.domain.WorkflowResult.Success<
+                                        io.springkit.workflow.application.DeploymentLifecycleResponse
+                                    >
+                            io.springkit.workflow.domain.WorkflowResult.Success(
+                                deployed.data,
+                                next =
+                                    listOf(
+                                        io.springkit.workflow.domain.NextAction(
+                                            io.springkit.workflow.domain.ActorKind.WORKFLOW,
+                                            "retry_cleanup",
+                                        )
+                                    ) + deployed.next,
+                            )
+                          }
+                        }
                       },
-              ),
+              ) +
+                  if (providerCommands == null) {
+                    emptyMap()
+                  } else {
+                    mapOf(
+                        ExternalEventKind.DEPLOYMENT_CHANGED to
+                            WorkflowEventHandler { event ->
+                              deploymentLifecycle.handle(event)
+                            },
+                        ExternalEventKind.CANARY_CHANGED to
+                            WorkflowEventHandler { event ->
+                              when (val deployment = deploymentLifecycle.handle(event)) {
+                                is io.springkit.workflow.domain.WorkflowResult.Failure -> deployment
+                                is io.springkit.workflow.domain.WorkflowResult.Success -> {
+                                  if (
+                                      deployment.data.candidate.state ==
+                                          io.springkit.workflow.domain.DeploymentCandidateState
+                                              .PRODUCTION
+                                  ) {
+                                    releaseLifecycle.handleDeployment(
+                                        DeploymentRecorded(
+                                            targetId = deployment.data.candidate.id,
+                                            state = deployment.data.candidate.state,
+                                            occurredAtEpochMillis = event.occurredAtEpochMillis,
+                                        )
+                                    )
+                                  } else {
+                                    deployment
+                                  }
+                                }
+                              }
+                            },
+                        ExternalEventKind.RELEASE_CHANGED to
+                            WorkflowEventHandler { event ->
+                              val stateName = event.attributes.optionalAttribute("state")
+                              if (stateName == null) {
+                                return@WorkflowEventHandler runtimeEventFailure(
+                                    FailureCode.INVALID_ARGUMENT,
+                                    "RELEASE_CHANGED 이벤트에 state가 없습니다.",
+                                    event.targetId,
+                                )
+                              }
+                              val state =
+                                  try {
+                                    ReleaseState.valueOf(stateName.uppercase())
+                                  } catch (_: IllegalArgumentException) {
+                                    return@WorkflowEventHandler runtimeEventFailure(
+                                        FailureCode.INVALID_ARGUMENT,
+                                        "RELEASE_CHANGED 이벤트의 state가 올바르지 않습니다: $stateName",
+                                        event.targetId,
+                                    )
+                                  }
+                              releaseLifecycle.handle(
+                                  ReleaseRecorded(
+                                      targetId = event.targetId,
+                                      state = state,
+                                      occurredAtEpochMillis = event.occurredAtEpochMillis,
+                                  )
+                              )
+                            },
+                    )
+                  },
       )
   return WorkflowApplicationRuntime(
       commandGateway = commandGateway,
       eventUseCases = eventUseCases,
       postMergeCleanup = postMergeCleanup,
+      deploymentLifecycle = deploymentLifecycle,
+      releaseLifecycle = releaseLifecycle,
   )
 }
+
+private data class ProviderCommandPrefixes(
+    val deployment: List<String>,
+    val release: List<String>,
+    val featureFlag: List<String>,
+)
+
+/** 세 provider 명령 설정을 모두 구성했는지 확인하고 JSON 배열을 해석합니다. */
+private fun providerCommands(environment: Map<String, String>): ProviderCommandPrefixes? {
+  val values =
+      mapOf(
+              "WORKFLOW_DEPLOYMENT_COMMAND" to environment["WORKFLOW_DEPLOYMENT_COMMAND"],
+              "WORKFLOW_RELEASE_COMMAND" to environment["WORKFLOW_RELEASE_COMMAND"],
+              "WORKFLOW_FEATURE_FLAG_COMMAND" to environment["WORKFLOW_FEATURE_FLAG_COMMAND"],
+          )
+          .mapValues { (_, value) -> value?.trim()?.takeIf(String::isNotBlank) }
+  if (values.values.all { it == null }) return null
+  val missing = values.filterValues { it == null }.keys
+  require(missing.isEmpty()) {
+    "provider CLI 설정은 세 환경 변수를 모두 지정해야 합니다. 누락: ${missing.joinToString(", ")}"
+  }
+  return ProviderCommandPrefixes(
+      deployment =
+          decodeProviderCommand(
+              "WORKFLOW_DEPLOYMENT_COMMAND",
+              values.getValue("WORKFLOW_DEPLOYMENT_COMMAND")!!,
+          ),
+      release =
+          decodeProviderCommand(
+              "WORKFLOW_RELEASE_COMMAND",
+              values.getValue("WORKFLOW_RELEASE_COMMAND")!!,
+          ),
+      featureFlag =
+          decodeProviderCommand(
+              "WORKFLOW_FEATURE_FLAG_COMMAND",
+              values.getValue("WORKFLOW_FEATURE_FLAG_COMMAND")!!,
+          ),
+  )
+}
+
+/** provider CLI 환경 변수를 문자열 배열로 해석하고 실행 가능한 명령인지 확인합니다. */
+private fun decodeProviderCommand(name: String, value: String): List<String> {
+  val command =
+      try {
+        providerCommandJson.decodeFromString<List<String>>(value)
+      } catch (failure: SerializationException) {
+        throw IllegalArgumentException(
+            "$name 값은 provider CLI 토큰의 JSON 문자열 배열이어야 합니다.",
+            failure,
+        )
+      }
+  require(command.isNotEmpty() && command.none(String::isBlank)) {
+    "$name 값은 비어 있지 않은 provider CLI 토큰 배열이어야 합니다."
+  }
+  return command
+}
+
+private val providerCommandJson = Json { explicitNulls = false }
+
+/** 이벤트 handler가 재시도할 수 있는 명시적인 실패 결과를 만듭니다. */
+private fun runtimeEventFailure(
+    code: FailureCode,
+    message: String,
+    target: String,
+): WorkflowResult.Failure =
+    WorkflowResult.Failure(
+        FailureData(
+            code = code,
+            message = message,
+            blockedBy = listOf(BlockedBy(code.name, message, target)),
+        )
+    )
 
 /** 환경 설정에 따라 외부 Task adapter를 명시적으로 선택합니다. */
 internal fun createTaskPort(
