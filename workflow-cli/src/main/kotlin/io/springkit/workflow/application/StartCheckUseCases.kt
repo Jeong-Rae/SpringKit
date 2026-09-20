@@ -77,7 +77,14 @@ class StartUseCase(
     private val idPort: IdPort? = null,
     private val compensationPort: CompensationPort? = null,
     private val clockPort: ClockPort? = null,
+    private val projectPrefix: String,
 ) {
+  init {
+    require(projectPrefix.matches(Regex("[A-Za-z][A-Za-z0-9._-]*"))) {
+      "project prefix must be safe for a subtask id"
+    }
+  }
+
   fun start(request: StartRequest): WorkflowResult<StartResponse> = execute(request)
 
   fun handle(request: StartRequest): WorkflowResult<StartResponse> = execute(request)
@@ -195,6 +202,28 @@ class StartUseCase(
 
     val changes = mutableListOf<ChangeReceipt>()
     var lastPortFailure: PortError? = null
+    val nextSubTaskNumber = snapshot.sequence.subTask + 1
+    if (nextSubTaskNumber <= snapshot.sequence.subTask) {
+      return recover(
+          transactionRequest,
+          changes,
+          failureData(PortError("SUBTASK_ID_UNAVAILABLE", "SubTask ID sequence is exhausted")),
+      )
+    }
+    val issuedSubTaskId: SubTaskId = "$projectPrefix-$nextSubTaskNumber"
+    if (snapshot.subTasks.any { it.id == issuedSubTaskId }) {
+      return recover(
+          transactionRequest,
+          changes,
+          failureData(
+              PortError(
+                  "SUBTASK_ID_CONFLICT",
+                  "the next SubTask ID is already present in the workflow store",
+                  target = issuedSubTaskId,
+              ),
+          ),
+      )
+    }
     fun <T : ChangeResponse> remember(result: PortResult<T>): T? =
         when (result) {
           is PortResult.Success -> {
@@ -213,6 +242,7 @@ class StartUseCase(
             taskPort.createSubTask(
                 CreateSubTaskRequest(
                     externalTaskId = request.taskId,
+                    subTaskId = issuedSubTaskId,
                     title = request.title,
                     requestId = request.requestId,
                     requires = request.requires,
@@ -231,15 +261,11 @@ class StartUseCase(
             )
 
     val subTask = createdSubTask.subTask
-    val existingSubTask = snapshot.subTasks.firstOrNull { it.id == subTask.id }
-    if (
-        existingSubTask != null &&
-            (existingSubTask.title != request.title || existingSubTask.requires != request.requires)
-    ) {
+    if (subTask.id != issuedSubTaskId) {
       return recover(
           transactionRequest,
           changes,
-          idempotencyConflict("start request metadata differs from the existing subtask"),
+          invalid("subtask adapter returned a different issued ID", issuedSubTaskId),
       )
     }
     if (
@@ -252,24 +278,6 @@ class StartUseCase(
           changes,
           invalid("subtask metadata does not match the start request"),
       )
-    }
-    val existingWorkspace =
-        snapshot.workspaces.firstOrNull { it.subTaskId == subTask.id } ?: existingSubTask?.workspace
-    if (existingSubTask != null && existingWorkspace != null) {
-      when (val result = storePort.rollback(transactionRequest)) {
-        is PortResult.Success ->
-            return WorkflowResult.Success(
-                StartResponse(
-                    task = snapshot.tasks.firstOrNull { it.id == task.id } ?: task,
-                    subTask = existingSubTask,
-                    workspace = existingWorkspace,
-                    baseBranch = existingSubTask.requires ?: "main",
-                    baseRevision = snapshot.revision,
-                    idempotent = true,
-                ),
-            )
-        is PortResult.Failure -> return failure(result.error)
-      }
     }
     val workspaceId = issueId(IdKind.WORKSPACE, "start:${request.requestId}:workspace")
     val path = request.workspacePath ?: WorkspacePath("workspaces/${subTask.id}")
@@ -357,6 +365,7 @@ class StartUseCase(
       return recover(transactionRequest, changes, invalid("workspace metadata is not managed"))
     }
 
+    val storedSubTask = subTask.copy(workspace = workspace)
     val storedTask =
         task.copy(
             state = if (task.state == TaskState.OPEN) TaskState.IN_PROGRESS else task.state,
@@ -364,8 +373,9 @@ class StartUseCase(
         )
     val storedSnapshot =
         snapshot.copy(
+            sequence = snapshot.sequence.copy(subTask = nextSubTaskNumber),
             tasks = snapshot.tasks.replaceById(storedTask) { it.id },
-            subTasks = snapshot.subTasks.replaceById(subTask) { it.id },
+            subTasks = snapshot.subTasks.replaceById(storedSubTask) { it.id },
             dependencies =
                 snapshot.dependencies.filterNot { it.subTaskId == subTask.id } +
                     listOfNotNull(request.requires?.let { Dependency(subTask.id, it) }),
@@ -415,7 +425,7 @@ class StartUseCase(
     return WorkflowResult.Success(
         StartResponse(
             task = storedTask,
-            subTask = subTask,
+            subTask = storedSubTask,
             workspace = workspace,
             baseBranch = base.branch,
             baseRevision = base.revision,
@@ -798,9 +808,19 @@ class StartCheckUseCases(
     idPort: IdPort? = null,
     compensationPort: CompensationPort? = null,
     clockPort: ClockPort? = null,
+    projectPrefix: String,
 ) {
   private val startUseCase =
-      StartUseCase(taskPort, gitPort, workspacePort, storePort, idPort, compensationPort, clockPort)
+      StartUseCase(
+          taskPort,
+          gitPort,
+          workspacePort,
+          storePort,
+          idPort,
+          compensationPort,
+          clockPort,
+          projectPrefix,
+      )
   private val checkUseCase =
       CheckUseCase(workspacePort, gitPort, storePort, validationPort, taskPort)
 

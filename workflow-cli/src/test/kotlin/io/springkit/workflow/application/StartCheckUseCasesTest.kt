@@ -6,6 +6,9 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.springkit.workflow.domain.CheckSummary
 import io.springkit.workflow.domain.ExternalTaskId
+import io.springkit.workflow.domain.IdSequence
+import io.springkit.workflow.domain.StartRequestKey
+import io.springkit.workflow.domain.StartRequestRecord
 import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.Task
 import io.springkit.workflow.domain.ValidationStatus
@@ -75,6 +78,8 @@ class StartCheckUseCasesTest :
           val existing = SubTask("sk-101", "task-1", "change", workspace = workspace)
           val task =
               Task("task-1", ExternalTaskId("TASK-1"), "task", subTaskIds = listOf(existing.id))
+          val key = StartRequestKey("TASK-1", "request-1")
+          val taskPort = ExistingTaskPort(task, existing)
           val store =
               RecordingStartStore(
                   WorkflowStoreSnapshot(
@@ -82,14 +87,24 @@ class StartCheckUseCasesTest :
                       tasks = listOf(task),
                       subTasks = listOf(existing),
                       workspaces = listOf(workspace),
+                      startRequests =
+                          mapOf(
+                              key to
+                                  StartRequestRecord(
+                                      key = key,
+                                      subTaskId = existing.id,
+                                      title = "change",
+                                  ),
+                          ),
                   ),
               )
           val useCase =
               StartUseCase(
-                  ExistingTaskPort(task, existing),
+                  taskPort,
                   StartGit(),
                   FakeWorkspace(workspace),
                   store,
+                  projectPrefix = "sk",
               )
 
           val result =
@@ -100,7 +115,55 @@ class StartCheckUseCasesTest :
 
           success.data.idempotent shouldBe true
           success.data.subTask.id shouldBe existing.id
-          store.rollbackCount shouldBe 1
+          taskPort.lastCreateRequest shouldBe null
+          store.rollbackCount shouldBe 0
+        }
+
+        test("완료된 시작 요청을 재시도하면, SubTask sequence를 증가시키지 않습니다") {
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("/managed/sk-101"), "sk-101")
+          val existing = SubTask("sk-101", "task-1", "change", workspace = workspace)
+          val task =
+              Task("task-1", ExternalTaskId("TASK-1"), "task", subTaskIds = listOf(existing.id))
+          val key = StartRequestKey("TASK-1", "request-1")
+          val taskPort = ExistingTaskPort(task, existing)
+          val store =
+              RecordingStartStore(
+                  WorkflowStoreSnapshot(
+                      revision = "store-1",
+                      sequence = IdSequence(subTask = 101),
+                      tasks = listOf(task),
+                      subTasks = listOf(existing),
+                      workspaces = listOf(workspace),
+                      startRequests =
+                          mapOf(
+                              key to
+                                  StartRequestRecord(
+                                      key = key,
+                                      subTaskId = existing.id,
+                                      title = "change",
+                                  ),
+                          ),
+                  ),
+              )
+          val useCase =
+              StartUseCase(
+                  taskPort,
+                  StartGit(),
+                  FakeWorkspace(workspace),
+                  store,
+                  projectPrefix = "sk",
+              )
+
+          val result =
+              useCase.execute(
+                  StartRequest(ExternalTaskId("TASK-1"), "request-1", "change"),
+              )
+          val success = result.shouldBeInstanceOf<WorkflowResult.Success<StartResponse>>()
+
+          success.data.idempotent shouldBe true
+          taskPort.lastCreateRequest shouldBe null
+          store.beginCount shouldBe 0
+          store.written shouldBe null
         }
 
         test("같은 요청에 다른 메타데이터를 입력하면, 멱등성 충돌로 거절합니다") {
@@ -108,6 +171,8 @@ class StartCheckUseCasesTest :
           val existing = SubTask("sk-101", "task-1", "original", workspace = workspace)
           val task =
               Task("task-1", ExternalTaskId("TASK-1"), "task", subTaskIds = listOf(existing.id))
+          val key = StartRequestKey("TASK-1", "request-1")
+          val taskPort = ExistingTaskPort(task, existing)
           val store =
               RecordingStartStore(
                   WorkflowStoreSnapshot(
@@ -115,21 +180,66 @@ class StartCheckUseCasesTest :
                       tasks = listOf(task),
                       subTasks = listOf(existing),
                       workspaces = listOf(workspace),
+                      startRequests =
+                          mapOf(
+                              key to
+                                  StartRequestRecord(
+                                      key = key,
+                                      subTaskId = existing.id,
+                                      title = "original",
+                                  ),
+                          ),
                   ),
               )
           val result =
               StartUseCase(
-                      ExistingTaskPort(task, existing),
+                      taskPort,
                       StartGit(),
                       FakeWorkspace(workspace),
                       store,
                       compensationPort = RecordingCompensationPort(),
+                      projectPrefix = "sk",
                   )
                   .execute(StartRequest(ExternalTaskId("TASK-1"), "request-1", "different"))
           val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>()
 
           failure.data.blockedBy.single().code shouldBe "IDEMPOTENCY_CONFLICT"
-          store.rollbackCount shouldBe 1
+          taskPort.lastCreateRequest shouldBe null
+          store.rollbackCount shouldBe 0
+        }
+
+        test("새 SubTask를 시작하면, 발급한 ID와 증가한 sequence를 같은 저장 트랜잭션에 기록합니다") {
+          val task = Task("task-1", ExternalTaskId("TASK-1"), "task")
+          val subTask = SubTask("sk-101", task.id, "change")
+          val store = RecordingStartStore(WorkflowStoreSnapshot("store-1"))
+          val taskPort = ExistingTaskPort(task, subTask)
+          val useCase =
+              StartUseCase(
+                  taskPort,
+                  StartGit(),
+                  FakeWorkspace(
+                      Workspace(
+                          "ws-1",
+                          subTask.id,
+                          WorkspacePath("/managed/sk-101"),
+                          subTask.branch,
+                      ),
+                  ),
+                  store,
+                  projectPrefix = "sk",
+              )
+
+          val result =
+              useCase.execute(
+                  StartRequest(ExternalTaskId("TASK-1"), "request-1", "change"),
+              )
+          val success = result.shouldBeInstanceOf<WorkflowResult.Success<StartResponse>>()
+
+          success.data.subTask.id shouldBe "sk-101"
+          success.data.subTask.workspace shouldBe success.data.workspace
+          taskPort.lastCreateRequest?.subTaskId shouldBe "sk-101"
+          store.written?.sequence?.subTask shouldBe 101
+          store.written?.subTasks?.single()?.workspace shouldBe store.written?.workspaces?.single()
         }
 
         test("Worktree 생성이 실패하면, 외부 변경을 역순으로 보상하고 상태를 되돌립니다") {
@@ -151,6 +261,7 @@ class StartCheckUseCasesTest :
                       ),
                       store,
                       compensationPort = compensation,
+                      projectPrefix = "sk",
                   )
                   .execute(StartRequest(ExternalTaskId("TASK-1"), "request-1", "change"))
 
@@ -166,7 +277,17 @@ private class FakeWorkspace(private val workspace: Workspace) : WorkspacePort {
       PortResult.Success(WorkspaceLookupResponse(workspace))
 
   override fun create(request: CreateWorkspaceRequest): PortResult<CreateWorkspaceResponse> =
-      error("not used")
+      PortResult.Success(
+          CreateWorkspaceResponse(
+              Workspace(
+                  request.workspaceId,
+                  request.subTaskId,
+                  request.path,
+                  request.branch,
+              ),
+              ChangeReceipt("workspace-change", "create-workspace"),
+          ),
+      )
 
   override fun delete(request: DeleteWorkspaceRequest): PortResult<DeleteWorkspaceResponse> =
       error("not used")
@@ -176,23 +297,27 @@ private class ExistingTaskPort(
     private val task: Task,
     private val subTask: SubTask,
 ) : TaskPort {
+  var lastCreateRequest: CreateSubTaskRequest? = null
+
   override fun get(request: TaskLookupRequest) = PortResult.Success(TaskLookupResponse(task))
 
   override fun getSubTask(request: SubTaskLookupRequest) =
       PortResult.Success(SubTaskLookupResponse(subTask))
 
-  override fun createSubTask(request: CreateSubTaskRequest) =
-      PortResult.Success(
-          CreateSubTaskResponse(
-              task,
-              subTask,
-              ChangeReceipt(
-                  "task-change",
-                  "create-subtask",
-                  compensation = Compensation("undo-task", "delete-subtask", "request-1"),
-              ),
-          ),
-      )
+  override fun createSubTask(request: CreateSubTaskRequest) = run {
+    lastCreateRequest = request
+    PortResult.Success(
+        CreateSubTaskResponse(
+            task,
+            subTask,
+            ChangeReceipt(
+                "task-change",
+                "create-subtask",
+                compensation = Compensation("undo-task", "delete-subtask", "request-1"),
+            ),
+        ),
+    )
+  }
 
   override fun updateSubTask(
       request: UpdateExternalSubTaskRequest,
@@ -261,17 +386,25 @@ private class FailingStartGit : StartGit() {
 private class RecordingStartStore(private val snapshotValue: WorkflowStoreSnapshot) :
     WorkflowStorePort {
   var rollbackCount = 0
+  var beginCount = 0
+  var written: WorkflowStoreSnapshot? = null
 
   override fun snapshot(request: StoreSnapshotRequest) =
       PortResult.Success(StoreSnapshotResponse(snapshotValue))
 
-  override fun begin(request: StoreTransactionRequest) =
-      PortResult.Success(
-          StoreTransactionResponse(request.transactionId, StoreTransactionState.OPEN)
-      )
+  override fun begin(request: StoreTransactionRequest) = run {
+    beginCount += 1
+    PortResult.Success(StoreTransactionResponse(request.transactionId, StoreTransactionState.OPEN))
+  }
 
   override fun commit(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
-      error("not used")
+      PortResult.Success(
+          StoreTransactionResponse(
+              request.transactionId,
+              StoreTransactionState.COMMITTED,
+              "store-2",
+          ),
+      )
 
   override fun rollback(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> {
     rollbackCount += 1
@@ -280,10 +413,13 @@ private class RecordingStartStore(private val snapshotValue: WorkflowStoreSnapsh
     )
   }
 
-  override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> = error("not used")
+  override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> {
+    written = request.snapshot
+    return PortResult.Success(StoreWriteResponse("store-2"))
+  }
 
   override fun append(request: StoreEventRequest): PortResult<StoreEventResponse> =
-      error("not used")
+      PortResult.Success(StoreEventResponse(request.event, "store-2"))
 }
 
 private class RecordingCompensationPort : CompensationPort {
