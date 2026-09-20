@@ -1,9 +1,13 @@
 package io.springkit.workflow.application
 
+import io.springkit.workflow.domain.Actor
+import io.springkit.workflow.domain.ActorKind
+import io.springkit.workflow.domain.AuditEntry
 import io.springkit.workflow.domain.CandidateId
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
+import io.springkit.workflow.domain.EventLog
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.IntegrationState
@@ -309,10 +313,13 @@ class DeploymentLifecycleUseCase(
 
   /** 외부 Canary 변경 이벤트를 처리합니다. */
   fun handle(event: ExternalEvent): WorkflowResult<DeploymentLifecycleResponse> {
+    if (event.kind == ExternalEventKind.DEPLOYMENT_CHANGED) {
+      return handleDeploymentChanged(event)
+    }
     if (event.kind != ExternalEventKind.CANARY_CHANGED) {
       return failure(
           FailureCode.INVALID_ARGUMENT,
-          "only CANARY_CHANGED events can advance a deployment candidate",
+          "only DEPLOYMENT_CHANGED and CANARY_CHANGED events can advance a deployment candidate",
           event.targetId,
       )
     }
@@ -460,6 +467,284 @@ class DeploymentLifecycleUseCase(
                           ),
                   ),
                   listOf(promoted.change),
+              )
+          )
+        }
+        .mapFailureStage()
+  }
+
+  /** 외부 Deployment 변경 이벤트를 재조회하고 검증 결과에 따라 안전하게 진행합니다. */
+  private fun handleDeploymentChanged(
+      event: ExternalEvent
+  ): WorkflowResult<DeploymentLifecycleResponse> {
+    val initial = readSnapshot(null, event.targetId)
+    if (initial is SnapshotRead.Failure) return initial.failure
+    val snapshot = (initial as SnapshotRead.Success).snapshot
+    val current =
+        snapshot.candidates.firstOrNull { it.id == event.targetId }
+            ?: return failure(
+                FailureCode.DEPLOYMENT_NOT_FOUND,
+                "deployment candidate was not found",
+                event.targetId,
+            )
+    if (snapshot.eventLog.audits.any { it.id == event.id }) {
+      return WorkflowResult.Success(
+          DeploymentLifecycleResponse(current, idempotent = true),
+          nextActions(current),
+      )
+    }
+    if (current.state.isAfterValidation()) {
+      return WorkflowResult.Success(
+          DeploymentLifecycleResponse(current, idempotent = true),
+          nextActions(current),
+      )
+    }
+    if (current.state == DeploymentCandidateState.FAILED) {
+      return WorkflowResult.Success(
+          DeploymentLifecycleResponse(current, DeploymentFailureStage.VALIDATION, true)
+      )
+    }
+    if (
+        current.state !in
+            setOf(DeploymentCandidateState.CANDIDATE, DeploymentCandidateState.VALIDATING)
+    ) {
+      return failure(
+          FailureCode.STATE_CONFLICT,
+          "deployment changed event cannot advance the candidate from its current state",
+          current.id,
+      )
+    }
+
+    val transactionRequest =
+        StoreTransactionRequest(
+            transactionId = issueTransactionId(event.id),
+            expectedRevision = snapshot.revision,
+            idempotencyKey = event.id,
+        )
+    return transaction(transactionRequest) { latest ->
+          val latestCandidate =
+              latest.candidates.firstOrNull { it.id == event.targetId }
+                  ?: return@transaction Operation.Abort(
+                      failurePort(
+                          FailureCode.DEPLOYMENT_NOT_FOUND,
+                          "deployment candidate was not found",
+                          event.targetId,
+                      )
+                  )
+          if (latest.eventLog.audits.any { it.id == event.id }) {
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(latestCandidate, idempotent = true),
+                    latest,
+                )
+            )
+          }
+          if (latestCandidate.state.isAfterValidation()) {
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(latestCandidate, idempotent = true),
+                    latest,
+                )
+            )
+          }
+          if (latestCandidate.state == DeploymentCandidateState.FAILED) {
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(
+                        latestCandidate,
+                        DeploymentFailureStage.VALIDATION,
+                        idempotent = true,
+                    ),
+                    latest,
+                )
+            )
+          }
+          if (
+              latestCandidate.state !in
+                  setOf(DeploymentCandidateState.CANDIDATE, DeploymentCandidateState.VALIDATING)
+          ) {
+            return@transaction Operation.Abort(
+                failurePort(
+                    FailureCode.STATE_CONFLICT,
+                    "deployment changed event cannot advance the candidate from its current state",
+                    latestCandidate.id,
+                )
+            )
+          }
+
+          val observed =
+              when (val result = deploymentPort.getCandidate(GetCandidateRequest(event.targetId))) {
+                is PortResult.Failure -> return@transaction Operation.Abort(result)
+                is PortResult.Success -> result.value
+              }
+          validateCandidateIdentity(
+                  observed.candidate,
+                  latestCandidate.mainRevision,
+                  latestCandidate.includedSubTasks,
+                  latestCandidate.risks,
+                  expectedCandidateId = latestCandidate.id,
+              )
+              ?.let {
+                return@transaction Operation.Abort(
+                    failurePort(it.first, it.second, latestCandidate.id),
+                )
+              }
+
+          val validation =
+              if (
+                  observed.candidate.state == DeploymentCandidateState.FAILED ||
+                      observed.candidate.state.isAfterValidation() ||
+                      !observed.candidate.requiresValidationRefresh()
+              ) {
+                observed.candidate to null
+              } else {
+                when (
+                    val result =
+                        deploymentPort.validate(
+                            ValidateCandidateRequest(
+                                latestCandidate.id,
+                                latestCandidate.mainRevision,
+                            )
+                        )
+                ) {
+                  is PortResult.Failure -> return@transaction Operation.Abort(result)
+                  is PortResult.Success -> result.value.candidate to result.value.change
+                }
+              }
+          val validatedCandidate = validation.first
+          val validationChange = validation.second
+          validateCandidateIdentity(
+                  validatedCandidate,
+                  latestCandidate.mainRevision,
+                  latestCandidate.includedSubTasks,
+                  latestCandidate.risks,
+                  expectedCandidateId = latestCandidate.id,
+              )
+              ?.let {
+                return@transaction Operation.Abort(
+                    failurePort(it.first, it.second, latestCandidate.id, validationChange),
+                    listOfNotNull(validationChange),
+                )
+              }
+          if (validatedCandidate.state == DeploymentCandidateState.FAILED) {
+            val failed = validatedCandidate.copy(state = DeploymentCandidateState.FAILED)
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(failed, DeploymentFailureStage.VALIDATION),
+                    latest.copy(
+                        candidates = latest.candidates.replaceCandidate(failed),
+                        eventLog = latest.deploymentEventLog(event, failed),
+                    ),
+                    listOfNotNull(validationChange),
+                )
+            )
+          }
+          if (validatedCandidate.state.isAfterValidation()) {
+            val progressed = validatedCandidate
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(progressed, idempotent = true),
+                    latest.copy(
+                        candidates = latest.candidates.replaceCandidate(progressed),
+                        eventLog = latest.deploymentEventLog(event, progressed),
+                    ),
+                    listOfNotNull(validationChange),
+                )
+            )
+          }
+
+          val validationFailed =
+              validatedCandidate.validations.any {
+                it.required && it.status == ValidationStatus.FAILED
+              }
+          val validationPassed =
+              validatedCandidate.validations.isNotEmpty() &&
+                  requiredValidationsPassed(validatedCandidate.validations)
+          if (validationFailed) {
+            val failed = validatedCandidate.copy(state = DeploymentCandidateState.FAILED)
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(failed, DeploymentFailureStage.VALIDATION),
+                    latest.copy(
+                        candidates = latest.candidates.replaceCandidate(failed),
+                        eventLog = latest.deploymentEventLog(event, failed),
+                    ),
+                    listOfNotNull(validationChange),
+                )
+            )
+          }
+          if (!validationPassed) {
+            val validating = validatedCandidate.copy(state = DeploymentCandidateState.VALIDATING)
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(validating),
+                    latest.copy(
+                        candidates = latest.candidates.replaceCandidate(validating),
+                        eventLog = latest.deploymentEventLog(event, validating),
+                    ),
+                    listOfNotNull(validationChange),
+                )
+            )
+          }
+
+          if (latestCandidate.risk == Risk.HIGH) {
+            val awaiting =
+                validatedCandidate.copy(state = DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL)
+            return@transaction Operation.Commit(
+                TransactionMutation(
+                    DeploymentLifecycleResponse(awaiting),
+                    latest.copy(
+                        candidates = latest.candidates.replaceCandidate(awaiting),
+                        eventLog = latest.deploymentEventLog(event, awaiting),
+                    ),
+                    listOfNotNull(validationChange),
+                )
+            )
+          }
+
+          val canary =
+              when (
+                  val result = deploymentPort.startCanary(StartCanaryRequest(latestCandidate.id))
+              ) {
+                is PortResult.Failure ->
+                    return@transaction Operation.Abort(
+                        result.withChange(validationChange),
+                        listOfNotNull(validationChange),
+                    )
+                is PortResult.Success -> result.value
+              }
+          validateCandidateIdentity(
+                  canary.candidate,
+                  latestCandidate.mainRevision,
+                  latestCandidate.includedSubTasks,
+                  latestCandidate.risks,
+                  expectedCandidateId = latestCandidate.id,
+              )
+              ?.let {
+                return@transaction Operation.Abort(
+                    failurePort(it.first, it.second, latestCandidate.id, canary.change),
+                    listOfNotNull(validationChange, canary.change),
+                )
+              }
+          if (canary.candidate.state != DeploymentCandidateState.CANARY) {
+            return@transaction Operation.Abort(
+                failurePort(
+                    FailureCode.INVARIANT_VIOLATION,
+                    "deployment provider did not start the candidate canary",
+                    latestCandidate.id,
+                    canary.change,
+                ),
+                listOfNotNull(validationChange, canary.change),
+            )
+          }
+          Operation.Commit(
+              TransactionMutation(
+                  DeploymentLifecycleResponse(canary.candidate),
+                  latest.copy(
+                      candidates = latest.candidates.replaceCandidate(canary.candidate),
+                      eventLog = latest.deploymentEventLog(event, canary.candidate),
+                  ),
+                  listOfNotNull(validationChange, canary.change),
               )
           )
         }
@@ -692,7 +977,7 @@ class DeploymentLifecycleUseCase(
 
 private fun <T> WorkflowResult<T>.mapFailureStage(): WorkflowResult<T> = this
 
-private fun PortResult.Failure.withChange(change: ChangeReceipt): PortResult.Failure =
+private fun PortResult.Failure.withChange(change: ChangeReceipt?): PortResult.Failure =
     PortResult.Failure(error, this.change ?: change)
 
 private fun WorkflowResult.Failure.toPortFailure(): PortResult.Failure =
@@ -707,3 +992,31 @@ private fun WorkflowResult.Failure.toPortFailure(): PortResult.Failure =
 private fun List<DeploymentCandidate>.replaceCandidate(
     value: DeploymentCandidate
 ): List<DeploymentCandidate> = map { current -> if (current.id == value.id) value else current }
+
+private fun DeploymentCandidateState.isAfterValidation(): Boolean =
+    this == DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL ||
+        this == DeploymentCandidateState.CANARY ||
+        this == DeploymentCandidateState.PRODUCTION
+
+private fun DeploymentCandidate.requiresValidationRefresh(): Boolean =
+    validations.isEmpty() ||
+        validations.any {
+          it.required &&
+              it.status != ValidationStatus.PASSED &&
+              it.status != ValidationStatus.FAILED
+        }
+
+private fun WorkflowStoreSnapshot.deploymentEventLog(
+    event: ExternalEvent,
+    candidate: DeploymentCandidate,
+): EventLog =
+    eventLog.append(
+        DeploymentRecorded(candidate.id, candidate.state, event.occurredAtEpochMillis),
+        AuditEntry(
+            id = event.id,
+            actor = Actor("workflow", ActorKind.WORKFLOW),
+            action = "deployment_changed",
+            targetId = candidate.id,
+            occurredAtEpochMillis = event.occurredAtEpochMillis,
+        ),
+    )

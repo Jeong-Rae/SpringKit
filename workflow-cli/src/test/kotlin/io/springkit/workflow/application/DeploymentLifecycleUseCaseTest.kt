@@ -43,6 +43,106 @@ class DeploymentLifecycleUseCaseTest :
         }
       }
 
+      context("DEPLOYMENT_CHANGED 이벤트를 받으면") {
+        test("필수 validation을 통과한 normal 후보를 Canary로 진행합니다") {
+          val fixture = DeploymentLifecycleFixture()
+          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
+
+          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-1"))
+
+          result.successData().candidate.state shouldBe DeploymentCandidateState.CANARY
+          fixture.deployment.getCandidateCalls shouldBe 1
+          fixture.deployment.validateCalls shouldBe 1
+          fixture.deployment.startCanaryCalls shouldBe 1
+        }
+
+        test("필수 validation을 통과한 high 후보를 배포 승인 대기로 전환합니다") {
+          val fixture = DeploymentLifecycleFixture(risk = Risk.HIGH)
+          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
+
+          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-2"))
+
+          result.successData().candidate.state shouldBe
+              DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL
+          fixture.deployment.startCanaryCalls shouldBe 0
+        }
+
+        test("필수 validation이 끝나지 않았으면 VALIDATING 상태를 유지합니다") {
+          val fixture = DeploymentLifecycleFixture()
+          fixture.deployment.setValidationResult(
+              listOf(Validation("validation-1", "필수 검증", ValidationStatus.PENDING))
+          )
+          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
+
+          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-3"))
+
+          result.successData().candidate.state shouldBe DeploymentCandidateState.VALIDATING
+          fixture.deployment.startCanaryCalls shouldBe 0
+        }
+
+        test("같은 event id를 다시 받으면 provider를 호출하지 않고 멱등 처리합니다") {
+          val fixture = DeploymentLifecycleFixture()
+          fixture.deployment.setValidationResult(
+              listOf(Validation("validation-1", "필수 검증", ValidationStatus.PENDING))
+          )
+          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
+          val event = deploymentChangedEvent("deployment-event-duplicate")
+
+          fixture.useCase().handle(event).successData()
+          val repeated = fixture.useCase().handle(event).successData()
+
+          repeated.idempotent shouldBe true
+          fixture.deployment.getCandidateCalls shouldBe 1
+          fixture.deployment.validateCalls shouldBe 1
+        }
+
+        test("필수 validation이 실패하면 FAILED 상태로 저장합니다") {
+          val fixture = DeploymentLifecycleFixture()
+          fixture.deployment.setValidationResult(
+              listOf(
+                  Validation(
+                      "validation-1",
+                      "필수 검증",
+                      ValidationStatus.FAILED,
+                      message = "검증 실패",
+                  )
+              )
+          )
+          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
+
+          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-4"))
+
+          val response = result.successData()
+          response.candidate.state shouldBe DeploymentCandidateState.FAILED
+          response.failureStage shouldBe DeploymentFailureStage.VALIDATION
+        }
+
+        test("이미 더 진행된 후보이면 provider를 다시 호출하지 않고 멱등 성공합니다") {
+          val fixture = DeploymentLifecycleFixture()
+          fixture.prepareCandidate(DeploymentCandidateState.CANARY)
+
+          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-5"))
+
+          result.successData().idempotent shouldBe true
+          fixture.deployment.getCandidateCalls shouldBe 0
+          fixture.deployment.validateCalls shouldBe 0
+          fixture.deployment.startCanaryCalls shouldBe 0
+        }
+
+        test("provider identity가 달라지면 후보를 역행하지 않고 불변식 오류를 반환합니다") {
+          val fixture = DeploymentLifecycleFixture(validateWithDifferentRevision = true)
+          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
+
+          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-6"))
+
+          result.failureData().code shouldBe
+              io.springkit.workflow.domain.FailureCode.INVARIANT_VIOLATION
+          fixture.store.writes shouldBe 0
+          fixture.store.rollbacks shouldBe 1
+          fixture.compensation.calls shouldBe 1
+        }
+      }
+
       context("Canary 완료 결과를 반영하면") {
         test("성공 시 같은 candidate를 Production으로 승격하고 다시 받아도 멱등 처리합니다") {
           val fixture = DeploymentLifecycleFixture()
@@ -112,6 +212,14 @@ class DeploymentLifecycleUseCaseTest :
       }
     })
 
+private fun deploymentChangedEvent(id: String): ExternalEvent =
+    ExternalEvent(
+        id = id,
+        kind = ExternalEventKind.DEPLOYMENT_CHANGED,
+        targetId = "candidate-1",
+        occurredAtEpochMillis = 1,
+    )
+
 private fun WorkflowResult<DeploymentLifecycleResponse>.successData(): DeploymentLifecycleResponse =
     shouldBeInstanceOf<WorkflowResult.Success<DeploymentLifecycleResponse>>().data
 
@@ -119,7 +227,7 @@ private fun WorkflowResult<DeploymentLifecycleResponse>.failureData() =
     shouldBeInstanceOf<WorkflowResult.Failure>().data
 
 private class DeploymentLifecycleFixture(
-    risk: Risk = Risk.NORMAL,
+    private val risk: Risk = Risk.NORMAL,
     private val validationFailure: Boolean = false,
     private val validateWithDifferentRevision: Boolean = false,
 ) {
@@ -148,6 +256,20 @@ private class DeploymentLifecycleFixture(
           deploymentPort = deployment,
           compensationPort = compensation,
       )
+
+  fun prepareCandidate(state: DeploymentCandidateState) {
+    val candidate =
+        DeploymentCandidate(
+            id = "candidate-1",
+            mainRevision = "main-1",
+            includedSubTasks = listOf("sk-101"),
+            risks = mapOf("sk-101" to risk),
+            state = state,
+            validations = emptyList(),
+        )
+    store.current = store.current.copy(candidates = listOf(candidate))
+    deployment.setCandidate(candidate)
+  }
 }
 
 private class DeploymentStore : WorkflowStorePort {
@@ -199,8 +321,11 @@ private class DeploymentProvider(
     private val validationFailure: Boolean,
     private val validateWithDifferentRevision: Boolean,
 ) : DeploymentPort {
+  var getCandidateCalls = 0
+  var validateCalls = 0
   var startCanaryCalls = 0
   var promoteCalls = 0
+  private var validationResult: List<Validation>? = null
   private var candidate =
       DeploymentCandidate("candidate-1", "main-1", listOf("sk-101"), mapOf("sk-101" to risk))
 
@@ -220,9 +345,10 @@ private class DeploymentProvider(
   }
 
   override fun getCandidate(request: GetCandidateRequest): PortResult<GetCandidateResponse> =
-      PortResult.Success(GetCandidateResponse(candidate))
+      PortResult.Success(GetCandidateResponse(candidate)).also { getCandidateCalls += 1 }
 
   override fun validate(request: ValidateCandidateRequest): PortResult<ValidateCandidateResponse> {
+    validateCalls += 1
     if (validationFailure) {
       return PortResult.Failure(
           PortError("EXTERNAL_FAILURE", "provider validation failed"),
@@ -233,11 +359,21 @@ private class DeploymentProvider(
         candidate.copy(
             mainRevision =
                 if (validateWithDifferentRevision) "other-main" else candidate.mainRevision,
-            validations = listOf(Validation("validation-1", "필수 검증", ValidationStatus.PASSED)),
+            validations =
+                validationResult
+                    ?: listOf(Validation("validation-1", "필수 검증", ValidationStatus.PASSED)),
         )
     return PortResult.Success(
         ValidateCandidateResponse(candidate, change("validate-candidate")),
     )
+  }
+
+  fun setCandidate(value: DeploymentCandidate) {
+    candidate = value
+  }
+
+  fun setValidationResult(value: List<Validation>) {
+    validationResult = value
   }
 
   override fun startCanary(request: StartCanaryRequest): PortResult<StartCanaryResponse> {
