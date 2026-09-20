@@ -63,6 +63,51 @@ GitHub Copilot Review는 현재 지원하지 않습니다. 별도 AI Review Adap
 
 Git Adapter는 설치된 `git` CLI를 호출하고 GitHub Adapter는 설치된 `gh` CLI를 호출합니다. 각 CLI가 제공하는 Worktree, 인증, PR과 리뷰 기능을 다시 구현하지 않습니다. 명령 실행에는 `io.springkit.workflow.common`의 최소 프로세스 유틸리티만 사용합니다. 이 유틸리티는 작업 디렉터리, 종료 코드, 표준 출력과 표준 오류만 다루며 shell DSL이나 Git 정책을 제공하지 않습니다.
 
+### 외부 provider CLI 구성
+
+배포, 외부 공개와 Feature Flag provider는 설치된 CLI에 위임합니다. 다음 환경 변수를 모두 설정하거나 모두 설정하지 않아야 합니다.
+
+| 환경 변수 | 값 |
+| --- | --- |
+| `WORKFLOW_DEPLOYMENT_COMMAND` | 배포 provider CLI의 JSON 문자열 배열 |
+| `WORKFLOW_RELEASE_COMMAND` | 외부 공개 provider CLI의 JSON 문자열 배열 |
+| `WORKFLOW_FEATURE_FLAG_COMMAND` | Feature Flag provider CLI의 JSON 문자열 배열 |
+
+예:
+
+```bash
+export WORKFLOW_DEPLOYMENT_COMMAND='["deployctl","workflow"]'
+export WORKFLOW_RELEASE_COMMAND='["releasectl","workflow"]'
+export WORKFLOW_FEATURE_FLAG_COMMAND='["flagctl","workflow"]'
+```
+
+Workflow는 명령 접두사 뒤에 작업 이름과 `--request-json <JSON>`을 추가합니다. shell 문자열을 해석하지 않고 각 배열 요소를 독립된 프로세스 토큰으로 전달합니다.
+
+```text
+<command-prefix...> <operation> --request-json <JSON>
+```
+
+| provider | 작업 |
+| --- | --- |
+| Deployment | `create-candidate`, `get-candidate`, `validate-candidate`, `start-canary`, `promote-production` |
+| Release | `get-release`, `create-release`, `validate-release`, `start-release`, `continue-rollout` |
+| Feature Flag | `validate-feature-flag` |
+
+성공하면 종료 코드 `0`과 JSON 객체 하나를 표준 출력으로 반환해야 합니다. Deployment 작업은 `candidate`와 선택적 `change`를, Release 조회는 `releases`를, Release 변경은 `release`와 선택적 `change`를 반환합니다. Feature Flag 검증은 `safe_default`을 반환합니다. 종료 코드 `2`는 재시도 가능한 provider 실패로 처리합니다.
+
+외부 Task 조회는 `WORKFLOW_TASK_PROVIDER` 값으로 선택합니다. 기본값 `snapshot`은 Workflow Store를 사용하고, `github-issue`는 설치된 `gh`로 GitHub Issue를 조회합니다.
+
+### Native 빌드와 설치
+
+Gradle이 Native Image를 빌드하고 `tools/workflow`에 설치합니다.
+
+```bash
+cd workflow-cli
+./gradlew nativeCompile installWorkflowNative workflowNativeSmokeTest
+```
+
+`workflowNativeSmokeTest`는 도움말, JSON 성공 응답과 대표 JSON 실패 응답을 설치된 바이너리로 확인합니다.
+
 | 명령 | 책임 |
 | --- | --- |
 | `start` | SubTask와 전용 Worktree 시작 |
