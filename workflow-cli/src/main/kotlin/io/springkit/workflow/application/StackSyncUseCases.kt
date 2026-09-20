@@ -6,7 +6,9 @@ import io.springkit.workflow.domain.BranchName
 import io.springkit.workflow.domain.ChangeRevision
 import io.springkit.workflow.domain.Dependency
 import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.FailureConflict
 import io.springkit.workflow.domain.FailureData
+import io.springkit.workflow.domain.FailureWorkspace
 import io.springkit.workflow.domain.IntegrationState
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.PullRequest
@@ -15,6 +17,7 @@ import io.springkit.workflow.domain.SubTaskId
 import io.springkit.workflow.domain.SyncConflict
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
+import io.springkit.workflow.domain.WorkspacePath
 
 /** 관리 SubTask의 직접 의존성 하나를 변경합니다. */
 data class StackRequest(
@@ -154,7 +157,14 @@ class StackSyncUseCases(
           }
         }
     if (restack.conflicts.isNotEmpty()) {
-      return conflict(tx, request.subTaskId, restack.conflicts, target.subTask, changes)
+      return conflict(
+          tx,
+          request.subTaskId,
+          target.workspace.path,
+          restack.conflicts,
+          target.subTask,
+          changes,
+      )
     }
 
     val review = synchronizeReview(snapshot, target.subTask, base, restack.diffChanged, changes)
@@ -201,8 +211,9 @@ class StackSyncUseCases(
     }
     val pending = snapshot.syncConflicts[request.subTaskId]
     if (request.abort) return abortSync(request, snapshot)
+    val target = findTarget(snapshot, request.subTaskId) ?: return lastFailure
     if (pending != null && !request.continueSync) {
-      return conflictFailure(request.subTaskId, pending.conflictPaths)
+      return conflictFailure(request.subTaskId, target.workspace.path, pending.conflictPaths)
     }
     if (request.continueSync && pending == null) {
       return failure(
@@ -210,7 +221,6 @@ class StackSyncUseCases(
           "sync --continue is only available for an active SYNC_CONFLICT recovery",
       )
     }
-    val target = findTarget(snapshot, request.subTaskId) ?: return lastFailure
     val parent =
         target.subTask.requires?.let { id -> snapshot.subTasks.firstOrNull { it.id == id } }
     if (target.subTask.requires != null && parent == null) {
@@ -223,7 +233,7 @@ class StackSyncUseCases(
     val base = resolveBase(snapshot, parent) ?: return lastFailure
     val childStatus = inspect(target.workspace) ?: return lastFailure
     if (childStatus.conflicts.isNotEmpty()) {
-      return conflictFailure(request.subTaskId, childStatus.conflicts)
+      return conflictFailure(request.subTaskId, target.workspace.path, childStatus.conflicts)
     }
     if (request.continueSync) {
       return continueAndPersist(
@@ -289,7 +299,9 @@ class StackSyncUseCases(
               return if (result.error.code.uppercase() == "SYNC_CONFLICT") {
                 conflictFailure(
                     subTaskId,
-                    (previousConflictPaths + conflictPaths(target.workspace, result.error)).distinct(),
+                    target.workspace.path,
+                    (previousConflictPaths + conflictPaths(target.workspace, result.error))
+                        .distinct(),
                 )
               } else {
                 WorkflowResult.Failure(failureFrom(result.error))
@@ -297,7 +309,7 @@ class StackSyncUseCases(
         }
     val status = inspect(target.workspace) ?: return lastFailure
     if (status.conflicts.isNotEmpty()) {
-      return conflictFailure(subTaskId, status.conflicts)
+      return conflictFailure(subTaskId, target.workspace.path, status.conflicts)
     }
     val tx = transaction("sync-continue:$subTaskId", snapshot)
     if (!begin(tx)) return lastFailure
@@ -377,6 +389,7 @@ class StackSyncUseCases(
               conflict(
                   tx,
                   subTaskId,
+                  target.workspace.path,
                   conflictPaths(target.workspace, result.error),
                   target.subTask,
                   changes,
@@ -385,7 +398,14 @@ class StackSyncUseCases(
           }
         }
     if (restack.conflicts.isNotEmpty()) {
-      return conflict(tx, subTaskId, restack.conflicts, target.subTask, changes)
+      return conflict(
+          tx,
+          subTaskId,
+          target.workspace.path,
+          restack.conflicts,
+          target.subTask,
+          changes,
+      )
     }
     val review = synchronizeReview(snapshot, target.subTask, base, restack.diffChanged, changes)
     if (review is PortResult.Failure) return recover(tx, changes, failureFrom(review.error))
@@ -454,6 +474,7 @@ class StackSyncUseCases(
                 pullRequestId = current.id,
                 expectedReviewRevisionId = current.reviewRevision.id,
                 body = current.body,
+                base = base.branch,
                 changeRevision = if (diffChanged) nextChange else null,
             ),
         )
@@ -646,6 +667,7 @@ class StackSyncUseCases(
   private fun conflict(
       transaction: StoreTransactionRequest,
       subTaskId: SubTaskId,
+      workspacePath: WorkspacePath,
       paths: List<String>,
       before: SubTask,
       changes: List<ChangeReceipt>,
@@ -668,10 +690,14 @@ class StackSyncUseCases(
     if (!writeAndCommit(conflictTransaction, conflictSnapshot, updatedSnapshot)) {
       return recover(conflictTransaction, emptyList(), lastFailure.data)
     }
-    return conflictFailure(subTaskId, paths)
+    return conflictFailure(subTaskId, workspacePath, paths)
   }
 
-  private fun conflictFailure(subTaskId: SubTaskId, paths: List<String>): WorkflowResult.Failure =
+  private fun conflictFailure(
+      subTaskId: SubTaskId,
+      workspacePath: WorkspacePath,
+      paths: List<String>,
+  ): WorkflowResult.Failure =
       WorkflowResult.Failure(
           FailureData(
               FailureCode.SYNC_CONFLICT,
@@ -690,6 +716,8 @@ class StackSyncUseCases(
                       ),
                       NextAction(ActorKind.AGENT, "abort_sync", "./tools/workflow sync --abort"),
                   ),
+              workspace = FailureWorkspace(workspacePath),
+              conflicts = paths.distinct().map { FailureConflict(it) },
           ),
       )
 

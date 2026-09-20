@@ -94,8 +94,11 @@ class StackSyncUseCasesTest :
           val restarted = StackSyncUseCases(git, NoopReviewPort(), store)
           val second = restarted.sync(SyncRequest(child.id))
 
-          first.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
-              FailureCode.SYNC_CONFLICT
+          val firstFailure = first.shouldBeInstanceOf<WorkflowResult.Failure>()
+          firstFailure.data.code shouldBe FailureCode.SYNC_CONFLICT
+          firstFailure.data.workspace?.path?.value shouldBe "/managed/sk-child"
+          firstFailure.data.conflicts.map { it.path to it.kind } shouldBe
+              listOf("src/main.kt" to "content")
           second.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
               FailureCode.SYNC_CONFLICT
           git.restackCalls shouldBe 1
@@ -228,7 +231,9 @@ private class RecordingGit(
     return PortResult.Success(restackResponse)
   }
 
-  override fun continueRestack(request: ContinueRestackRequest): PortResult<ContinueRestackResponse> {
+  override fun continueRestack(
+      request: ContinueRestackRequest
+  ): PortResult<ContinueRestackResponse> {
     continueCalls += 1
     return PortResult.Success(ContinueRestackResponse(ChangeReceipt("continue-1", "continue")))
   }

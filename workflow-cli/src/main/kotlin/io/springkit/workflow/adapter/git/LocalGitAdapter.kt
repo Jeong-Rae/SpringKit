@@ -14,14 +14,21 @@ import io.springkit.workflow.application.GitInspectResponse
 import io.springkit.workflow.application.GitPort
 import io.springkit.workflow.application.GitPublishPort
 import io.springkit.workflow.application.GitStatus
+import io.springkit.workflow.application.ListRemoteBranchesRequest
+import io.springkit.workflow.application.ListRemoteBranchesResponse
 import io.springkit.workflow.application.MainRevisionRequest
 import io.springkit.workflow.application.MainRevisionResponse
 import io.springkit.workflow.application.PortError
 import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.application.PublishBranchRequest
 import io.springkit.workflow.application.PublishBranchResponse
+import io.springkit.workflow.application.RemoteBranch
 import io.springkit.workflow.application.RemoveBranchRequest
 import io.springkit.workflow.application.RemoveBranchResponse
+import io.springkit.workflow.application.RemoveRemoteBranchRequest
+import io.springkit.workflow.application.RemoveRemoteBranchResponse
+import io.springkit.workflow.application.RemoveWorktreeRequest
+import io.springkit.workflow.application.RemoveWorktreeResponse
 import io.springkit.workflow.application.RestackRequest
 import io.springkit.workflow.application.RestackResponse
 import io.springkit.workflow.common.CommandResult
@@ -254,6 +261,94 @@ class LocalGitAdapter(
     )
   }
 
+  override fun listRemoteBranches(
+      request: ListRemoteBranchesRequest
+  ): PortResult<ListRemoteBranchesResponse> {
+    val result =
+        run(
+            listOf(
+                "git",
+                "for-each-ref",
+                "--format=%(refname:strip=3)\t%(objectname)",
+                "refs/remotes/${request.remote}",
+            ),
+            repositoryRoot,
+        )
+    if (result is Execution.Failure) return result.result
+    val branches =
+        (result as Execution.Success)
+            .result
+            .stdout
+            .lineSequence()
+            .mapNotNull { line ->
+              val fields = line.trim().split('\t', limit = 2)
+              val branch = fields.firstOrNull().orEmpty()
+              if (branch.isBlank() || branch == "HEAD") {
+                null
+              } else {
+                RemoteBranch(request.remote, branch, fields.getOrNull(1)?.ifBlank { null })
+              }
+            }
+            .toList()
+    return PortResult.Success(ListRemoteBranchesResponse(branches))
+  }
+
+  override fun removeRemoteBranch(
+      request: RemoveRemoteBranchRequest
+  ): PortResult<RemoveRemoteBranchResponse> {
+    if (request.expectedRevision != null) {
+      val revision =
+          run(
+              listOf(
+                  "git",
+                  "rev-parse",
+                  "refs/remotes/${request.remote}/${request.branch}",
+              ),
+              repositoryRoot,
+          )
+      if (revision is Execution.Failure) return revision.result
+      val currentRevision = (revision as Execution.Success).result.stdout.trim()
+      if (currentRevision != request.expectedRevision) {
+        return failure(
+            code = "STALE_REVISION",
+            message =
+                "예상 원격 Branch revision과 현재 revision이 다릅니다: expected=${request.expectedRevision}, current=$currentRevision",
+            retryable = true,
+            target = request.branch,
+        )
+      }
+    }
+    val result =
+        run(
+            listOf("git", "push", request.remote, "--delete", request.branch),
+            repositoryRoot,
+        )
+    if (result is Execution.Failure) return result.result
+    return PortResult.Success(
+        RemoveRemoteBranchResponse(
+            remote = request.remote,
+            branch = request.branch,
+            change =
+                receipt(
+                    "git-remove-remote-branch-${request.remote}-${request.branch}",
+                    "remove-remote-branch",
+                ),
+        )
+    )
+  }
+
+  override fun removeWorktree(request: RemoveWorktreeRequest): PortResult<RemoveWorktreeResponse> {
+    val result = run(listOf("git", "worktree", "remove", request.path.value), repositoryRoot)
+    if (result is Execution.Failure) return result.result
+    return PortResult.Success(
+        RemoveWorktreeResponse(
+            workspaceId = request.workspaceId,
+            path = request.path,
+            change = receipt("git-remove-worktree-${request.workspaceId}", "remove-worktree"),
+        )
+    )
+  }
+
   /** 변경을 한 번 커밋한 뒤 원격 Branch 게시를 설치된 Git CLI에 위임합니다. */
   override fun publish(request: PublishBranchRequest): PortResult<PublishBranchResponse> {
     val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
@@ -408,8 +503,11 @@ class LocalGitAdapter(
   private fun commandErrorCode(command: List<String>): String =
       when {
         command.contains("fetch") -> "MAIN_REVISION_REFRESH_FAILED"
+        command.contains("push") && command.contains("--delete") -> "REMOTE_BRANCH_REMOVE_FAILED"
         command.contains("status") || command.contains("rev-parse") -> "GIT_INSPECT_FAILED"
+        command.contains("worktree") && command.contains("remove") -> "WORKTREE_REMOVE_FAILED"
         command.contains("worktree") -> "WORKTREE_CREATE_FAILED"
+        command.contains("for-each-ref") -> "REMOTE_BRANCH_LIST_FAILED"
         command.contains("branch") && command.contains("-D") -> "BRANCH_REMOVE_FAILED"
         command.contains("branch") -> "BRANCH_CREATE_FAILED"
         command.contains("rebase") -> "RESTACK_FAILED"

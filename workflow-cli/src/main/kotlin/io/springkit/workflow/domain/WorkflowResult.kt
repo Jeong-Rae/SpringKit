@@ -54,11 +54,29 @@ data class NextAction(
     val command: String? = null,
 )
 
+/** 실패한 명령이 관리하던 Worktree의 최소 식별 정보입니다. */
+data class FailureWorkspace(
+    val path: WorkspacePath,
+)
+
+/** 실패 원인으로 보고하는 충돌 파일 정보입니다. */
+data class FailureConflict(
+    val path: String,
+    val kind: String = "content",
+) {
+  init {
+    require(path.isNotBlank()) { "failure conflict path must not be blank" }
+    require(kind.isNotBlank()) { "failure conflict kind must not be blank" }
+  }
+}
+
 data class FailureData(
     val code: FailureCode,
     val message: String,
     val blockedBy: List<BlockedBy> = emptyList(),
     val next: List<NextAction> = emptyList(),
+    val workspace: FailureWorkspace? = null,
+    val conflicts: List<FailureConflict> = emptyList(),
 )
 
 sealed interface WorkflowResult<out T> {

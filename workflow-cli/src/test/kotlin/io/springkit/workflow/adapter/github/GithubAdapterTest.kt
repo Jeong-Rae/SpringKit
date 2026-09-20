@@ -35,7 +35,7 @@ import java.nio.file.Path
 class GithubAdapterTest :
     FunSpec({
       context("GitHub pull request를 열면") {
-        test("gh pr create와 gh pr view에 요청 토큰을 전달하고 도메인 revision을 보존합니다") {
+        test("gh pr create와 gh pr view에 요청 토큰을 전달하면, 도메인 revision을 보존합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "https://github.com/example/repo/pull/17\n", ""))
           runner.enqueue(
@@ -109,7 +109,7 @@ class GithubAdapterTest :
       }
 
       context("GitHub pull request를 조회하면") {
-        test("GitHub JSON을 kotlinx.serialization으로 변환하고 pull request 상태를 반환합니다") {
+        test("GitHub JSON을 kotlinx.serialization으로 변환하면, pull request 상태와 revision을 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -135,7 +135,7 @@ class GithubAdapterTest :
           pullRequest.changeRevision.diff.identity shouldBe "abc123"
         }
 
-        test("persisted diff identity와 GitHub head OID가 다르면 새 change revision을 반환합니다") {
+        test("persisted diff identity와 GitHub head OID가 다르면, 새 change revision을 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -166,7 +166,7 @@ class GithubAdapterTest :
       }
 
       context("Review 코멘트를 추가하면") {
-        test("gh pr comment에 본문 토큰을 전달하고 새로운 thread를 반환합니다") {
+        test("gh pr comment에 본문 토큰을 전달하면, 새로운 thread를 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "https://github.com/example/repo/pull/17\n", ""))
           runner.enqueue(
@@ -195,7 +195,7 @@ class GithubAdapterTest :
           response.reviewRevision.id shouldBe "github-review-17-2-0"
         }
 
-        test("코드 줄과 수준을 지정하면, 현재 diff identity로 gh api 리뷰 코멘트를 생성합니다") {
+        test("코드 줄과 수준을 지정하면, 현재 diff identity로 리뷰 코멘트를 생성합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "{}", ""))
           runner.enqueue(
@@ -246,7 +246,7 @@ class GithubAdapterTest :
               )
         }
 
-        test("기존 수준 표식이 있으면 중복하지 않고 요청한 수준으로 교체합니다") {
+        test("기존 수준 표식이 있으면, 중복 없이 요청한 수준으로 교체합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "{}", ""))
           runner.enqueue(
@@ -274,7 +274,42 @@ class GithubAdapterTest :
       }
 
       context("GitHub pull request를 갱신하면") {
-        test("애플리케이션이 발급한 review와 change revision을 전달하면, GitHub 조회 뒤 그대로 보존합니다") {
+        test("Stack 기준 Branch가 바뀌면, gh pr edit에 새 base를 전달합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
+                  "",
+              )
+          )
+          val adapter =
+              GithubReviewAdapter(
+                  Path.of("/repo"),
+                  runner,
+                  currentPullRequest = { pullRequest().copy(base = "sk-26") },
+              )
+
+          val result =
+              adapter.update(
+                  UpdateReviewRequest(
+                      pullRequestId = "17",
+                      expectedReviewRevisionId = "rv-1",
+                      base = "main",
+                  )
+              )
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<UpdateReviewResponse>()
+          response.pullRequest.base shouldBe "main"
+          runner.commands.first().tokens shouldBe listOf("gh", "pr", "edit", "17", "--base", "main")
+        }
+
+        test("애플리케이션이 revision을 발급하면, GitHub 조회 뒤 해당 revision을 보존합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -315,7 +350,7 @@ class GithubAdapterTest :
       }
 
       context("gh 명령이 실패하면") {
-        test("종료 코드와 stderr를 PortError로 변환하고 후속 명령을 실행하지 않습니다") {
+        test("종료 코드가 0이 아니면, 종료 코드와 stderr를 PortError로 변환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(1, "", "pull request not found"))
 
@@ -338,7 +373,7 @@ class GithubAdapterTest :
           failure.error.retryable shouldBe true
         }
 
-        test("revision이 오래된 update는 gh 명령을 실행하지 않고 거부합니다") {
+        test("revision이 오래되면, gh 명령을 실행하지 않고 거부합니다") {
           val runner = RecordingCommandRunner()
           val current = pullRequest()
           val adapter =
@@ -364,7 +399,7 @@ class GithubAdapterTest :
       }
 
       context("GitHub CI 상태를 조회하면") {
-        test("statusCheckRollup의 성공과 실패를 CiRun과 CiStatus로 변환합니다") {
+        test("statusCheckRollup이 성공 또는 실패 상태이면, CiRun과 CiStatus로 변환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -387,7 +422,7 @@ class GithubAdapterTest :
               listOf("gh", "pr", "view", "17", "--json", "headRefOid,statusCheckRollup")
         }
 
-        test("CI를 시작하면 현재 statusCheckRollup을 조회하고 변경 영수증을 반환합니다") {
+        test("CI를 시작하면, statusCheckRollup 조회와 변경 영수증을 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
               CommandResult(0, "{\"headRefOid\":\"abc123\",\"statusCheckRollup\":[]}", "")

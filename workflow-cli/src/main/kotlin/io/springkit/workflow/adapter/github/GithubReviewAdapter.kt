@@ -163,10 +163,21 @@ class GithubReviewAdapter(
           request.pullRequestId,
       )
     }
-    if (request.body != null) {
+    if (request.body != null || request.base != null) {
+      val command = buildList {
+        addAll(listOf("gh", "pr", "edit", request.pullRequestId))
+        request.body?.let {
+          add("--body")
+          add(it)
+        }
+        request.base?.let {
+          add("--base")
+          add(it)
+        }
+      }
       if (
           execute(
-              listOf("gh", "pr", "edit", request.pullRequestId, "--body", request.body),
+              command,
               request.pullRequestId,
           ) == null
       ) {
@@ -188,6 +199,7 @@ class GithubReviewAdapter(
         resolve(provider).let { current ->
           current.copy(
               body = request.body ?: current.body,
+              base = request.base ?: current.base,
               reviewRevision = request.reviewRevision ?: current.reviewRevision,
               changeRevision = request.changeRevision ?: current.changeRevision,
           )

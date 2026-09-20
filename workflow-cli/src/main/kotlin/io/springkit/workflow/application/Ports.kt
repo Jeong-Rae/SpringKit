@@ -398,6 +398,59 @@ data class RemoveBranchRequest(val branch: BranchName, val expectedRevision: Str
 data class RemoveBranchResponse(val branch: BranchName, override val change: ChangeReceipt) :
     ChangeResponse
 
+/** 원격 저장소의 Branch를 나타냅니다. */
+data class RemoteBranch(
+    val remote: String,
+    val branch: BranchName,
+    val revision: String? = null,
+)
+
+/** 원격 Branch 목록 조회 요청입니다. */
+data class ListRemoteBranchesRequest(val remote: String = "origin") {
+  init {
+    require(remote.isNotBlank()) { "remote must not be blank" }
+  }
+}
+
+/** 원격 Branch 목록 조회 결과입니다. */
+data class ListRemoteBranchesResponse(val branches: List<RemoteBranch>)
+
+/** 원격 저장소에서 Branch를 제거하는 요청입니다. */
+data class RemoveRemoteBranchRequest(
+    val remote: String = "origin",
+    val branch: BranchName,
+    val expectedRevision: String? = null,
+) {
+  init {
+    require(remote.isNotBlank()) { "remote must not be blank" }
+    require(branch.isNotBlank()) { "remote branch must not be blank" }
+  }
+}
+
+/** 원격 Branch 제거 결과입니다. */
+data class RemoveRemoteBranchResponse(
+    val remote: String,
+    val branch: BranchName,
+    override val change: ChangeReceipt,
+) : ChangeResponse
+
+/** Worktree 제거 요청입니다. */
+data class RemoveWorktreeRequest(
+    val workspaceId: WorkspaceId,
+    val path: WorkspacePath,
+) {
+  init {
+    require(workspaceId.isNotBlank()) { "workspace id must not be blank" }
+  }
+}
+
+/** Worktree 제거 결과입니다. */
+data class RemoveWorktreeResponse(
+    val workspaceId: WorkspaceId,
+    val path: WorkspacePath,
+    override val change: ChangeReceipt,
+) : ChangeResponse
+
 interface GitPort {
   fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse>
 
@@ -428,6 +481,40 @@ interface GitPort {
       )
 
   fun removeBranch(request: RemoveBranchRequest): PortResult<RemoveBranchResponse>
+
+  /** 설치된 Git CLI를 사용해 원격 Branch 목록을 조회합니다. */
+  fun listRemoteBranches(
+      request: ListRemoteBranchesRequest
+  ): PortResult<ListRemoteBranchesResponse> =
+      PortResult.Failure(
+          PortError(
+              code = "GIT_CLEANUP_UNSUPPORTED",
+              message = "원격 Branch 목록 조회를 지원하지 않습니다.",
+              target = request.remote,
+          )
+      )
+
+  /** 설치된 Git CLI를 사용해 원격 Branch를 제거합니다. */
+  fun removeRemoteBranch(
+      request: RemoveRemoteBranchRequest
+  ): PortResult<RemoveRemoteBranchResponse> =
+      PortResult.Failure(
+          PortError(
+              code = "GIT_CLEANUP_UNSUPPORTED",
+              message = "원격 Branch 제거를 지원하지 않습니다.",
+              target = request.branch,
+          )
+      )
+
+  /** 설치된 Git CLI를 사용해 Worktree를 제거합니다. */
+  fun removeWorktree(request: RemoveWorktreeRequest): PortResult<RemoveWorktreeResponse> =
+      PortResult.Failure(
+          PortError(
+              code = "GIT_CLEANUP_UNSUPPORTED",
+              message = "Worktree 제거를 지원하지 않습니다.",
+              target = request.workspaceId,
+          )
+      )
 }
 
 /** 현재 Worktree의 변경을 원격 Branch에 게시하는 요청입니다. */
@@ -503,6 +590,7 @@ data class UpdateReviewRequest(
     val pullRequestId: PullRequestId,
     val expectedReviewRevisionId: ReviewRevisionId,
     val body: String? = null,
+    val base: BranchName? = null,
     val changeRevision: ChangeRevision? = null,
     val reviewRevision: ReviewRevision? = null,
 )

@@ -1,16 +1,20 @@
 package io.springkit.workflow.adapter.json
 
 import io.springkit.workflow.domain.BlockedBy
+import io.springkit.workflow.domain.FailureConflict
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.WorkflowResult
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNamingStrategy
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /** Workflow 명령 출력과 영속 상태가 공유하는 JSON 설정입니다. */
+@OptIn(ExperimentalSerializationApi::class)
 object WorkflowJson {
   val format: Json = Json {
     explicitNulls = false
@@ -19,6 +23,7 @@ object WorkflowJson {
     allowStructuredMapKeys = true
     prettyPrint = false
     classDiscriminator = "type"
+    namingStrategy = JsonNamingStrategy.SnakeCase
   }
 }
 
@@ -39,6 +44,18 @@ fun FailureData.toJsonObject(): JsonObject = buildJsonObject {
   put("code", code.name)
   put("message", message)
   put("next", buildJsonArray { next.forEach { add(it.toJsonObject()) } })
+  workspace?.let {
+    put("workspace", buildJsonObject { put("path", it.path.value) })
+  }
+  if (conflicts.isNotEmpty()) {
+    put("conflicts", buildJsonArray { conflicts.forEach { add(it.toJsonObject()) } })
+  }
+}
+
+/** 충돌 파일을 Workflow JSON의 공통 실패 구조로 변환합니다. */
+fun FailureConflict.toJsonObject(): JsonObject = buildJsonObject {
+  put("path", path)
+  put("kind", kind)
 }
 
 fun WorkflowResult<JsonObject>.toJsonObject(): JsonObject =

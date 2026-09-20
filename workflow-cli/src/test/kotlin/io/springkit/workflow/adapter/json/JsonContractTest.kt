@@ -12,6 +12,9 @@ import kotlinx.serialization.json.put
 
 @kotlinx.serialization.Serializable private data class KnownJsonValue(val value: String)
 
+@kotlinx.serialization.Serializable
+private data class NamedJsonValue(val reviewRevision: String, val changeRevision: String)
+
 @OptIn(ExperimentalSerializationApi::class)
 class JsonContractTest :
     FunSpec({
@@ -39,6 +42,11 @@ class JsonContractTest :
 
         test("기본값을 포함한 값을 인코딩하면, compact JSON을 생성합니다") {
           WorkflowJson.format.encodeToString(KnownJsonValue("ok")) shouldBe "{\"value\":\"ok\"}"
+        }
+
+        test("Kotlin 프로퍼티 이름을 인코딩하면, 명세의 snake_case 필드 이름을 사용합니다") {
+          WorkflowJson.format.encodeToString(NamedJsonValue("rv-1", "cr-1")) shouldBe
+              "{\"review_revision\":\"rv-1\",\"change_revision\":\"cr-1\"}"
         }
 
         test("WorkflowJson 설정을 조회하면, 계약에 맞는 옵션을 반환합니다") {
