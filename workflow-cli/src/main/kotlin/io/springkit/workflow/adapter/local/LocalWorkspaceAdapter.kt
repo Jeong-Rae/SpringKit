@@ -13,6 +13,7 @@ import io.springkit.workflow.application.WorkflowStoreSnapshot
 import io.springkit.workflow.application.WorkspaceLookupRequest
 import io.springkit.workflow.application.WorkspaceLookupResponse
 import io.springkit.workflow.application.WorkspacePort
+import io.springkit.workflow.common.ManagedPathResolver
 import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspacePath
 import java.nio.file.Path
@@ -21,11 +22,15 @@ import java.nio.file.Path
 class LocalWorkspaceAdapter(
     private val snapshotProvider: () -> WorkflowStoreSnapshot,
     private val currentPathProvider: () -> Path = ::defaultCurrentPath,
+    managedRoot: Path? = null,
 ) : WorkspacePort {
+  private val managedRoot: Path? = managedRoot?.let(ManagedPathResolver::canonicalize)
+
   /** Store Port를 사용해 현재 snapshot을 읽는 Workspace adapter를 만듭니다. */
   constructor(
       storePort: WorkflowStorePort,
       currentPathProvider: () -> Path = ::defaultCurrentPath,
+      managedRoot: Path? = null,
   ) : this(
       {
         when (val result = storePort.snapshot(StoreSnapshotRequest())) {
@@ -34,17 +39,23 @@ class LocalWorkspaceAdapter(
         }
       },
       currentPathProvider,
+      managedRoot,
   )
 
   /** 고정 snapshot과 실행 경로로 테스트 가능한 Workspace adapter를 만듭니다. */
   constructor(
       snapshot: WorkflowStoreSnapshot,
       currentPath: Path,
-  ) : this({ snapshot }, { currentPath })
+      managedRoot: Path? = null,
+  ) : this({ snapshot }, { currentPath }, managedRoot)
 
   override fun get(request: WorkspaceLookupRequest): PortResult<WorkspaceLookupResponse> {
     val snapshot = readSnapshot() ?: return lastFailure
-    val currentPath = normalize(currentPathProvider())
+    val currentPath =
+        safeResolve(currentPathProvider()) ?: return invalidPath(currentPathProvider())
+    request.path?.let { path ->
+      if (safeResolve(path) == null) return invalidPath(path.value)
+    }
     val workspace =
         snapshot.workspaces.firstOrNull { candidate ->
           matches(candidate, request) &&
@@ -75,6 +86,7 @@ class LocalWorkspaceAdapter(
   }
 
   override fun create(request: CreateWorkspaceRequest): PortResult<CreateWorkspaceResponse> {
+    if (safeResolve(request.path) == null) return invalidPath(request.path.value)
     val workspace =
         Workspace(
             id = request.workspaceId,
@@ -108,6 +120,7 @@ class LocalWorkspaceAdapter(
           target = workspace.id,
       )
     }
+    if (safeResolve(workspace.path) == null) return invalidPath(workspace.path.value)
     return PortResult.Success(
         DeleteWorkspaceResponse(
             workspaceId = request.workspaceId,
@@ -150,30 +163,47 @@ class LocalWorkspaceAdapter(
   private fun resolve(path: WorkspacePath): Path {
     val candidate = Path.of(path.value)
     if (candidate.isAbsolute) return candidate
-    val current = normalize(currentPathProvider())
-    return current.resolve(candidate)
+    val root = managedRoot ?: normalize(currentPathProvider())
+    return root.resolve(candidate)
   }
 
   private fun pathsMatch(left: WorkspacePath, right: WorkspacePath): Boolean =
-      if (Path.of(left.value).isAbsolute || Path.of(right.value).isAbsolute) {
-        normalize(resolve(left)) == normalize(resolve(right))
-      } else {
+      if (
+          managedRoot == null && !Path.of(left.value).isAbsolute && !Path.of(right.value).isAbsolute
+      ) {
         Path.of(left.value).normalize() == Path.of(right.value).normalize()
+      } else {
+        safeResolve(left)?.let { leftPath ->
+          safeResolve(right)?.let { rightPath -> leftPath == rightPath }
+        } ?: false
       }
 
   private fun matchesCurrentPath(workspacePath: WorkspacePath, currentPath: Path): Boolean {
-    val candidate = Path.of(workspacePath.value)
-    if (candidate.isAbsolute) return currentPath.startsWith(candidate.toAbsolutePath().normalize())
-    val candidateText = candidate.normalize().toString()
-    val currentText = currentPath.toString()
-    val separator = Path.of("/").toString()
-    return currentText == candidateText ||
-        currentText.startsWith("$candidateText$separator") ||
-        currentText.endsWith("$separator$candidateText") ||
-        currentText.contains("$separator$candidateText$separator")
+    val rawPath = Path.of(workspacePath.value)
+    if (managedRoot == null && !rawPath.isAbsolute) {
+      return currentPath.normalize().endsWith(rawPath.normalize())
+    }
+    val candidate = safeResolve(workspacePath) ?: return false
+    return currentPath == candidate || currentPath.startsWith(candidate)
   }
 
   private fun normalize(path: Path): Path = path.toAbsolutePath().normalize()
+
+  private fun safeResolve(path: WorkspacePath): Path? = safeResolve(resolve(path))
+
+  private fun safeResolve(path: Path): Path? {
+    val root = managedRoot ?: return ManagedPathResolver.canonicalize(path)
+    return ManagedPathResolver.resolveWithin(root, path)
+  }
+
+  private fun invalidPath(path: Any): PortResult.Failure =
+      PortResult.Failure(
+          PortError(
+              code = "WORKSPACE_PATH_INVALID",
+              message = "Workspace 경로가 관리 root 밖에 있거나 심볼릭 링크로 탈출합니다: $path",
+              target = path.toString(),
+          )
+      )
 
   private fun <T> failure(
       code: String,

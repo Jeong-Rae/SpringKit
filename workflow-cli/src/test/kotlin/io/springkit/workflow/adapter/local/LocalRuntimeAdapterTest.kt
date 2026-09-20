@@ -8,8 +8,10 @@ import io.springkit.workflow.application.AuthorizeRequest
 import io.springkit.workflow.application.Capability
 import io.springkit.workflow.application.CreateSubTaskRequest
 import io.springkit.workflow.application.CreateSubTaskResponse
+import io.springkit.workflow.application.CreateWorkspaceRequest
 import io.springkit.workflow.application.CurrentActorRequest
 import io.springkit.workflow.application.CurrentActorResponse
+import io.springkit.workflow.application.DeleteWorkspaceRequest
 import io.springkit.workflow.application.NowResponse
 import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.application.SubTaskLookupRequest
@@ -27,6 +29,7 @@ import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.Task
 import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspacePath
+import java.nio.file.Files
 import java.nio.file.Path
 
 class LocalRuntimeAdapterTest :
@@ -102,6 +105,83 @@ class LocalRuntimeAdapterTest :
                   .shouldBeInstanceOf<PortResult.Failure>()
 
           failure.error.code shouldBe "NOT_MANAGED_WORKTREE"
+        }
+      }
+
+      context("관리 root 경계를 검사하면") {
+        test("상대 Workspace 경로를 관리 root 기준으로 해석합니다") {
+          val root = Files.createTempDirectory("workflow-workspace-root-")
+          val current = root.resolve("workspaces/sk-101/src/main")
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("workspaces/sk-101"), "sk-101")
+          val adapter =
+              LocalWorkspaceAdapter(
+                  WorkflowStoreSnapshot("1", workspaces = listOf(workspace)),
+                  current,
+                  root,
+              )
+
+          adapter.get(WorkspaceLookupRequest()).shouldBeInstanceOf<PortResult.Success<*>>()
+        }
+
+        test("절대 경로가 관리 root 밖이면 Workspace 생성을 거부합니다") {
+          val root = Files.createTempDirectory("workflow-workspace-root-")
+          val outside = Files.createTempDirectory("workflow-workspace-outside-")
+          val adapter = LocalWorkspaceAdapter(WorkflowStoreSnapshot("1"), root, root)
+
+          val result =
+              adapter.create(
+                  CreateWorkspaceRequest(
+                      workspaceId = "ws-1",
+                      subTaskId = "sk-101",
+                      path = WorkspacePath(outside.toString()),
+                      branch = "feature/sk-101",
+                      baseRevision = "main",
+                  )
+              )
+
+          result.shouldBeInstanceOf<PortResult.Failure>().error.code shouldBe
+              "WORKSPACE_PATH_INVALID"
+        }
+
+        test("`..`으로 관리 root 밖으로 탈출한 경로의 Workspace 삭제를 거부합니다") {
+          val root = Files.createTempDirectory("workflow-workspace-root-")
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("../outside"), "sk-101")
+          val adapter =
+              LocalWorkspaceAdapter(
+                  WorkflowStoreSnapshot("1", workspaces = listOf(workspace)),
+                  root,
+                  root,
+              )
+
+          val result = adapter.delete(DeleteWorkspaceRequest("ws-1", "sk-101"))
+
+          result.shouldBeInstanceOf<PortResult.Failure>().error.code shouldBe
+              "WORKSPACE_PATH_INVALID"
+        }
+
+        test("외부를 가리키는 심볼릭 링크 경로의 Workspace 조회를 거부합니다") {
+          val root = Files.createTempDirectory("workflow-workspace-root-")
+          val outside = Files.createTempDirectory("workflow-workspace-outside-")
+          Files.createSymbolicLink(root.resolve("link"), outside)
+          val adapter = LocalWorkspaceAdapter(WorkflowStoreSnapshot("1"), root, root)
+
+          val result = adapter.get(WorkspaceLookupRequest(path = WorkspacePath("link")))
+
+          result.shouldBeInstanceOf<PortResult.Failure>().error.code shouldBe
+              "WORKSPACE_PATH_INVALID"
+        }
+
+        test("외부를 가리키는 심볼릭 링크 아래의 미존재 자식 경로도 거부합니다") {
+          val root = Files.createTempDirectory("workflow-workspace-root-")
+          val outside = Files.createTempDirectory("workflow-workspace-outside-")
+          Files.createSymbolicLink(root.resolve("link"), outside)
+          val adapter = LocalWorkspaceAdapter(WorkflowStoreSnapshot("1"), root, root)
+
+          val result =
+              adapter.get(WorkspaceLookupRequest(path = WorkspacePath("link/nonexistent/body.md")))
+
+          result.shouldBeInstanceOf<PortResult.Failure>().error.code shouldBe
+              "WORKSPACE_PATH_INVALID"
         }
       }
 

@@ -14,6 +14,7 @@ import io.springkit.workflow.application.GitInspectRequest
 import io.springkit.workflow.application.MainRevisionRequest
 import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.application.RemoveBranchRequest
+import io.springkit.workflow.application.RemoveWorktreeRequest
 import io.springkit.workflow.application.RestackRequest
 import io.springkit.workflow.common.CommandResult
 import io.springkit.workflow.common.CommandRunner
@@ -220,6 +221,121 @@ class LocalGitAdapterTest :
         }
       }
 
+      test("관리 root가 주어지면 검증한 절대 경로를 Git 명령에 전달합니다") {
+        val runner = RecordingCommandRunner()
+        runner.enqueue(CommandResult(0, "", ""))
+        val root = Files.createTempDirectory("local-git-root-")
+        val requestedPath = WorkspacePath("workspaces/sk-102")
+        val adapter = adapter(runner, root, root) { Path.of("/workspace") }
+
+        adapter.createWorktree(
+            CreateWorktreeRequest("workspace-2", "feature/sk-102", requestedPath)
+        )
+
+        runner.commands shouldBe
+            listOf(
+                Invocation(
+                    listOf(
+                        "git",
+                        "worktree",
+                        "add",
+                        root.resolve(requestedPath.value).toAbsolutePath().normalize().toString(),
+                        "feature/sk-102",
+                    ),
+                    root,
+                )
+            )
+      }
+
+      context("managed root 경계를 검사하면") {
+        test("절대 경로가 root 밖이면 worktree 생성을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val root = Files.createTempDirectory("local-git-root-")
+          val outside = Files.createTempDirectory("local-git-outside-")
+          val adapter = adapter(runner, root, root) { Path.of("/workspace") }
+
+          val result =
+              adapter.createWorktree(
+                  CreateWorktreeRequest(
+                      "workspace-2",
+                      "feature/sk-102",
+                      WorkspacePath(outside.toString()),
+                  )
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "WORKSPACE_PATH_INVALID"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("`..`으로 root 밖으로 탈출하면 worktree 생성을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val root = Files.createTempDirectory("local-git-root-")
+          val adapter = adapter(runner, root, root) { Path.of("/workspace") }
+
+          val result =
+              adapter.createWorktree(
+                  CreateWorktreeRequest(
+                      "workspace-2",
+                      "feature/sk-102",
+                      WorkspacePath("../outside"),
+                  )
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "WORKSPACE_PATH_INVALID"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("외부를 가리키는 심볼릭 링크이면 worktree 생성을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val root = Files.createTempDirectory("local-git-root-")
+          val outside = Files.createTempDirectory("local-git-outside-")
+          Files.createSymbolicLink(root.resolve("link"), outside)
+          val adapter = adapter(runner, root, root) { Path.of("/workspace") }
+
+          val result =
+              adapter.createWorktree(
+                  CreateWorktreeRequest("workspace-2", "feature/sk-102", WorkspacePath("link"))
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "WORKSPACE_PATH_INVALID"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("외부 symlink 아래의 미존재 자식 경로이면 worktree 생성을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val root = Files.createTempDirectory("local-git-root-")
+          val outside = Files.createTempDirectory("local-git-outside-")
+          Files.createSymbolicLink(root.resolve("link"), outside)
+          val adapter = adapter(runner, root, root) { Path.of("/workspace") }
+
+          val result =
+              adapter.createWorktree(
+                  CreateWorktreeRequest(
+                      "workspace-2",
+                      "feature/sk-102",
+                      WorkspacePath("link/nonexistent"),
+                  )
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "WORKSPACE_PATH_INVALID"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("root 밖 경로이면 worktree 제거를 Git 명령 전에 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val root = Files.createTempDirectory("local-git-root-")
+          val adapter = adapter(runner, root, root) { Path.of("/workspace") }
+
+          val result =
+              adapter.removeWorktree(
+                  RemoveWorktreeRequest("workspace-2", WorkspacePath("../outside"))
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "WORKSPACE_PATH_INVALID"
+          runner.commands shouldBe emptyList()
+        }
+      }
+
       context("현재 revision이 예상 revision과 다르면") {
         test("현재 revision이 예상 revision과 다르면, restack 없이 재시도 가능한 오류를 반환합니다") {
           val runner = RecordingCommandRunner()
@@ -353,8 +469,9 @@ class LocalGitAdapterTest :
 private fun adapter(
     runner: RecordingCommandRunner,
     repositoryRoot: Path = Path.of("/repo"),
+    managedWorkspaceRoot: Path? = null,
     workspacePath: (String) -> Path,
-): LocalGitAdapter = LocalGitAdapter(repositoryRoot, workspacePath, runner)
+): LocalGitAdapter = LocalGitAdapter(repositoryRoot, workspacePath, runner, managedWorkspaceRoot)
 
 private data class Invocation(val command: List<String>, val workingDirectory: Path)
 

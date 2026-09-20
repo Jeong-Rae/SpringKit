@@ -22,7 +22,7 @@ class LocalGitCleanupAdapterTest :
           runner.enqueue(
               CommandResult(
                   0,
-                  "main\tmain-revision\nHEAD\tdefault-revision\nfeature/sk-101\tfeature-revision\n",
+                  "main-revision\trefs/heads/main\nfeature-revision\trefs/heads/feature/sk-101\n",
                   "",
               )
           )
@@ -51,9 +51,9 @@ class LocalGitCleanupAdapterTest :
                   CleanupInvocation(
                       listOf(
                           "git",
-                          "for-each-ref",
-                          "--format=%(refname:strip=3)\t%(objectname)",
-                          "refs/remotes/origin",
+                          "ls-remote",
+                          "--heads",
+                          "origin",
                       ),
                       repositoryRoot,
                   )
@@ -71,12 +71,23 @@ class LocalGitCleanupAdapterTest :
           failure.error.code shouldBe "REMOTE_BRANCH_LIST_FAILED"
           failure.error.message shouldContain "remote ref를 읽을 수 없습니다"
         }
+
+        test("refs/heads가 아닌 ls-remote 응답이면, 원격 Branch 목록 오류를 반환합니다") {
+          val runner = RecordingCleanupCommandRunner()
+          runner.enqueue(CommandResult(0, "revision\trefs/tags/release\n", ""))
+          val adapter = LocalGitAdapter(Path.of("/repo"), { Path.of("/workspace") }, runner)
+
+          val result = adapter.listRemoteBranches(ListRemoteBranchesRequest("origin"))
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe
+              "REMOTE_BRANCH_LIST_FAILED"
+        }
       }
 
       context("원격 Branch를 제거하면") {
         test("expectedRevision이 현재 revision과 일치하면, 검증 후 Git 원격 삭제를 실행합니다") {
           val runner = RecordingCleanupCommandRunner()
-          runner.enqueue(CommandResult(0, "feature-revision\n", ""))
+          runner.enqueue(CommandResult(0, "feature-revision\trefs/heads/feature/sk-101\n", ""))
           runner.enqueue(CommandResult(0, "deleted\n", ""))
           val repositoryRoot = Path.of("/repo")
           val adapter = LocalGitAdapter(repositoryRoot, { Path.of("/workspace") }, runner)
@@ -106,13 +117,21 @@ class LocalGitCleanupAdapterTest :
                   CleanupInvocation(
                       listOf(
                           "git",
-                          "rev-parse",
-                          "refs/remotes/origin/feature/sk-101",
+                          "ls-remote",
+                          "--heads",
+                          "origin",
                       ),
                       repositoryRoot,
                   ),
                   CleanupInvocation(
-                      listOf("git", "push", "origin", "--delete", "feature/sk-101"),
+                      listOf(
+                          "git",
+                          "push",
+                          "--force-with-lease=refs/heads/feature/sk-101:feature-revision",
+                          "origin",
+                          "--delete",
+                          "feature/sk-101",
+                      ),
                       repositoryRoot,
                   ),
               )
@@ -120,7 +139,7 @@ class LocalGitCleanupAdapterTest :
 
         test("expectedRevision이 현재 revision과 다르면, 원격 삭제 없이 재시도 가능한 오류를 반환합니다") {
           val runner = RecordingCleanupCommandRunner()
-          runner.enqueue(CommandResult(0, "actual-revision\n", ""))
+          runner.enqueue(CommandResult(0, "actual-revision\trefs/heads/feature/sk-101\n", ""))
           val repositoryRoot = Path.of("/repo")
           val adapter = LocalGitAdapter(repositoryRoot, { Path.of("/workspace") }, runner)
 
@@ -141,12 +160,32 @@ class LocalGitCleanupAdapterTest :
                   CleanupInvocation(
                       listOf(
                           "git",
-                          "rev-parse",
-                          "refs/remotes/origin/feature/sk-101",
+                          "ls-remote",
+                          "--heads",
+                          "origin",
                       ),
                       repositoryRoot,
                   )
               )
+        }
+
+        test("expectedRevision 대상 Branch가 없으면, 원격 삭제를 실행하지 않습니다") {
+          val runner = RecordingCleanupCommandRunner()
+          runner.enqueue(CommandResult(0, "other-revision\trefs/heads/other\n", ""))
+          val adapter = LocalGitAdapter(Path.of("/repo"), { Path.of("/workspace") }, runner)
+
+          val result =
+              adapter.removeRemoteBranch(
+                  RemoveRemoteBranchRequest(
+                      remote = "origin",
+                      branch = "feature/sk-101",
+                      expectedRevision = "expected-revision",
+                  )
+              )
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "REMOTE_BRANCH_NOT_FOUND"
+          runner.commands.size shouldBe 1
         }
 
         test("Git 원격 Branch 삭제가 실패하면, REMOTE_BRANCH_REMOVE_FAILED 오류를 반환합니다") {
@@ -162,6 +201,37 @@ class LocalGitCleanupAdapterTest :
           val failure = result.shouldBeTypeOf<PortResult.Failure>()
           failure.error.code shouldBe "REMOTE_BRANCH_REMOVE_FAILED"
           failure.error.message shouldContain "remote Branch 삭제가 거부되었습니다"
+        }
+
+        test("remote가 옵션처럼 시작하면, Git 명령을 실행하지 않습니다") {
+          val runner = RecordingCleanupCommandRunner()
+          val adapter = LocalGitAdapter(Path.of("/repo"), { Path.of("/workspace") }, runner)
+
+          val result =
+              adapter.removeRemoteBranch(
+                  RemoveRemoteBranchRequest(
+                      remote = "--upload-pack=evil",
+                      branch = "feature/sk-101",
+                  )
+              )
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("Branch가 옵션처럼 시작하면, Git 명령을 실행하지 않습니다") {
+          val runner = RecordingCleanupCommandRunner()
+          val adapter = LocalGitAdapter(Path.of("/repo"), { Path.of("/workspace") }, runner)
+
+          val result =
+              adapter.removeRemoteBranch(
+                  RemoveRemoteBranchRequest(remote = "origin", branch = "--delete")
+              )
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
         }
       }
 

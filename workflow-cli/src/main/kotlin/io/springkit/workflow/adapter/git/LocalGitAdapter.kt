@@ -34,6 +34,7 @@ import io.springkit.workflow.application.RestackResponse
 import io.springkit.workflow.common.CommandResult
 import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.common.LocalCommandRunner
+import io.springkit.workflow.common.ManagedPathResolver
 import io.springkit.workflow.domain.WorkspaceId
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -43,7 +44,11 @@ class LocalGitAdapter(
     private val repositoryRoot: Path,
     private val workspacePath: (WorkspaceId) -> Path,
     private val commandRunner: CommandRunner = LocalCommandRunner(),
+    managedWorkspaceRoot: Path? = null,
 ) : GitPort, GitPublishPort {
+  private val managedWorkspaceRoot: Path? =
+      managedWorkspaceRoot?.let(ManagedPathResolver::canonicalize)
+
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> {
     val fetch = run(listOf("git", "fetch", request.remote, request.branch), repositoryRoot)
     if (fetch is Execution.Failure) return fetch.result
@@ -121,8 +126,21 @@ class LocalGitAdapter(
   }
 
   override fun createWorktree(request: CreateWorktreeRequest): PortResult<CreateWorktreeResponse> {
+    val path = managedWorkspacePath(request.path)
+    if (managedWorkspaceRoot != null && path == null) {
+      return invalidWorkspacePath(request.path.value)
+    }
     val result =
-        run(listOf("git", "worktree", "add", request.path.value, request.branch), repositoryRoot)
+        run(
+            listOf(
+                "git",
+                "worktree",
+                "add",
+                path?.toString() ?: request.path.value,
+                request.branch,
+            ),
+            repositoryRoot,
+        )
     if (result is Execution.Failure) return result.result
     return PortResult.Success(
         CreateWorktreeResponse(
@@ -264,50 +282,46 @@ class LocalGitAdapter(
   override fun listRemoteBranches(
       request: ListRemoteBranchesRequest
   ): PortResult<ListRemoteBranchesResponse> {
-    val result =
-        run(
-            listOf(
-                "git",
-                "for-each-ref",
-                "--format=%(refname:strip=3)\t%(objectname)",
-                "refs/remotes/${request.remote}",
-            ),
-            repositoryRoot,
-        )
-    if (result is Execution.Failure) return result.result
-    val branches =
-        (result as Execution.Success)
-            .result
-            .stdout
-            .lineSequence()
-            .mapNotNull { line ->
-              val fields = line.trim().split('\t', limit = 2)
-              val branch = fields.firstOrNull().orEmpty()
-              if (branch.isBlank() || branch == "HEAD") {
-                null
-              } else {
-                RemoteBranch(request.remote, branch, fields.getOrNull(1)?.ifBlank { null })
-              }
-            }
-            .toList()
-    return PortResult.Success(ListRemoteBranchesResponse(branches))
+    validateRemote(request.remote)?.let {
+      return it
+    }
+    return when (val result = readRemoteBranches(request.remote)) {
+      is PortResult.Failure -> result
+      is PortResult.Success -> PortResult.Success(ListRemoteBranchesResponse(result.value))
+    }
   }
 
   override fun removeRemoteBranch(
       request: RemoveRemoteBranchRequest
   ): PortResult<RemoveRemoteBranchResponse> {
+    validateRemote(request.remote)?.let {
+      return it
+    }
+    validateBranch(request.branch)?.let {
+      return it
+    }
+    request.expectedRevision?.let {
+      if (!isSafeToken(it)) {
+        return failure(
+            code = "INVALID_ARGUMENT",
+            message = "원격 Branch expected revision이 안전한 토큰이 아닙니다.",
+            target = request.branch,
+        )
+      }
+    }
     if (request.expectedRevision != null) {
-      val revision =
-          run(
-              listOf(
-                  "git",
-                  "rev-parse",
-                  "refs/remotes/${request.remote}/${request.branch}",
-              ),
-              repositoryRoot,
-          )
-      if (revision is Execution.Failure) return revision.result
-      val currentRevision = (revision as Execution.Success).result.stdout.trim()
+      val branches =
+          when (val remoteBranches = readRemoteBranches(request.remote)) {
+            is PortResult.Failure -> return remoteBranches
+            is PortResult.Success -> remoteBranches.value
+          }
+      val currentRevision =
+          branches.singleOrNull { it.branch == request.branch }?.revision
+              ?: return failure(
+                  code = "REMOTE_BRANCH_NOT_FOUND",
+                  message = "삭제할 원격 Branch를 찾을 수 없습니다: ${request.branch}",
+                  target = request.branch,
+              )
       if (currentRevision != request.expectedRevision) {
         return failure(
             code = "STALE_REVISION",
@@ -320,7 +334,16 @@ class LocalGitAdapter(
     }
     val result =
         run(
-            listOf("git", "push", request.remote, "--delete", request.branch),
+            buildList {
+              add("git")
+              add("push")
+              request.expectedRevision?.let {
+                add("--force-with-lease=refs/heads/${request.branch}:$it")
+              }
+              add(request.remote)
+              add("--delete")
+              add(request.branch)
+            },
             repositoryRoot,
         )
     if (result is Execution.Failure) return result.result
@@ -337,8 +360,81 @@ class LocalGitAdapter(
     )
   }
 
+  private fun readRemoteBranches(remote: String): PortResult<List<RemoteBranch>> {
+    val result = run(listOf("git", "ls-remote", "--heads", remote), repositoryRoot)
+    if (result is Execution.Failure) return result.result
+    val output = (result as Execution.Success).result.stdout
+    val branches = mutableListOf<RemoteBranch>()
+    output.lineSequence().filter(String::isNotBlank).forEach { line ->
+      val fields = line.split('\t', limit = 2)
+      val revision = fields.getOrNull(0).orEmpty()
+      val ref = fields.getOrNull(1).orEmpty()
+      val branch = ref.removePrefix("refs/heads/")
+      if (
+          fields.size != 2 ||
+              !isSafeToken(revision) ||
+              !ref.startsWith("refs/heads/") ||
+              branch.isBlank() ||
+              !isSafeBranch(branch)
+      ) {
+        return failure(
+            code = "REMOTE_BRANCH_LIST_FAILED",
+            message = "git ls-remote 응답의 원격 Branch 형식이 올바르지 않습니다.",
+            target = remote,
+        )
+      }
+      branches += RemoteBranch(remote, branch, revision)
+    }
+    return PortResult.Success(branches)
+  }
+
+  private fun validateRemote(remote: String): PortResult.Failure? =
+      if (remote.isBlank() || !isSafeToken(remote)) {
+        failure(
+            code = "INVALID_ARGUMENT",
+            message = "원격 저장소 이름이 안전한 토큰이 아닙니다.",
+            target = remote,
+        )
+      } else {
+        null
+      }
+
+  private fun validateBranch(branch: String): PortResult.Failure? =
+      if (branch.isBlank() || !isSafeBranch(branch)) {
+        failure(
+            code = "INVALID_ARGUMENT",
+            message = "원격 Branch 이름이 안전한 Git ref가 아닙니다.",
+            target = branch,
+        )
+      } else {
+        null
+      }
+
+  private fun isSafeToken(value: String): Boolean =
+      value.isNotBlank() &&
+          !value.startsWith("-") &&
+          value.none { it.isWhitespace() || it.isISOControl() }
+
+  private fun isSafeBranch(branch: String): Boolean =
+      isSafeToken(branch) &&
+          !branch.startsWith(".") &&
+          !branch.endsWith(".") &&
+          !branch.endsWith("/") &&
+          !branch.contains("..") &&
+          !branch.contains("@{") &&
+          !branch.contains("\\") &&
+          !branch.any { it in setOf('~', '^', ':', '?', '*', '[') }
+
   override fun removeWorktree(request: RemoveWorktreeRequest): PortResult<RemoveWorktreeResponse> {
-    val result = run(listOf("git", "worktree", "remove", request.path.value), repositoryRoot)
+    val path = managedWorkspacePath(request.path)
+    if (managedWorkspaceRoot != null && path == null) {
+      return invalidWorkspacePath(request.path.value)
+    }
+    val result =
+        run(
+            listOf("git", "worktree", "remove", path?.toString() ?: request.path.value),
+            repositoryRoot,
+        )
     if (result is Execution.Failure) return result.result
     return PortResult.Success(
         RemoveWorktreeResponse(
@@ -507,7 +603,7 @@ class LocalGitAdapter(
         command.contains("status") || command.contains("rev-parse") -> "GIT_INSPECT_FAILED"
         command.contains("worktree") && command.contains("remove") -> "WORKTREE_REMOVE_FAILED"
         command.contains("worktree") -> "WORKTREE_CREATE_FAILED"
-        command.contains("for-each-ref") -> "REMOTE_BRANCH_LIST_FAILED"
+        command.contains("ls-remote") -> "REMOTE_BRANCH_LIST_FAILED"
         command.contains("branch") && command.contains("-D") -> "BRANCH_REMOVE_FAILED"
         command.contains("branch") -> "BRANCH_CREATE_FAILED"
         command.contains("rebase") -> "RESTACK_FAILED"
@@ -516,6 +612,18 @@ class LocalGitAdapter(
 
   private fun commandMessage(result: CommandResult): String =
       result.stderr.trim().ifBlank { result.stdout.trim() }.ifBlank { "종료 코드 ${result.exitCode}" }
+
+  private fun managedWorkspacePath(path: io.springkit.workflow.domain.WorkspacePath): Path? {
+    val root = managedWorkspaceRoot ?: return null
+    return ManagedPathResolver.resolveWithin(root, Path.of(path.value))
+  }
+
+  private fun invalidWorkspacePath(path: String): PortResult.Failure =
+      failure(
+          code = "WORKSPACE_PATH_INVALID",
+          message = "Worktree 경로가 관리 root 밖에 있거나 심볼릭 링크로 탈출합니다: $path",
+          target = path,
+      )
 
   private fun diffCommand(baseRevision: String): List<String> =
       listOf("git", "diff", "--binary", "$baseRevision...HEAD")
