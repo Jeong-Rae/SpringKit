@@ -5,9 +5,12 @@ import io.kotest.matchers.shouldBe
 import io.springkit.workflow.domain.ActorKind
 import io.springkit.workflow.domain.BlockedBy
 import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.FailureConflict
 import io.springkit.workflow.domain.FailureData
+import io.springkit.workflow.domain.FailureWorkspace
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.WorkflowResult
+import io.springkit.workflow.domain.WorkspacePath
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -36,6 +39,21 @@ class WorkflowResultJsonTest :
 
           result.encodeToString() shouldBe
               "{\"data\":{\"blocked_by\":[{\"code\":\"HUMAN_REQUIRED\",\"message\":\"사람만 실행할 수 있습니다.\",\"target\":\"sk-1\"}],\"code\":\"HUMAN_REQUIRED\",\"message\":\"사람의 결정이 필요합니다.\",\"next\":[{\"action\":\"approve_change\",\"actor\":\"human\",\"command\":\"workflow gate approve sk-1\"}]},\"type\":\"failure\"}"
+        }
+
+        test("동기화 충돌이면 Worktree와 충돌 파일의 구조화 정보를 반환합니다") {
+          val result =
+              WorkflowResult.Failure(
+                  FailureData(
+                      code = FailureCode.SYNC_CONFLICT,
+                      message = "자동으로 동기화할 수 없는 코드 충돌이 있습니다.",
+                      workspace = FailureWorkspace(WorkspacePath("/repo-managed/sk-102")),
+                      conflicts = listOf(FailureConflict("src/main.kt")),
+                  )
+              )
+
+          result.encodeToString() shouldBe
+              "{\"data\":{\"blocked_by\":[],\"code\":\"SYNC_CONFLICT\",\"message\":\"자동으로 동기화할 수 없는 코드 충돌이 있습니다.\",\"next\":[],\"workspace\":{\"path\":\"/repo-managed/sk-102\"},\"conflicts\":[{\"path\":\"src/main.kt\",\"kind\":\"content\"}]},\"type\":\"failure\"}"
         }
       }
 
