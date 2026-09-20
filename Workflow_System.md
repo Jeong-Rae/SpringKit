@@ -55,6 +55,8 @@ Domain과 Application은 Clikt, 파일 시스템, 프로세스 실행, 네트워
 
 JSON은 `kotlinx.serialization`, 파일 시스템 I/O는 Okio, HTTP 연동은 필요한 Ktor Client 모듈을 우선 사용합니다. 라이브러리로 표현할 수 없는 작은 공통 변환과 검증만 `io.springkit.workflow.common` 패키지에 둡니다. 이 패키지는 Domain 정책이나 Adapter 책임을 대신하지 않습니다.
 
+GitHub Copilot Review는 현재 Workflow Adapter 범위에 포함하지 않습니다. AI Review 공급자는 별도 지시로 연결하며, 공급자가 없으면 외부 AI 호출 없이 상태를 `PENDING`으로 유지합니다. 이 상태는 CI와 사람의 Ready·Approve Gate를 대신하지 않으며 Merge Queue 진입을 추가로 막지 않습니다.
+
 Git Adapter는 설치된 `git` CLI를 호출해 Worktree를 생성하고 이동하고 정리합니다. GitHub Adapter는 설치된 `gh` CLI를 호출해 PR, 리뷰와 GitHub 상태를 조회하고 변경합니다. 각 CLI가 인증, 전송과 provider 동작을 담당하므로 같은 기능을 다시 구현하지 않습니다. `io.springkit.workflow.common`에는 작업 디렉터리, 종료 코드, 표준 출력과 표준 오류를 다루는 최소 프로세스 유틸리티만 둡니다. Git과 GitHub 명령 구성 및 Domain 결과 변환은 각 Adapter가 담당합니다.
 
 Native Image 빌드는 reflection, resource, dynamic proxy와 동적 class loading 요구를 명시적으로 관리해야 합니다. 런타임에 임의 코드를 불러오는 plugin 방식은 사용하지 않습니다. 필요한 Adapter는 컴파일 시점의 구성 또는 명시적인 런타임 설정으로 선택합니다.
