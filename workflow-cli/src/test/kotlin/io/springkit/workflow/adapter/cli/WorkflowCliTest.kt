@@ -2,6 +2,7 @@ package io.springkit.workflow.adapter.cli
 
 import com.github.ajalt.clikt.testing.test
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.datatest.withData
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldBeEmpty
 import io.kotest.matchers.string.shouldContain
@@ -54,6 +55,161 @@ class WorkflowCliTest :
                   line = 42,
               )
         }
+
+        withData(
+            nameFn = { "${it.name} 명령을 입력하면, 해당 Application 요청을 전달합니다" },
+            CommandCase("check", "check", WorkflowCommandRequest.Check),
+            CommandCase(
+                "review open",
+                "review open --body-file pr.md --risk high --exposure feature-flag --feature-flag flag-1",
+                WorkflowCommandRequest.ReviewOpen("pr.md", "high", "feature-flag", "flag-1"),
+            ),
+            CommandCase(
+                "review show",
+                "review show --diff --threads all",
+                WorkflowCommandRequest.ReviewShow(diff = true, threads = "all"),
+            ),
+            CommandCase(
+                "review update",
+                "review update --revision rv-8 --body-file pr.md",
+                WorkflowCommandRequest.ReviewUpdate("rv-8", "pr.md"),
+            ),
+            CommandCase(
+                "review reply",
+                "review reply --revision rv-8 --thread thread-1 --body 답변",
+                WorkflowCommandRequest.ReviewReply("rv-8", "thread-1", body = "답변"),
+            ),
+            CommandCase(
+                "review resolve",
+                "review resolve --revision rv-8 --thread thread-1",
+                WorkflowCommandRequest.ReviewResolve("rv-8", "thread-1"),
+            ),
+            CommandCase(
+                "stack requires",
+                "stack --requires sk-101",
+                WorkflowCommandRequest.Stack(requires = "sk-101"),
+            ),
+            CommandCase(
+                "stack clear",
+                "stack --clear",
+                WorkflowCommandRequest.Stack(clear = true),
+            ),
+            CommandCase("sync", "sync", WorkflowCommandRequest.Sync()),
+            CommandCase(
+                "sync continue",
+                "sync --continue",
+                WorkflowCommandRequest.Sync(continueSync = true),
+            ),
+            CommandCase(
+                "sync abort",
+                "sync --abort",
+                WorkflowCommandRequest.Sync(abort = true),
+            ),
+            CommandCase(
+                "status",
+                "status --candidate dc-1",
+                WorkflowCommandRequest.Status(candidate = "dc-1"),
+            ),
+            CommandCase(
+                "gate ready",
+                "gate ready sk-101 --review-revision rv-8",
+                WorkflowCommandRequest.GateReady("sk-101", "rv-8"),
+            ),
+            CommandCase(
+                "gate approve",
+                "gate approve sk-101 --change-revision cr-4",
+                WorkflowCommandRequest.GateApprove("sk-101", "cr-4"),
+            ),
+            CommandCase(
+                "gate deploy",
+                "gate deploy dc-1",
+                WorkflowCommandRequest.GateDeploy("dc-1"),
+            ),
+            CommandCase(
+                "gate release",
+                "gate release rel-1",
+                WorkflowCommandRequest.GateRelease("rel-1"),
+            ),
+        ) { case ->
+          var request: WorkflowCommandRequest? = null
+          val fixture = fixture {
+            request = it
+            success()
+          }
+
+          val result = fixture.command.test(case.arguments)
+
+          result.statusCode shouldBe 0
+          request shouldBe case.expected
+        }
+      }
+
+      context("서로 함께 사용할 수 없는 CLI 인자를 검증할 때") {
+        withData(
+            nameFn = { "${it.name}, 요청을 전달하지 않고 실패합니다" },
+            InvalidCommandCase(
+                "review open의 risk가 지원 값이 아니면",
+                "review open --body-file pr.md --risk medium --exposure unchanged",
+            ),
+            InvalidCommandCase(
+                "review open의 exposure가 지원 값이 아니면",
+                "review open --body-file pr.md --risk normal --exposure public",
+            ),
+            InvalidCommandCase(
+                "feature-flag exposure에 Feature Flag가 없으면",
+                "review open --body-file pr.md --risk normal --exposure feature-flag",
+            ),
+            InvalidCommandCase(
+                "unchanged exposure에 Feature Flag가 있으면",
+                "review open --body-file pr.md --risk normal --exposure unchanged --feature-flag flag-1",
+            ),
+            InvalidCommandCase(
+                "review comment에 본문 입력이 없으면",
+                "review comment --revision rv-8 --level R",
+            ),
+            InvalidCommandCase(
+                "review comment에 두 본문 입력이 모두 있으면",
+                "review comment --revision rv-8 --level R --body 본문 --body-file comment.md",
+            ),
+            InvalidCommandCase(
+                "review comment에 path만 있으면",
+                "review comment --revision rv-8 --level R --body 본문 --path src/main.kt",
+            ),
+            InvalidCommandCase(
+                "review comment에 line만 있으면",
+                "review comment --revision rv-8 --level R --body 본문 --line 42",
+            ),
+            InvalidCommandCase(
+                "review comment의 level이 지원 값이 아니면",
+                "review comment --revision rv-8 --level B --body 본문",
+            ),
+            InvalidCommandCase(
+                "review reply에 본문 입력이 없으면",
+                "review reply --revision rv-8 --thread thread-1",
+            ),
+            InvalidCommandCase(
+                "review reply에 두 본문 입력이 모두 있으면",
+                "review reply --revision rv-8 --thread thread-1 --body 답변 --body-file reply.md",
+            ),
+            InvalidCommandCase("stack 선택이 없으면", "stack"),
+            InvalidCommandCase("stack 선택이 둘 다 있으면", "stack --requires sk-101 --clear"),
+            InvalidCommandCase("sync 복구 선택이 둘 다 있으면", "sync --continue --abort"),
+            InvalidCommandCase(
+                "status 대상 선택이 둘 이상이면",
+                "status --subtask sk-101 --task TASK-42",
+            ),
+        ) { case ->
+          var request: WorkflowCommandRequest? = null
+          val fixture = fixture {
+            request = it
+            success()
+          }
+
+          val result = fixture.command.test(case.arguments)
+
+          result.statusCode shouldBe 1
+          request shouldBe null
+        }
       }
 
       context("JSON 출력 형식을 사용할 때") {
@@ -102,4 +258,15 @@ private data class Fixture(
     val command: WorkflowCli,
     val stdout: ByteArrayOutputStream,
     val stderr: ByteArrayOutputStream,
+)
+
+private data class CommandCase(
+    val name: String,
+    val arguments: String,
+    val expected: WorkflowCommandRequest,
+)
+
+private data class InvalidCommandCase(
+    val name: String,
+    val arguments: String,
 )
