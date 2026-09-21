@@ -24,8 +24,15 @@ repositories {
   mavenCentral()
 }
 
+val spotlessRatchetFrom =
+    providers
+        .gradleProperty("spotlessRatchetFrom")
+        .orElse(providers.environmentVariable("SPOTLESS_RATCHET_FROM"))
+        .getOrElse("HEAD")
+
 spotless {
   isEnforceCheck = false
+  ratchetFrom(spotlessRatchetFrom)
 
   kotlin {
     target("src/*/kotlin/**/*.kt")
