@@ -3,6 +3,7 @@ package io.springkit.workflow.application
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.adapter.store.OkioWorkflowStoreAdapter
 import io.springkit.workflow.domain.Actor
 import io.springkit.workflow.domain.ActorKind
 import io.springkit.workflow.domain.AiReviewStatus
@@ -18,8 +19,11 @@ import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.ReviewThread
 import io.springkit.workflow.domain.Risk
+import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.ThreadState
 import io.springkit.workflow.domain.WorkflowResult
+import okio.Path.Companion.toPath
+import okio.fakefilesystem.FakeFileSystem
 
 class ReviewUseCasesTest :
     FunSpec({
@@ -144,6 +148,157 @@ class ReviewUseCasesTest :
           port.resolveCalls shouldBe 0
         }
       }
+
+      context("리뷰 댓글, 답글, 해결 결과를 Store에 반영하는 상황에서") {
+        test("각 변경 결과를 원자적으로 저장해 다음 작업이 새 revision을 읽습니다") {
+          val before =
+              pullRequest()
+                  .copy(
+                      reviewRevision =
+                          revision("rv-1", "body")
+                              .copy(
+                                  threads =
+                                      listOf(
+                                          ReviewThread(
+                                              id = "thread-1",
+                                              level = ReviewLevel.R,
+                                              comments =
+                                                  listOf(
+                                                      ReviewComment(
+                                                          "comment-1",
+                                                          Actor("agent-1", ActorKind.AGENT),
+                                                          "기존 의견",
+                                                      )
+                                                  ),
+                                          )
+                                      )
+                              )
+                  )
+          val commentRevision =
+              revision("rv-2", "body")
+                  .copy(
+                      threads =
+                          before.reviewRevision.threads +
+                              ReviewThread(
+                                  id = "thread-2",
+                                  level = ReviewLevel.C,
+                                  comments =
+                                      listOf(
+                                          ReviewComment(
+                                              "comment-2",
+                                              Actor("agent-1", ActorKind.AGENT),
+                                              "[Agent] 새 의견",
+                                          )
+                                      ),
+                              )
+                  )
+          val replyRevision =
+              revision("rv-3", "body")
+                  .copy(
+                      threads =
+                          commentRevision.threads.map { thread ->
+                            if (thread.id == "thread-1") {
+                              thread.reply(
+                                  ReviewComment(
+                                      "comment-3",
+                                      Actor("agent-1", ActorKind.AGENT),
+                                      "[Agent] 답변",
+                                  )
+                              )
+                            } else {
+                              thread
+                            }
+                          }
+                  )
+          val resolveRevision =
+              revision("rv-4", "body")
+                  .copy(
+                      threads =
+                          replyRevision.threads.map { thread ->
+                            if (thread.id == "thread-1") thread.copy(state = ThreadState.RESOLVED)
+                            else thread
+                          }
+                  )
+          val store = OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/state.json".toPath())
+          seed(store, before)
+          val port =
+              RevisionReviewPort(
+                  before,
+                  AddReviewCommentResponse(commentRevision, "thread-2", receipt("comment")),
+                  ReplyReviewThreadResponse(replyRevision, receipt("reply")),
+                  ResolveReviewThreadResponse(resolveRevision, receipt("resolve")),
+              )
+          val useCases = ReviewUseCases(port, storePort = store)
+          val actor = Actor("agent-1", ActorKind.AGENT)
+
+          useCases.comment(
+              AddReviewCommentRequest(
+                  "pr-1",
+                  "rv-1",
+                  actor,
+                  ReviewLevel.C,
+                  ReviewComment("comment-2", actor, "새 의견"),
+              )
+          )
+          storedPullRequest(store).reviewRevision.id shouldBe "rv-2"
+
+          useCases.reply(
+              ReplyReviewThreadRequest(
+                  "pr-1",
+                  "rv-2",
+                  "thread-1",
+                  ReviewComment("comment-3", actor, "답변"),
+              )
+          )
+          storedPullRequest(store).reviewRevision.id shouldBe "rv-3"
+
+          useCases.resolve(ResolveReviewThreadRequest("pr-1", "rv-3", "thread-1", actor))
+          val stored = storedPullRequest(store)
+          stored.reviewRevision.id shouldBe "rv-4"
+          stored.reviewRevision.threads.first { it.id == "thread-1" }.state shouldBe
+              ThreadState.RESOLVED
+          port.getCalls shouldBe 3
+        }
+
+        test("Store의 revision이 바뀌면 외부 Review 변경 없이 충돌을 반환합니다") {
+          val providerPullRequest = pullRequest()
+          val storePullRequest =
+              providerPullRequest.copy(reviewRevision = ReviewRevision("rv-store", 99, "body"))
+          val store = OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/state.json".toPath())
+          seed(store, storePullRequest)
+          val port =
+              RevisionReviewPort(
+                  providerPullRequest,
+                  AddReviewCommentResponse(
+                      revision("rv-2", "body"),
+                      "thread-2",
+                      receipt("comment"),
+                  ),
+                  null,
+                  null,
+              )
+
+          val result =
+              ReviewUseCases(port, storePort = store)
+                  .comment(
+                      AddReviewCommentRequest(
+                          "pr-1",
+                          "rv-1",
+                          Actor("agent-1", ActorKind.AGENT),
+                          ReviewLevel.R,
+                          ReviewComment(
+                              "comment-2",
+                              Actor("agent-1", ActorKind.AGENT),
+                              "의견",
+                          ),
+                      )
+                  )
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.STALE_REVISION
+          port.commentCalls shouldBe 0
+        }
+      }
     })
 
 private fun pullRequest(): PullRequest =
@@ -172,7 +327,82 @@ private fun pullRequest(): PullRequest =
 private fun revision(id: String, body: String): ReviewRevision =
     ReviewRevision(id = id, number = id.removePrefix("rv-").toLong(), body = body)
 
-private fun receipt(): ChangeReceipt = ChangeReceipt("change-1", "review-update")
+private fun receipt(operation: String = "update"): ChangeReceipt =
+    ChangeReceipt("change-$operation", "review-$operation")
+
+private fun seed(store: WorkflowStorePort, pullRequest: PullRequest) {
+  val request = StoreTransactionRequest("seed", expectedRevision = "0", idempotencyKey = "seed")
+  store.begin(request)
+  store.write(
+      StoreWriteRequest(
+          transactionId = request.transactionId,
+          expectedRevision = "0",
+          snapshot =
+              WorkflowStoreSnapshot(
+                  "0",
+                  subTasks = listOf(SubTask("sk-27", "task-1", "review")),
+                  pullRequests = listOf(pullRequest),
+              ),
+      )
+  )
+  store.commit(request)
+}
+
+private fun storedPullRequest(store: WorkflowStorePort): PullRequest =
+    (store.snapshot(StoreSnapshotRequest()).shouldBeInstanceOf<PortResult.Success<*>>().value
+            as StoreSnapshotResponse)
+        .snapshot
+        .pullRequests
+        .single()
+
+private class RevisionReviewPort(
+    private var current: PullRequest,
+    private val commentResponse: AddReviewCommentResponse?,
+    private val replyResponse: ReplyReviewThreadResponse?,
+    private val resolveResponse: ResolveReviewThreadResponse?,
+) : ReviewPort {
+  var getCalls: Int = 0
+  var commentCalls: Int = 0
+
+  override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> = unsupported()
+
+  override fun get(request: GetReviewRequest): PortResult<GetReviewResponse> {
+    getCalls += 1
+    return PortResult.Success(GetReviewResponse(current))
+  }
+
+  override fun update(request: UpdateReviewRequest): PortResult<UpdateReviewResponse> =
+      unsupported()
+
+  override fun comment(request: AddReviewCommentRequest): PortResult<AddReviewCommentResponse> {
+    commentCalls += 1
+    val response = commentResponse ?: return unsupported()
+    current = current.copy(reviewRevision = response.reviewRevision)
+    return PortResult.Success(response)
+  }
+
+  override fun reply(request: ReplyReviewThreadRequest): PortResult<ReplyReviewThreadResponse> {
+    val response = replyResponse ?: return unsupported()
+    current = current.copy(reviewRevision = response.reviewRevision)
+    return PortResult.Success(response)
+  }
+
+  override fun resolve(
+      request: ResolveReviewThreadRequest,
+  ): PortResult<ResolveReviewThreadResponse> {
+    val response = resolveResponse ?: return unsupported()
+    current = current.copy(reviewRevision = response.reviewRevision)
+    return PortResult.Success(response)
+  }
+
+  override fun ready(request: ReadyReviewRequest): PortResult<ReadyReviewResponse> = unsupported()
+
+  override fun approve(request: ApproveReviewRequest): PortResult<ApproveReviewResponse> =
+      unsupported()
+
+  private fun <T> unsupported(): PortResult<T> =
+      PortResult.Failure(PortError("STATE_CONFLICT", "unsupported in test"))
+}
 
 private class FakeReviewPort(
     private var current: PullRequest,

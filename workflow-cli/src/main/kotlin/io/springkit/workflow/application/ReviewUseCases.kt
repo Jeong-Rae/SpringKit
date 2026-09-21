@@ -21,6 +21,7 @@ class ReviewUseCases(
     private val idPort: IdPort? = null,
     private val clockPort: ClockPort? = null,
     private val compensationPort: CompensationPort? = null,
+    private val storePort: WorkflowStorePort? = null,
 ) {
   fun open(request: OpenReviewRequest): WorkflowResult<OpenReviewResponse> {
     val invalid = validateOpen(request)
@@ -99,21 +100,19 @@ class ReviewUseCases(
       is WorkflowResult.Failure -> current
       is WorkflowResult.Success -> {
         val markedRequest = request.copy(comment = request.comment.withAgentMark())
-        when (val result = reviewPort.comment(markedRequest)) {
-          is PortResult.Failure -> failureFrom(result)
-          is PortResult.Success ->
-              if (
-                  isValidRevisionChange(current.data, result.value.reviewRevision) &&
-                      result.value.reviewRevision.threads.any { it.id == result.value.threadId }
-              ) {
-                WorkflowResult.Success(result.value)
-              } else {
-                invalidProvider(
-                    result.value.change,
-                    "review provider returned an invalid comment revision",
-                )
-              }
-        }
+        persistRevisionMutation(
+            current = current.data,
+            operation = "comment",
+            idempotencyKey =
+                "${request.pullRequestId}:${request.reviewRevisionId}:${request.comment.id}",
+            action = { reviewPort.comment(markedRequest) },
+            reviewRevision = { it.reviewRevision },
+            valid = {
+              isValidRevisionChange(current.data, it.reviewRevision) &&
+                  it.reviewRevision.threads.any { thread -> thread.id == it.threadId }
+            },
+            invalidMessage = "review provider returned an invalid comment revision",
+        )
       }
     }
   }
@@ -126,21 +125,19 @@ class ReviewUseCases(
           failure(FailureCode.STATE_CONFLICT, "a resolved review thread cannot receive a reply")
         } else {
           val markedRequest = request.copy(comment = request.comment.withAgentMark())
-          when (val result = reviewPort.reply(markedRequest)) {
-            is PortResult.Failure -> failureFrom(result)
-            is PortResult.Success ->
-                if (
-                    isValidRevisionChange(current, result.value.reviewRevision) &&
-                        result.value.reviewRevision.threads.any { it.id == thread.id }
-                ) {
-                  WorkflowResult.Success(result.value)
-                } else {
-                  invalidProvider(
-                      result.value.change,
-                      "review provider returned an invalid reply revision",
-                  )
-                }
-          }
+          persistRevisionMutation(
+              current = current,
+              operation = "reply",
+              idempotencyKey =
+                  "${request.pullRequestId}:${request.reviewRevisionId}:${request.comment.id}",
+              action = { reviewPort.reply(markedRequest) },
+              reviewRevision = { it.reviewRevision },
+              valid = {
+                isValidRevisionChange(current, it.reviewRevision) &&
+                    it.reviewRevision.threads.any { item -> item.id == thread.id }
+              },
+              invalidMessage = "review provider returned an invalid reply revision",
+          )
         }
       }
 
@@ -158,24 +155,22 @@ class ReviewUseCases(
               blockedByCode = "HUMAN_REVIEW_REQUIRED",
           )
         } else {
-          when (val result = reviewPort.resolve(request)) {
-            is PortResult.Failure -> failureFrom(result)
-            is PortResult.Success ->
-                if (
-                    isValidRevisionChange(current, result.value.reviewRevision) &&
-                        result.value.reviewRevision.threads.any {
-                          it.id == thread.id &&
-                              it.state == io.springkit.workflow.domain.ThreadState.RESOLVED
-                        }
-                ) {
-                  WorkflowResult.Success(result.value)
-                } else {
-                  invalidProvider(
-                      result.value.change,
-                      "review provider returned an unresolved thread",
-                  )
-                }
-          }
+          persistRevisionMutation(
+              current = current,
+              operation = "resolve",
+              idempotencyKey =
+                  "${request.pullRequestId}:${request.reviewRevisionId}:${request.threadId}",
+              action = { reviewPort.resolve(request) },
+              reviewRevision = { it.reviewRevision },
+              valid = {
+                isValidRevisionChange(current, it.reviewRevision) &&
+                    it.reviewRevision.threads.any { item ->
+                      item.id == thread.id &&
+                          item.state == io.springkit.workflow.domain.ThreadState.RESOLVED
+                    }
+              },
+              invalidMessage = "review provider returned an unresolved thread",
+          )
         }
       }
 
@@ -259,6 +254,129 @@ class ReviewUseCases(
       before: PullRequest,
       after: io.springkit.workflow.domain.ReviewRevision,
   ): Boolean = before.reviewRevision.id != after.id
+
+  /** 외부 Review 변경을 검증하고 최신 Review revision을 Store에 원자적으로 반영합니다. */
+  private fun <T : ChangeResponse> persistRevisionMutation(
+      current: PullRequest,
+      operation: String,
+      idempotencyKey: String,
+      action: () -> PortResult<T>,
+      reviewRevision: (T) -> io.springkit.workflow.domain.ReviewRevision,
+      valid: (T) -> Boolean,
+      invalidMessage: String,
+  ): WorkflowResult<T> {
+    val store = storePort
+    if (store == null) {
+      return completeMutation(action(), reviewRevision, valid, invalidMessage)
+    }
+    val snapshot =
+        when (val result = store.snapshot(StoreSnapshotRequest(StoreScope.ALL))) {
+          is PortResult.Failure -> return result.toWorkflowFailure(FailureCode.STORE_FAILURE)
+          is PortResult.Success -> result.value.snapshot
+        }
+    val stored = snapshot.pullRequests.firstOrNull { it.id == current.id }
+    if (stored == null) {
+      return failure(FailureCode.REVIEW_NOT_FOUND, "pull request was not found", current.id)
+    }
+    if (stored.reviewRevision.id != current.reviewRevision.id) {
+      return staleReview(current.id)
+    }
+    val transactionRequest =
+        StoreTransactionRequest(
+            transactionId = "review-$operation-$idempotencyKey",
+            expectedRevision = snapshot.revision,
+            idempotencyKey = idempotencyKey,
+        )
+    return WorkflowTransaction(store, compensationGateway()).execute(transactionRequest) {
+        transactionSnapshot ->
+      val transactionStored = transactionSnapshot.pullRequests.firstOrNull { it.id == current.id }
+      if (transactionStored == null) {
+        failurePort(
+            FailureCode.REVIEW_NOT_FOUND,
+            "pull request was not found",
+            current.id,
+        )
+      } else if (transactionStored.reviewRevision.id != current.reviewRevision.id) {
+        failurePort(
+            FailureCode.STALE_REVISION,
+            "review revision is stale",
+            current.id,
+        )
+      } else {
+        when (val result = action()) {
+          is PortResult.Failure -> result
+          is PortResult.Success -> {
+            val nextRevision = reviewRevision(result.value)
+            if (!valid(result.value)) {
+              PortResult.Failure(
+                  PortError(
+                      FailureCode.INVARIANT_VIOLATION.name,
+                      invalidMessage,
+                      target = current.id,
+                  ),
+                  result.value.change,
+              )
+            } else {
+              val nextPullRequest = transactionStored.copy(reviewRevision = nextRevision)
+              PortResult.Success(
+                  TransactionMutation(
+                      data = result.value,
+                      snapshot = transactionSnapshot.replacePullRequest(nextPullRequest),
+                      changes = listOf(result.value.change),
+                  )
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private fun <T : ChangeResponse> completeMutation(
+      result: PortResult<T>,
+      reviewRevision: (T) -> io.springkit.workflow.domain.ReviewRevision,
+      valid: (T) -> Boolean,
+      invalidMessage: String,
+  ): WorkflowResult<T> =
+      when (result) {
+        is PortResult.Failure -> failureFrom(result)
+        is PortResult.Success ->
+            if (valid(result.value) && reviewRevision(result.value).id.isNotBlank())
+                WorkflowResult.Success(result.value)
+            else invalidProvider(result.value.change, invalidMessage)
+      }
+
+  private fun staleReview(target: String): WorkflowResult.Failure =
+      WorkflowResult.Failure(
+          FailureData(
+              code = FailureCode.STALE_REVISION,
+              message = "review revision is stale",
+              blockedBy =
+                  listOf(
+                      io.springkit.workflow.domain.BlockedBy(
+                          code = "STALE_REVISION",
+                          message = "the review changed after it was read",
+                          target = target,
+                      )
+                  ),
+          )
+      )
+
+  private fun <T> failurePort(
+      code: FailureCode,
+      message: String,
+      target: String,
+  ): PortResult<T> = PortResult.Failure(PortError(code.name, message, target = target))
+
+  private fun WorkflowStoreSnapshot.replacePullRequest(value: PullRequest): WorkflowStoreSnapshot =
+      copy(pullRequests = pullRequests.filterNot { it.id == value.id } + value)
+
+  private fun compensationGateway(): CompensationPort =
+      compensationPort
+          ?: object : CompensationPort {
+            override fun compensate(request: CompensateRequest): PortResult<CompensateResponse> =
+                PortResult.Success(CompensateResponse(request.change))
+          }
 
   private fun requireCurrentReview(
       pullRequest: PullRequest,
