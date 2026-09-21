@@ -51,6 +51,64 @@ class ReleaseLifecycleUseCasesTest :
           releasePort.createCalls shouldBe 1
           releasePort.validateCalls shouldBe 1
         }
+
+        test("서로 다른 Feature Flag 요구가 포함되면, 후보마다 독립 Release를 생성합니다") {
+          val store = ReleaseRecordingStore(snapshot(featureFlagIds = listOf("flag-1", "flag-2")))
+          val releasePort = ReleaseRecordingPort()
+          val result =
+              useCase(store, releasePort)
+                  .handleDeploymentAll(
+                      DeploymentRecorded("candidate-1", DeploymentCandidateState.PRODUCTION)
+                  )
+
+          val success =
+              result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
+          success.data.map { it.release.featureFlagId } shouldBe listOf("flag-1", "flag-2")
+          success.data.map { it.release.id }.distinct().size shouldBe 2
+          releasePort.createCalls shouldBe 2
+          releasePort.validateCalls shouldBe 2
+          store.written?.releases?.map { it.featureFlagId } shouldBe listOf("flag-1", "flag-2")
+        }
+
+        test("한 Feature Flag Release가 이미 있으면, 다른 Feature Flag Release 생성을 생략하지 않습니다") {
+          val existing =
+              release(
+                  state = ReleaseState.AWAITING_RELEASE_APPROVAL,
+                  featureFlagId = "flag-1",
+              )
+          val store =
+              ReleaseRecordingStore(
+                  snapshot(
+                      release = existing,
+                      featureFlagIds = listOf("flag-1", "flag-2"),
+                  )
+              )
+          val releasePort = ReleaseRecordingPort(existing)
+          val result =
+              useCase(store, releasePort)
+                  .handleDeploymentAll(
+                      DeploymentRecorded("candidate-1", DeploymentCandidateState.PRODUCTION)
+                  )
+
+          val success =
+              result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
+          success.data.map { it.release.featureFlagId } shouldBe listOf("flag-1", "flag-2")
+          releasePort.createCalls shouldBe 1
+          releasePort.validateCalls shouldBe 1
+        }
+
+        test("Feature Flag가 없는 Production 후보이면, Release 없이 성공합니다") {
+          val store = ReleaseRecordingStore(snapshot(featureFlagIds = emptyList()))
+          val result =
+              useCase(store, ReleaseRecordingPort())
+                  .handleDeploymentAll(
+                      DeploymentRecorded("candidate-1", DeploymentCandidateState.PRODUCTION)
+                  )
+
+          val success =
+              result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
+          success.data shouldBe emptyList()
+        }
       }
 
       context("점진 공개가 완료된 상태에서") {
@@ -118,42 +176,49 @@ private fun createRequest() =
         requestId = "request-1",
     )
 
-private fun snapshot(release: Release? = null): WorkflowStoreSnapshot =
+private fun snapshot(
+    release: Release? = null,
+    featureFlagIds: List<String> = listOf("flag-1"),
+): WorkflowStoreSnapshot =
     WorkflowStoreSnapshot(
         revision = "store-1",
-        subTasks = listOf(featureFlagSubTask()),
-        candidates = listOf(productionCandidate()),
+        subTasks =
+            featureFlagIds.mapIndexed { index, featureFlagId ->
+              featureFlagSubTask(index, featureFlagId)
+            },
+        candidates = listOf(productionCandidate(featureFlagIds)),
         releases = listOfNotNull(release),
     )
 
-private fun productionCandidate() =
+private fun productionCandidate(featureFlagIds: List<String>) =
     DeploymentCandidate(
         id = "candidate-1",
         mainRevision = "main-1",
-        includedSubTasks = listOf("sk-101"),
-        risks = mapOf("sk-101" to Risk.NORMAL),
+        includedSubTasks = featureFlagIds.indices.map { index -> "sk-${index + 101}" },
+        risks = featureFlagIds.indices.associate { index -> "sk-${index + 101}" to Risk.NORMAL },
         validations = listOf(Validation("validation-1", "test", ValidationStatus.PASSED)),
         state = DeploymentCandidateState.PRODUCTION,
     )
 
-private fun featureFlagSubTask() =
+private fun featureFlagSubTask(index: Int = 0, featureFlagId: String = "flag-1") =
     SubTask(
-        id = "sk-101",
+        id = "sk-${index + 101}",
         taskId = "task-1",
         title = "Feature Flag use case",
         state = io.springkit.workflow.domain.SubTaskState.MERGED,
         exposure = Exposure.FEATURE_FLAG,
-        featureFlagId = "flag-1",
+        featureFlagId = featureFlagId,
     )
 
 private fun release(
     state: ReleaseState,
     internalValidationPassed: Boolean = true,
+    featureFlagId: String = "flag-1",
 ) =
     Release(
         id = "release-1",
         candidateId = "candidate-1",
-        featureFlagId = "flag-1",
+        featureFlagId = featureFlagId,
         state = state,
         productionReady = true,
         internalValidationPassed = internalValidationPassed,
@@ -167,18 +232,20 @@ private fun useCase(
     ReleaseLifecycleUseCases(
         store,
         releasePort,
-        idPort = ReleaseLifecycleIdPort,
+        idPort = ReleaseLifecycleIdPort(),
         compensationPort = compensation,
     )
 
-private object ReleaseLifecycleIdPort : IdPort {
+private class ReleaseLifecycleIdPort : IdPort {
+  private var nextReleaseId = 1
+
   override fun issue(request: IssueIdRequest): PortResult<IssueIdResponse> =
       PortResult.Success(
           IssueIdResponse(
               listOf(
                   IssuedId(
                       request.kind,
-                      if (request.kind == IdKind.RELEASE) "release-1"
+                      if (request.kind == IdKind.RELEASE) "release-${nextReleaseId++}"
                       else "tx-${request.requestId}",
                   )
               )
@@ -235,17 +302,31 @@ private class ReleaseRecordingPort(
     initial: Release? = null,
     private val failValidation: Boolean = false,
 ) : ReleasePort {
-  private var current = initial
+  private val current =
+      mutableMapOf<String, Release>().apply {
+        initial?.let { put(it.id, it) }
+      }
   var createCalls = 0
   var validateCalls = 0
 
   override fun get(request: GetReleaseRequest): PortResult<GetReleaseResponse> =
-      PortResult.Success(GetReleaseResponse(listOfNotNull(current)))
+      PortResult.Success(
+          GetReleaseResponse(
+              current.values.filter { request.releaseId == null || it.id == request.releaseId }
+          )
+      )
 
   override fun create(request: CreateReleaseRequest): PortResult<CreateReleaseResponse> {
     createCalls += 1
-    current = release(ReleaseState.SAFE_DEFAULT, false)
-    return PortResult.Success(CreateReleaseResponse(current!!, change("create")))
+    val created =
+        Release(
+            id = request.releaseId,
+            candidateId = request.candidateId,
+            featureFlagId = request.featureFlagId,
+            state = ReleaseState.SAFE_DEFAULT,
+        )
+    current[created.id] = created
+    return PortResult.Success(CreateReleaseResponse(created, change("create")))
   }
 
   override fun validateInternal(
@@ -254,9 +335,12 @@ private class ReleaseRecordingPort(
     validateCalls += 1
     if (failValidation)
         return PortResult.Failure(PortError("EXTERNAL_FAILURE", "validation failed"))
-    current =
-        current!!.copy(state = ReleaseState.INTERNAL_VALIDATION, internalValidationPassed = true)
-    return PortResult.Success(ValidateReleaseResponse(current!!, change("validate")))
+    val validated =
+        current
+            .getValue(request.releaseId)
+            .copy(state = ReleaseState.INTERNAL_VALIDATION, internalValidationPassed = true)
+    current[validated.id] = validated
+    return PortResult.Success(ValidateReleaseResponse(validated, change("validate")))
   }
 
   override fun start(request: StartReleaseRequest): PortResult<StartReleaseResponse> =
