@@ -1,6 +1,7 @@
 package io.springkit.workflow.adapter.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
@@ -9,6 +10,8 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.int
 import io.springkit.workflow.adapter.json.encodeToString
+import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.WorkflowResult
 import java.io.PrintStream
 import kotlinx.serialization.json.JsonObject
@@ -136,7 +139,31 @@ class WorkflowCli(
     private val stdout: PrintStream = System.out,
     private val stderr: PrintStream = System.err,
 ) : CliktCommand(name = "workflow") {
+  private var jsonOutputRequested = false
+
   init {
+    configureContext {
+      transformToken = { _, token ->
+        if (token == "--json") jsonOutputRequested = true
+        token
+      }
+      echoMessage = { context: Context, message: Any?, trailingNewline: Boolean, error: Boolean ->
+        if (error && jsonOutputRequested) {
+          stdout.println(
+              WorkflowResult.Failure(
+                      FailureData(
+                          code = FailureCode.INVALID_ARGUMENT,
+                          message = message.toString(),
+                      )
+                  )
+                  .encodeToString()
+          )
+        } else {
+          val output = if (error) stderr else stdout
+          if (trailingNewline) output.println(message) else output.print(message)
+        }
+      }
+    }
     subcommands(
         StartCommand(gateway, stdout, stderr),
         CheckCommand(gateway, stdout, stderr),
@@ -153,11 +180,13 @@ class WorkflowCli(
 
 private abstract class WorkflowLeafCommand(
     name: String,
-    help: String,
+    private val helpText: String,
     private val gateway: WorkflowCommandGateway,
     private val stdout: PrintStream,
     private val stderr: PrintStream,
 ) : CliktCommand(name = name) {
+  override fun help(context: Context): String = helpText
+
   protected val json by option("--json", help = "구조화된 JSON 결과를 출력합니다.").flag()
 
   protected fun execute(request: WorkflowCommandRequest) {
@@ -227,6 +256,8 @@ private class ReviewCommand(
         ReviewResolveCommand(gateway, stdout, stderr),
     )
   }
+
+  override fun help(context: Context): String = "PR Review lifecycle을 관리합니다."
 
   override fun run() = Unit
 }
@@ -392,6 +423,8 @@ private class GateCommand(
         GateReleaseCommand(gateway, stdout, stderr),
     )
   }
+
+  override fun help(context: Context): String = "사람의 Workflow 의사결정을 기록합니다."
 
   override fun run() = Unit
 }

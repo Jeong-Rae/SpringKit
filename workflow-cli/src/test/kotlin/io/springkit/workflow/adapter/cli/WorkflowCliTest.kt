@@ -233,6 +233,30 @@ class WorkflowCliTest :
               "{\"data\":{\"blocked_by\":[],\"code\":\"HUMAN_REQUIRED\",\"message\":\"사람의 결정이 필요합니다.\",\"next\":[]},\"type\":\"failure\"}\n"
           fixture.stderr.toString() shouldContain "완료하지 못했습니다"
         }
+
+        test("--json과 함께 필수 옵션을 누락하면, 실패 JSON 객체 하나를 표준 출력에 기록합니다") {
+          val fixture = fixture { success() }
+
+          val result = fixture.command.test("start --json")
+
+          result.statusCode shouldBe 1
+          fixture.stdout.toString().lineSequence().filter(String::isNotBlank).count() shouldBe 1
+          fixture.stdout.toString() shouldContain "\"type\":\"failure\""
+          fixture.stdout.toString() shouldContain "\"code\":\"INVALID_ARGUMENT\""
+          fixture.stderr.toString().shouldBeEmpty()
+        }
+
+        test("--json과 함께 지원하지 않는 인자를 입력하면, 실패 JSON 객체 하나를 표준 출력에 기록합니다") {
+          val fixture = fixture { success() }
+
+          val result = fixture.command.test("review show --threads closed --json")
+
+          result.statusCode shouldBe 1
+          fixture.stdout.toString().lineSequence().filter(String::isNotBlank).count() shouldBe 1
+          fixture.stdout.toString() shouldContain "\"type\":\"failure\""
+          fixture.stdout.toString() shouldContain "\"code\":\"INVALID_ARGUMENT\""
+          fixture.stderr.toString().shouldBeEmpty()
+        }
       }
     })
 
