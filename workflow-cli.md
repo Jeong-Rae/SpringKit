@@ -97,6 +97,8 @@ Workflow는 명령 접두사 뒤에 작업 이름과 `--request-json <JSON>`을 
 
 외부 Task 조회는 `WORKFLOW_TASK_PROVIDER` 값으로 선택합니다. 기본값 `snapshot`은 Workflow Store를 사용하고, `github-issue`는 설치된 `gh`로 GitHub Issue를 조회합니다.
 
+외부 이벤트 ingress는 Agent용 CLI 명령이 아닙니다. `WorkflowApplicationRuntime`을 호스팅하는 외부 실행 환경이 `WorkflowEventPort`를 구현해 주입합니다. 기본 Native CLI는 ingress를 열지 않으며, 주입된 Port가 없으면 `EVENT_INGRESS_NOT_CONFIGURED`를 반환합니다. Webhook이나 이벤트 daemon은 해당 호스트의 Adapter 범위입니다.
+
 ### Native 빌드와 설치
 
 Gradle이 Native Image를 빌드하고 `tools/workflow`에 설치합니다.

@@ -61,6 +61,8 @@ Git Adapter는 설치된 `git` CLI를 호출해 Worktree를 생성하고 이동�
 
 배포, 외부 공개와 Feature Flag Adapter도 검증된 provider CLI를 토큰 배열로 호출합니다. Workflow는 JSON 요청과 응답을 Domain 모델로 변환하며 provider 인증, 전송과 실제 배포 동작을 재구현하지 않습니다. 명령 구성과 JSON 계약은 [Workflow CLI 명세](workflow-cli.md#외부-provider-cli-구성)을 따릅니다.
 
+외부 이벤트 ingress는 Workflow Application을 호스팅하는 실행 환경이 `WorkflowEventPort`로 주입합니다. Native CLI는 Agent용 공개 명령에 webhook이나 이벤트 daemon을 추가하지 않습니다.
+
 Native Image 빌드는 reflection, resource, dynamic proxy와 동적 class loading 요구를 명시적으로 관리해야 합니다. 런타임에 임의 코드를 불러오는 plugin 방식은 사용하지 않습니다. 필요한 Adapter는 컴파일 시점의 구성 또는 명시적인 런타임 설정으로 선택합니다.
 
 ## 작업 흐름
