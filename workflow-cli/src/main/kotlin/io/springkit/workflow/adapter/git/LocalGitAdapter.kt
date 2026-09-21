@@ -50,6 +50,12 @@ class LocalGitAdapter(
       managedWorkspaceRoot?.let(ManagedPathResolver::canonicalize)
 
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> {
+    validateRemote(request.remote)?.let {
+      return it
+    }
+    validateBranch(request.branch)?.let {
+      return it
+    }
     val fetch = run(listOf("git", "fetch", request.remote, request.branch), repositoryRoot)
     if (fetch is Execution.Failure) return fetch.result
 
@@ -114,6 +120,15 @@ class LocalGitAdapter(
   }
 
   override fun createBranch(request: CreateBranchRequest): PortResult<CreateBranchResponse> {
+    validateBranch(request.branch)?.let {
+      return it
+    }
+    validateBranch(request.baseBranch)?.let {
+      return it
+    }
+    validateRevision(request.baseRevision, "기준 revision")?.let {
+      return it
+    }
     val result = run(listOf("git", "branch", request.branch, request.baseRevision), repositoryRoot)
     if (result is Execution.Failure) return result.result
     return PortResult.Success(
@@ -126,6 +141,9 @@ class LocalGitAdapter(
   }
 
   override fun createWorktree(request: CreateWorktreeRequest): PortResult<CreateWorktreeResponse> {
+    validateBranch(request.branch)?.let {
+      return it
+    }
     val path = managedWorkspacePath(request.path)
     if (managedWorkspaceRoot != null && path == null) {
       return invalidWorkspacePath(request.path.value)
@@ -153,6 +171,18 @@ class LocalGitAdapter(
   }
 
   override fun restack(request: RestackRequest): PortResult<RestackResponse> {
+    validateBranch(request.branch)?.let {
+      return it
+    }
+    validateBranch(request.baseBranch)?.let {
+      return it
+    }
+    validateRevision(request.baseRevision, "동기화 기준 revision")?.let {
+      return it
+    }
+    validateRevision(request.expectedRevision, "예상 revision")?.let {
+      return it
+    }
     val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
     val current = run(listOf("git", "rev-parse", "HEAD"), path)
     if (current is Execution.Failure) return current.result
@@ -255,6 +285,14 @@ class LocalGitAdapter(
   }
 
   override fun removeBranch(request: RemoveBranchRequest): PortResult<RemoveBranchResponse> {
+    validateBranch(request.branch)?.let {
+      return it
+    }
+    request.expectedRevision?.let {
+      validateRevision(it, "예상 branch revision")?.let { failure ->
+        return failure
+      }
+    }
     if (request.expectedRevision != null) {
       val revision = run(listOf("git", "rev-parse", "refs/heads/${request.branch}"), repositoryRoot)
       if (revision is Execution.Failure) return revision.result
@@ -400,11 +438,23 @@ class LocalGitAdapter(
       }
 
   private fun validateBranch(branch: String): PortResult.Failure? =
-      if (branch.isBlank() || !isSafeBranch(branch)) {
+      if (!isSafeBranch(branch)) {
         failure(
             code = "INVALID_ARGUMENT",
             message = "원격 Branch 이름이 안전한 Git ref가 아닙니다.",
             target = branch,
+        )
+      } else {
+        null
+      }
+
+  /** Git start-point가 명령 옵션으로 해석되지 않도록 안전한 revision 토큰인지 확인합니다. */
+  private fun validateRevision(revision: String, label: String): PortResult.Failure? =
+      if (!isSafeToken(revision)) {
+        failure(
+            code = "INVALID_ARGUMENT",
+            message = "${label}이 안전한 Git revision 토큰이 아닙니다.",
+            target = revision,
         )
       } else {
         null
@@ -417,13 +467,18 @@ class LocalGitAdapter(
 
   private fun isSafeBranch(branch: String): Boolean =
       isSafeToken(branch) &&
+          branch != "@" &&
           !branch.startsWith(".") &&
+          !branch.startsWith("/") &&
           !branch.endsWith(".") &&
           !branch.endsWith("/") &&
+          !branch.contains("//") &&
+          !branch.contains("/.") &&
           !branch.contains("..") &&
           !branch.contains("@{") &&
           !branch.contains("\\") &&
-          !branch.any { it in setOf('~', '^', ':', '?', '*', '[') }
+          !branch.any { it in setOf('~', '^', ':', '?', '*', '[') } &&
+          branch.split('/').none { it.endsWith(".lock") }
 
   override fun removeWorktree(request: RemoveWorktreeRequest): PortResult<RemoveWorktreeResponse> {
     val path = managedWorkspacePath(request.path)
@@ -447,6 +502,17 @@ class LocalGitAdapter(
 
   /** 변경을 한 번 커밋한 뒤 원격 Branch 게시를 설치된 Git CLI에 위임합니다. */
   override fun publish(request: PublishBranchRequest): PortResult<PublishBranchResponse> {
+    validateRemote(request.remote)?.let {
+      return it
+    }
+    validateBranch(request.branch)?.let {
+      return it
+    }
+    request.expectedRevision?.let {
+      validateRevision(it, "예상 revision")?.let { failure ->
+        return failure
+      }
+    }
     val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
     val before =
         when (val result = inspect(GitInspectRequest(request.workspaceId))) {

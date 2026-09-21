@@ -13,6 +13,7 @@ import io.springkit.workflow.application.CreateWorktreeRequest
 import io.springkit.workflow.application.GitInspectRequest
 import io.springkit.workflow.application.MainRevisionRequest
 import io.springkit.workflow.application.PortResult
+import io.springkit.workflow.application.PublishBranchRequest
 import io.springkit.workflow.application.RemoveBranchRequest
 import io.springkit.workflow.application.RemoveWorktreeRequest
 import io.springkit.workflow.application.RestackRequest
@@ -163,6 +164,26 @@ class LocalGitAdapterTest :
           runner.commands shouldContainExactly
               listOf(Invocation(listOf("git", "fetch", "origin", "main"), repositoryRoot))
         }
+
+        test("remote가 Git 옵션이면 fetch 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { Path.of("/workspace") }
+
+          val result = adapter.refreshMain(MainRevisionRequest("--upload-pack=evil", "main"))
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("branch가 Git 옵션이면 fetch 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { Path.of("/workspace") }
+
+          val result = adapter.refreshMain(MainRevisionRequest("origin", "--delete"))
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
       }
 
       context("branch를 생성하면") {
@@ -190,6 +211,89 @@ class LocalGitAdapterTest :
                       repositoryRoot,
                   )
               )
+        }
+
+        test("branch와 기준 revision이 Git 옵션이면 명령 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { Path.of("/workspace") }
+
+          val invalidBranch =
+              adapter.createBranch(CreateBranchRequest("--force", "main", "revision-3"))
+          val invalidRevision =
+              adapter.createBranch(CreateBranchRequest("feature/sk-101", "main", "--help"))
+
+          invalidBranch.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          invalidRevision.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe
+              "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
+      }
+
+      context("Git ref 입력을 검증하면") {
+        test("worktree branch가 Git 옵션이면 명령 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { Path.of("/workspace") }
+
+          val result =
+              adapter.createWorktree(
+                  CreateWorktreeRequest("workspace-2", "--detach", WorkspacePath("workspaces/sk-2"))
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("restack 기준 revision이 Git 옵션이면 workspace 조회 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { error("workspace가 조회되면 안 됩니다") }
+
+          val result =
+              adapter.restack(
+                  RestackRequest("workspace-2", "feature/sk-2", "main", "--onto=evil", "head")
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("제거할 branch와 expected revision이 Git 옵션이면 명령 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { Path.of("/workspace") }
+
+          val invalidBranch = adapter.removeBranch(RemoveBranchRequest("--force"))
+          val invalidRevision = adapter.removeBranch(RemoveBranchRequest("feature/sk-2", "--help"))
+
+          invalidBranch.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          invalidRevision.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe
+              "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("publish remote와 branch가 Git 옵션이면 workspace 조회 전에 입력을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { error("workspace가 조회되면 안 됩니다") }
+
+          val invalidRemote =
+              adapter.publish(
+                  PublishBranchRequest(
+                      workspaceId = "workspace-2",
+                      branch = "feature/sk-2",
+                      commitTitle = "변경",
+                      remote = "--receive-pack=evil",
+                  )
+              )
+          val invalidBranch =
+              adapter.publish(
+                  PublishBranchRequest(
+                      workspaceId = "workspace-2",
+                      branch = "--force",
+                      commitTitle = "변경",
+                  )
+              )
+
+          invalidRemote.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          invalidBranch.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
         }
       }
 
