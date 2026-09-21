@@ -7,8 +7,15 @@ plugins {
   id("com.diffplug.spotless") version "8.10.2"
 }
 
+val spotlessRatchetFrom =
+    providers
+        .gradleProperty("spotlessRatchetFrom")
+        .orElse(providers.environmentVariable("SPOTLESS_RATCHET_FROM"))
+        .getOrElse("HEAD")
+
 spotless {
   isEnforceCheck = false
+  ratchetFrom(spotlessRatchetFrom)
 
   kotlinGradle {
     target("**/*.gradle.kts")
@@ -32,6 +39,7 @@ subprojects {
 
   configure<com.diffplug.gradle.spotless.SpotlessExtension> {
     isEnforceCheck = false
+    ratchetFrom(spotlessRatchetFrom)
 
     kotlin {
       target("src/*/kotlin/**/*.kt")
