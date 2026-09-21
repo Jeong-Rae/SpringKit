@@ -4,6 +4,11 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.domain.ChangeRevision
+import io.springkit.workflow.domain.Diff
+import io.springkit.workflow.domain.PullRequest
+import io.springkit.workflow.domain.PullRequestState
+import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.WorkflowResult
@@ -104,6 +109,53 @@ class PostMergeCleanupUseCaseTest :
           git.operations.any { it.startsWith("worktree:") } shouldBe false
           git.operations.any { it.startsWith("local:") } shouldBe false
         }
+
+        test("원격 Branch가 이미 삭제되었으면 저장된 diff identity로 로컬 정리를 재시도합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git =
+              CleanupGit(
+                  parentRevision = "parent-diff",
+                  remoteBranches = emptyList(),
+              )
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-diff")),
+                  )
+              )
+
+          val result =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+          val response =
+              result.shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>().data
+
+          response.state shouldBe PostMergeCleanupState.COMPLETED
+          response.removedRemoteBranches shouldBe emptyList()
+          response.removedWorkspaces shouldBe listOf("ws-${parent.id}")
+          response.removedLocalBranches shouldBe listOf(parent.branch)
+          git.operations.any { it.startsWith("remote:") } shouldBe false
+          git.localExpectedRevisions[parent.branch] shouldBe "parent-diff"
+        }
+
+        test("원격 Branch가 없고 기대 revision을 증명할 수 없으면 로컬 정리를 차단합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED)
+          val git = CleanupGit(remoteBranches = emptyList())
+          val store = CleanupStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(parent)))
+
+          val result =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+          val response =
+              result.shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>().data
+
+          response.state shouldBe PostMergeCleanupState.BLOCKED
+          response.blocks.map { it.code } shouldContain "EXPECTED_REVISION_UNAVAILABLE"
+          git.operations.any { it.startsWith("worktree:") } shouldBe false
+          git.operations.any { it.startsWith("local:") } shouldBe false
+        }
       }
     })
 
@@ -111,6 +163,7 @@ private fun subTask(
     id: String,
     state: SubTaskState = SubTaskState.DEVELOPMENT,
     requires: String? = null,
+    pullRequestId: String? = null,
 ) =
     SubTask(
         id = id,
@@ -119,6 +172,19 @@ private fun subTask(
         state = state,
         workspace = Workspace("ws-$id", id, WorkspacePath("/managed/$id"), id),
         requires = requires,
+        pullRequestId = pullRequestId,
+    )
+
+private fun pullRequest(id: String, diffIdentity: String) =
+    PullRequest(
+        id = id,
+        subTaskId = "sk-parent",
+        title = "parent",
+        body = "body",
+        base = "main",
+        state = PullRequestState.MERGED,
+        reviewRevision = ReviewRevision("review-$id", 1, "body"),
+        changeRevision = ChangeRevision("change-$id", 1, Diff(diffIdentity)),
     )
 
 private class CleanupStore(var current: WorkflowStoreSnapshot) : WorkflowStorePort {

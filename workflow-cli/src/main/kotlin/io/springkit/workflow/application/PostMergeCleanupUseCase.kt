@@ -155,14 +155,46 @@ class PostMergeCleanupUseCase(
             val remoteBranch =
                 remoteResult.value.branches.singleOrNull { it.branch == candidate.branch }
             when {
-              remoteBranch == null ->
+              remoteBranch == null -> {
+                val expectedRevision = expectedLocalRevision(currentSnapshot, candidate)
+                if (expectedRevision == null) {
                   blocks +=
                       PostMergeCleanupBlock(
                           phase = "remote-branch",
                           target = candidate.branch,
-                          code = "REMOTE_BRANCH_NOT_FOUND",
-                          message = "정리할 원격 Branch를 찾을 수 없습니다.",
+                          code = "EXPECTED_REVISION_UNAVAILABLE",
+                          message = "원격 Branch가 없고 로컬 정리를 검증할 기대 revision을 확인할 수 없습니다.",
                       )
+                } else {
+                  val hasWorkspace =
+                      candidate.workspace != null ||
+                          currentSnapshot.workspaces.any { it.subTaskId == candidate.id }
+                  val inspection = inspectLocalArtifact(currentSnapshot, candidate, blocks)
+                  if (inspection != null && inspection.status.revision != expectedRevision) {
+                    blocks +=
+                        PostMergeCleanupBlock(
+                            phase = "worktree",
+                            target = inspection.workspaceId,
+                            code = "UNPUSHED_COMMIT",
+                            message = "Worktree HEAD가 저장된 기대 revision과 달라 정리하지 않았습니다.",
+                        )
+                  }
+                  if (
+                      (!hasWorkspace || inspection != null) &&
+                          blocks.none { it.phase == "worktree" }
+                  ) {
+                    val local =
+                        removeLocalArtifacts(
+                            candidate,
+                            inspection,
+                            expectedRevision,
+                            blocks,
+                        )
+                    removedWorkspaces = local.workspaces
+                    removedLocal = local.branches
+                  }
+                }
+              }
               remoteBranch.revision.isNullOrBlank() ->
                   blocks +=
                       PostMergeCleanupBlock(
@@ -390,3 +422,17 @@ private fun PortResult.Failure.toCleanupBlock(
     fallbackTarget: String,
 ): PostMergeCleanupBlock =
     PostMergeCleanupBlock(phase, error.target ?: fallbackTarget, error.code, error.message)
+
+private fun expectedLocalRevision(
+    snapshot: WorkflowStoreSnapshot,
+    subTask: SubTask,
+): String? =
+    subTask.pullRequestId
+        ?.let { pullRequestId ->
+          snapshot.pullRequests
+              .firstOrNull { it.id == pullRequestId }
+              ?.changeRevision
+              ?.diff
+              ?.identity
+        }
+        ?.takeIf { it.isNotBlank() }
