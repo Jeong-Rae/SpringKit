@@ -38,6 +38,7 @@ import io.springkit.workflow.application.MergeQueueLifecycleRequest
 import io.springkit.workflow.application.PortError
 import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.application.PostMergeCleanupRequest
+import io.springkit.workflow.application.PostMergeCleanupResponse
 import io.springkit.workflow.application.PostMergeCleanupUseCase
 import io.springkit.workflow.application.ReleaseLifecycleUseCases
 import io.springkit.workflow.application.ReleasePort
@@ -367,7 +368,10 @@ fun createDefaultApplicationRuntime(
                                     )
                                 )
                             if (deployment is io.springkit.workflow.domain.WorkflowResult.Failure) {
-                              return@WorkflowEventHandler deployment
+                              return@WorkflowEventHandler deployment.withCleanupRetry(
+                                  cleanup,
+                                  merged.data.subTask.id,
+                              )
                             }
                             val deploymentSuccess =
                                 deployment
@@ -438,7 +442,10 @@ fun createDefaultApplicationRuntime(
                                 )
                             )
                         if (deployment is io.springkit.workflow.domain.WorkflowResult.Failure) {
-                          return@WorkflowEventHandler deployment
+                          return@WorkflowEventHandler deployment.withCleanupRetry(
+                              cleanup,
+                              event.targetId,
+                          )
                         }
                         when (cleanup) {
                           is io.springkit.workflow.domain.WorkflowResult.Success -> deployment
@@ -710,6 +717,59 @@ private fun io.springkit.workflow.domain.FailureData.toBlockedCleanup(
               }
             },
     )
+
+/** 배포 실패에 독립적인 cleanup 차단 원인과 재시도 행동을 함께 보존합니다. */
+internal fun WorkflowResult.Failure.withCleanupRetry(
+    cleanup: WorkflowResult<PostMergeCleanupResponse>,
+    mergedSubTaskId: String,
+): WorkflowResult.Failure {
+  val cleanupBlocks =
+      when (cleanup) {
+        is WorkflowResult.Success -> {
+          if (
+              cleanup.data.state ==
+                  io.springkit.workflow.application.PostMergeCleanupState.COMPLETED
+          ) {
+            return this
+          }
+          cleanup.data.blocks.map {
+            BlockedBy(
+                code = it.code,
+                message = it.message,
+                target = it.target,
+            )
+          }
+        }
+        is WorkflowResult.Failure ->
+            cleanup.data.blockedBy.ifEmpty {
+              listOf(
+                  BlockedBy(
+                      code = cleanup.data.code.name,
+                      message = cleanup.data.message,
+                      target = mergedSubTaskId,
+                  )
+              )
+            }
+      }
+  val cleanupNext =
+      when (cleanup) {
+        is WorkflowResult.Success -> cleanup.next
+        is WorkflowResult.Failure -> cleanup.data.next
+      } +
+          io.springkit.workflow.domain.NextAction(
+              io.springkit.workflow.domain.ActorKind.WORKFLOW,
+              "retry_cleanup",
+          )
+  return WorkflowResult.Failure(
+      data.copy(
+          blockedBy = (data.blockedBy + cleanupBlocks).distinct(),
+          next =
+              (data.next + cleanupNext).distinctBy {
+                Triple(it.actor, it.action, it.command)
+              },
+      )
+  )
+}
 
 /** 외부 어댑터가 조회한 Merge Queue 항목을 잠금 가능한 Store에 반영합니다. */
 private fun persistMergeQueueEntry(

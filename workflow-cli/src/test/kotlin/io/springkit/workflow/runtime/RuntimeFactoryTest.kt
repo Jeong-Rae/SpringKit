@@ -3,6 +3,7 @@ package io.springkit.workflow.runtime
 import com.github.ajalt.clikt.testing.test
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
@@ -15,12 +16,19 @@ import io.springkit.workflow.adapter.github.GithubIssueTaskAdapter
 import io.springkit.workflow.adapter.json.encodeToString
 import io.springkit.workflow.adapter.local.SnapshotTaskAdapter
 import io.springkit.workflow.adapter.store.WorkflowStateJsonCodec
+import io.springkit.workflow.application.PostMergeCleanupBlock
+import io.springkit.workflow.application.PostMergeCleanupResponse
+import io.springkit.workflow.application.PostMergeCleanupState
 import io.springkit.workflow.application.WorkflowStoreSnapshot
 import io.springkit.workflow.common.CommandResult
 import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.domain.Actor
 import io.springkit.workflow.domain.ActorKind
+import io.springkit.workflow.domain.BlockedBy
 import io.springkit.workflow.domain.ExternalTaskId
+import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.FailureData
+import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.ReviewComment
 import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.ReviewThread
@@ -28,6 +36,7 @@ import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.Task
 import io.springkit.workflow.domain.TaskState
 import io.springkit.workflow.domain.ThreadState
+import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.WorkflowState
 import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspacePath
@@ -166,6 +175,42 @@ class RuntimeFactoryTest :
 
           failure.message shouldContain "WORKFLOW_DEPLOYMENT_COMMAND"
           failure.message shouldContain "JSON"
+        }
+      }
+
+      context("병합 이후 cleanup과 배포가 모두 실패하면") {
+        test("배포 실패 결과에 cleanup 차단 원인과 재시도 행동을 보존합니다") {
+          val deploymentFailure =
+              WorkflowResult.Failure(
+                  FailureData(
+                      code = FailureCode.EXTERNAL_FAILURE,
+                      message = "배포 provider 실패",
+                      blockedBy = listOf(BlockedBy("DEPLOYMENT_FAILED", "배포 실패", "candidate-1")),
+                  )
+              )
+          val cleanup =
+              WorkflowResult.Success(
+                  PostMergeCleanupResponse(
+                      mergedSubTaskId = "sk-101",
+                      state = PostMergeCleanupState.BLOCKED,
+                      blocks =
+                          listOf(
+                              PostMergeCleanupBlock(
+                                  phase = "worktree",
+                                  target = "workspace-1",
+                                  code = "WORKTREE_DIRTY",
+                                  message = "Worktree에 게시되지 않은 변경이 있습니다.",
+                              )
+                          ),
+                  ),
+                  next = listOf(NextAction(ActorKind.WORKFLOW, "retry_cleanup")),
+              )
+
+          val combined = deploymentFailure.withCleanupRetry(cleanup, "sk-101")
+
+          combined.data.blockedBy.map(BlockedBy::code) shouldContain "DEPLOYMENT_FAILED"
+          combined.data.blockedBy.map(BlockedBy::code) shouldContain "WORKTREE_DIRTY"
+          combined.data.next shouldContain NextAction(ActorKind.WORKFLOW, "retry_cleanup")
         }
       }
 
