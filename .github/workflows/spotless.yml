@@ -1,0 +1,40 @@
+name: Spotless
+
+on:
+  pull_request:
+    paths:
+      - "template/spring-boot-kotlin/**"
+      - "template/spring-boot-kotlin-multi-module/**"
+      - ".github/workflows/spotless.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - template/spring-boot-kotlin
+          - template/spring-boot-kotlin-multi-module
+    env:
+      SPOTLESS_RATCHET_FROM: ${{ github.event.pull_request.base.sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Check Spotless
+        working-directory: ${{ matrix.project }}
+        run: ./gradlew spotlessCheck
