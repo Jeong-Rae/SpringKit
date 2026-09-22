@@ -81,8 +81,13 @@ class WorkflowCommandGateway(
           is WorkflowCommandRequest.GateDeploy -> gateDeploy(request)
           is WorkflowCommandRequest.GateRelease -> gateRelease(request)
         }
-      } catch (failure: Exception) {
+      } catch (failure: InvalidWorkflowCommandArgument) {
         failure(FailureCode.INVALID_ARGUMENT, failure.message ?: "명령 인자를 처리할 수 없습니다.")
+      } catch (failure: Exception) {
+        failure(
+            FailureCode.INVARIANT_VIOLATION,
+            "명령 실행 중 예상하지 못한 오류가 발생했습니다: " + (failure.message ?: failure::class.simpleName),
+        )
       }
 
   private fun start(request: WorkflowCommandRequest.Start) =
@@ -201,7 +206,12 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            review.show(GetReviewRequest(current.pullRequestId))
+            review.show(GetReviewRequest(current.pullRequestId)).flatMap { shown ->
+              status.status(StatusRequest(subTaskId = shown.pullRequest.subTaskId)).map {
+                  currentStatus ->
+                ReviewShowView(shown.pullRequest, currentStatus)
+              }
+            }
           }
           .toJson { data ->
             val pullRequest = data.pullRequest
@@ -250,25 +260,22 @@ class WorkflowCommandGateway(
               put(
                   "blocked_by",
                   kotlinx.serialization.json.buildJsonArray {
-                    listedThreads
-                        .filter { it.isBlocking }
-                        .forEach { thread ->
-                          add(
-                              buildJsonObject {
-                                put("code", "OPEN_REQUIRED_THREAD")
-                                put("message", "해결되지 않은 [R] thread가 있습니다.")
-                                put("target", thread.id)
-                              }
-                          )
-                        }
+                    data.status.blockedBy.forEach { blocker ->
+                      add(
+                          buildJsonObject {
+                            put("code", blocker.code)
+                            put("message", blocker.message)
+                            blocker.target?.let { put("target", it) }
+                          }
+                      )
+                    }
                   },
               )
               put(
                   "next",
-                  reviewNextJson(
-                      pullRequest,
-                      listedThreads.any { it.isBlocking },
-                  ),
+                  kotlinx.serialization.json.buildJsonArray {
+                    data.status.next.forEach { add(nextJson(it)) }
+                  },
               )
               if (request.diff) {
                 put(
@@ -696,22 +703,6 @@ class WorkflowCommandGateway(
         put("ai_review", review.aiReview.name)
       }
 
-  private fun reviewNextJson(
-      pullRequest: io.springkit.workflow.domain.PullRequest,
-      hasOpenRequiredThread: Boolean,
-  ) =
-      kotlinx.serialization.json.buildJsonArray {
-        when {
-          hasOpenRequiredThread ->
-              add(nextJson(NextAction(ActorKind.AGENT, "resolve_required_threads")))
-          pullRequest.state == io.springkit.workflow.domain.PullRequestState.DRAFT ->
-              add(nextJson(NextAction(ActorKind.HUMAN, "mark_ready")))
-          pullRequest.approval == null ->
-              add(nextJson(NextAction(ActorKind.HUMAN, "approve_change")))
-          else -> add(nextJson(NextAction(ActorKind.WORKFLOW, "enter_merge_queue")))
-        }
-      }
-
   private fun statusIntegrationJson(
       integration: io.springkit.workflow.application.StatusIntegration
   ) = buildJsonObject {
@@ -788,14 +779,14 @@ class WorkflowCommandGateway(
       when (lowercase()) {
         "normal" -> Risk.NORMAL
         "high" -> Risk.HIGH
-        else -> throw IllegalArgumentException("--risk는 normal 또는 high여야 합니다.")
+        else -> throw InvalidWorkflowCommandArgument("--risk는 normal 또는 high여야 합니다.")
       }
 
   private fun String.toExposure(): Exposure =
       when (lowercase()) {
         "unchanged" -> Exposure.UNCHANGED
         "feature-flag" -> Exposure.FEATURE_FLAG
-        else -> throw IllegalArgumentException("--exposure는 unchanged 또는 feature-flag여야 합니다.")
+        else -> throw InvalidWorkflowCommandArgument("--exposure는 unchanged 또는 feature-flag여야 합니다.")
       }
 
   private fun String.toReviewLevel(): ReviewLevel =
@@ -803,7 +794,7 @@ class WorkflowCommandGateway(
         "R" -> ReviewLevel.R
         "C" -> ReviewLevel.C
         "A" -> ReviewLevel.A
-        else -> throw IllegalArgumentException("--level은 R, C 또는 A여야 합니다.")
+        else -> throw InvalidWorkflowCommandArgument("--level은 R, C 또는 A여야 합니다.")
       }
 
   private fun <T> WorkflowResult<T>.toJson(encoder: (T) -> JsonObject): WorkflowResult<JsonObject> =
@@ -879,6 +870,13 @@ class WorkflowCommandGateway(
           FailureData(code, message, blockedBy = listOf(BlockedBy(code.name, message)))
       )
 }
+
+private data class ReviewShowView(
+    val pullRequest: io.springkit.workflow.domain.PullRequest,
+    val status: io.springkit.workflow.application.StatusResponse,
+)
+
+private class InvalidWorkflowCommandArgument(message: String) : RuntimeException(message)
 
 /** Stack 성공 결과를 명세의 JSON 계약으로 변환합니다. */
 internal fun stackResponseJson(data: io.springkit.workflow.application.StackResponse): JsonObject =

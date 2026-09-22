@@ -162,6 +162,22 @@ class StatusUseCase(
     private val deploymentPort: DeploymentPort? = null,
     private val releasePort: ReleasePort? = null,
 ) {
+  private companion object {
+    const val DEPENDENCY_NOT_MERGED = "DEPENDENCY_NOT_MERGED"
+    const val VALIDATION_REQUIRED = "VALIDATION_REQUIRED"
+    const val CI_NOT_PASSED = "CI_NOT_PASSED"
+    const val AI_REVIEW_FAILED = "AI_REVIEW_FAILED"
+    const val REQUIRED_THREAD_OPEN = "REQUIRED_THREAD_OPEN"
+    const val MERGE_QUEUE_FAILED = "MERGE_QUEUE_FAILED"
+    const val DEPLOYMENT_GATE_BLOCKED = "DEPLOYMENT_GATE_BLOCKED"
+
+    const val RESOLVE_REQUIRED_THREADS = "resolve_required_threads"
+    const val FIX_VALIDATION = "fix_validation"
+    const val AWAIT_CI = "await_ci"
+    const val AWAIT_DEPENDENCY = "await_dependency"
+    const val FIX_MERGE_QUEUE = "fix_merge_queue"
+  }
+
   fun status(request: StatusRequest = StatusRequest()): WorkflowResult<StatusResponse> =
       execute(request)
 
@@ -572,7 +588,7 @@ class StatusUseCase(
       if (parent?.state != SubTaskState.MERGED) {
         blockers +=
             BlockedBy(
-                "DEPENDENCY_NOT_MERGED",
+                DEPENDENCY_NOT_MERGED,
                 "direct dependency is not integrated into main",
                 dependency,
             )
@@ -582,23 +598,22 @@ class StatusUseCase(
       validations
           .filter { it.required && it.status != ValidationStatus.PASSED }
           .forEach {
-            blockers +=
-                BlockedBy("VALIDATION_REQUIRED", "required validation has not passed", it.id)
+            blockers += BlockedBy(VALIDATION_REQUIRED, "required validation has not passed", it.id)
           }
       if (review.ci != CiStatus.PASSED)
-          blockers += BlockedBy("CI_NOT_PASSED", "required PR CI has not passed", subTask.id)
+          blockers += BlockedBy(CI_NOT_PASSED, "required PR CI has not passed", subTask.id)
       if (review.aiReview == AiReviewStatus.FAILED)
-          blockers += BlockedBy("AI_REVIEW_FAILED", "AI review failed", subTask.id)
+          blockers += BlockedBy(AI_REVIEW_FAILED, "AI review failed", subTask.id)
       review.reviewRevision.openRequiredThreads.forEach {
         blockers +=
-            BlockedBy("REQUIRED_THREAD_OPEN", "an unresolved [R] review thread remains", it.id)
+            BlockedBy(REQUIRED_THREAD_OPEN, "an unresolved [R] review thread remains", it.id)
       }
     }
     if (integration.mergeQueue?.state == MergeQueueState.FAILED) {
-      blockers += BlockedBy("MERGE_QUEUE_FAILED", "merge queue validation failed", subTask.id)
+      blockers += BlockedBy(MERGE_QUEUE_FAILED, "merge queue validation failed", subTask.id)
     }
     if (candidate?.state == DeploymentCandidateState.FAILED) {
-      blockers += BlockedBy("DEPLOYMENT_GATE_BLOCKED", "deployment candidate failed", candidate.id)
+      blockers += BlockedBy(DEPLOYMENT_GATE_BLOCKED, "deployment candidate failed", candidate.id)
     }
     return blockers.distinctBy { Triple(it.code, it.target, it.message) }
   }
@@ -621,7 +636,8 @@ class StatusUseCase(
                   "ready_review",
                   "./tools/workflow gate ready ${subTask.id} --review-revision ${review?.reviewRevision?.id ?: "<revision>"}",
               )
-      subTask.state == SubTaskState.READY || subTask.state == SubTaskState.REVIEW ->
+      (subTask.state == SubTaskState.READY || subTask.state == SubTaskState.REVIEW) &&
+          blockers.isEmpty() ->
           next +=
               NextAction(
                   ActorKind.HUMAN,
@@ -632,10 +648,23 @@ class StatusUseCase(
           blockers.isEmpty() &&
           integration.mergeQueue == null -> next += NextAction(ActorKind.WORKFLOW, "enqueue_merge")
     }
+    if (subTask.state != SubTaskState.DRAFT && blockers.isNotEmpty()) {
+      next += blockers.mapNotNull(::blockerNextAction)
+    }
     if (candidate != null) next += candidateNext(candidate)
     if (release != null) next += releaseNext(release)
     return next.distinct()
   }
+
+  private fun blockerNextAction(blocker: BlockedBy): NextAction? =
+      when (blocker.code) {
+        REQUIRED_THREAD_OPEN -> NextAction(ActorKind.AGENT, RESOLVE_REQUIRED_THREADS)
+        VALIDATION_REQUIRED -> NextAction(ActorKind.AGENT, FIX_VALIDATION)
+        CI_NOT_PASSED -> NextAction(ActorKind.WORKFLOW, AWAIT_CI)
+        DEPENDENCY_NOT_MERGED -> NextAction(ActorKind.WORKFLOW, AWAIT_DEPENDENCY)
+        MERGE_QUEUE_FAILED -> NextAction(ActorKind.AGENT, FIX_MERGE_QUEUE)
+        else -> null
+      }
 
   private fun candidateNext(candidate: DeploymentCandidate): List<NextAction> =
       when (candidate.state) {

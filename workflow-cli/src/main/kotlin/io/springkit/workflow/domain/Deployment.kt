@@ -88,12 +88,20 @@ fun nextReleaseAction(release: Release): NextAction? =
       ReleaseState.INTERNAL_VALIDATION,
       ->
           if (release.productionReady && release.internalValidationPassed) {
-            NextAction(ActorKind.HUMAN, "approve_release", "gate release ${release.id}")
+            NextAction(
+                ActorKind.HUMAN,
+                "approve_release",
+                "./tools/workflow gate release ${release.id}",
+            )
           } else {
             NextAction(ActorKind.WORKFLOW, "validate_release", null)
           }
       ReleaseState.AWAITING_RELEASE_APPROVAL ->
-          NextAction(ActorKind.HUMAN, "approve_release", "gate release ${release.id}")
+          NextAction(
+              ActorKind.HUMAN,
+              "approve_release",
+              "./tools/workflow gate release ${release.id}",
+          )
       ReleaseState.ROLLOUT -> NextAction(ActorKind.WORKFLOW, "continue_rollout", null)
       ReleaseState.CLEANUP_REQUIRED ->
           NextAction(ActorKind.WORKFLOW, "create_cleanup_subtask", null)

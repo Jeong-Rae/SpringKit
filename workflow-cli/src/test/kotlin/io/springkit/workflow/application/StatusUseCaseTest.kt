@@ -1,9 +1,18 @@
 package io.springkit.workflow.application
 
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.domain.ChangeRevision
+import io.springkit.workflow.domain.CiStatus
+import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.FailureCode
+import io.springkit.workflow.domain.PullRequest
+import io.springkit.workflow.domain.PullRequestState
+import io.springkit.workflow.domain.ReviewRevision
+import io.springkit.workflow.domain.SubTask
+import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.WorkflowResult
 
 class StatusUseCaseTest :
@@ -78,11 +87,73 @@ class StatusUseCaseTest :
               StatusSelector.SubTask("sk-101")
         }
       }
+
+      context("Review가 Merge Queue 차단 조건을 가진 상황에서") {
+        test("차단 사유와 해결 행동을 반환하고 승인을 다음 행동으로 제안하지 않습니다") {
+          val snapshot =
+              reviewSnapshot(SubTaskState.REVIEW, PullRequestState.REVIEW, CiStatus.PENDING)
+
+          val result =
+              StatusUseCase(FakeStatusStore(snapshot)).execute(StatusRequest(subTaskId = "sk-101"))
+
+          val status = result.shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>().data
+          status.blockedBy.map { it.code } shouldBe listOf("CI_NOT_PASSED")
+          status.next.map { it.action } shouldBe listOf("await_ci")
+          status.next.map { it.action } shouldNotContain "approve_change"
+        }
+
+        test("Draft Review는 정규화된 ready 명령을 반환합니다") {
+          val snapshot =
+              reviewSnapshot(SubTaskState.DRAFT, PullRequestState.DRAFT, CiStatus.PENDING)
+
+          val result =
+              StatusUseCase(FakeStatusStore(snapshot)).execute(StatusRequest(subTaskId = "sk-101"))
+
+          val next = result.shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>().data.next
+          next.single().action shouldBe "ready_review"
+          next.single().command shouldBe "./tools/workflow gate ready sk-101 --review-revision rv-1"
+        }
+      }
     })
 
-private class FakeStatusStore : WorkflowStorePort {
+private fun reviewSnapshot(
+    subTaskState: SubTaskState,
+    reviewState: PullRequestState,
+    ciStatus: CiStatus,
+): WorkflowStoreSnapshot =
+    WorkflowStoreSnapshot(
+        revision = "store-1",
+        subTasks =
+            listOf(
+                SubTask(
+                    id = "sk-101",
+                    taskId = "task-1",
+                    title = "상태 계약",
+                    state = subTaskState,
+                    pullRequestId = "pr-1",
+                )
+            ),
+        pullRequests =
+            listOf(
+                PullRequest(
+                    id = "pr-1",
+                    subTaskId = "sk-101",
+                    title = "상태 계약",
+                    body = "상태 계약을 검증합니다.",
+                    base = "main",
+                    state = reviewState,
+                    reviewRevision = ReviewRevision("rv-1", 1, "상태 계약을 검증합니다."),
+                    changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
+                    ci = ciStatus,
+                )
+            ),
+    )
+
+private class FakeStatusStore(
+    private val current: WorkflowStoreSnapshot = WorkflowStoreSnapshot("store-1")
+) : WorkflowStorePort {
   override fun snapshot(request: StoreSnapshotRequest) =
-      PortResult.Success(StoreSnapshotResponse(WorkflowStoreSnapshot("store-1")))
+      PortResult.Success(StoreSnapshotResponse(current))
 
   override fun begin(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
       unused()

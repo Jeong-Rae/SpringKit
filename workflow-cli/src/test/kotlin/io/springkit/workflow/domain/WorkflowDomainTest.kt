@@ -99,6 +99,23 @@ class WorkflowDomainTest :
       }
 
       context("release 후속 작업을 결정할 때") {
+        test("공개 승인 대기 상태이면, 실행 가능한 Workflow CLI 명령을 반환합니다") {
+          val release =
+              Release(
+                  id = "rel-1",
+                  candidateId = "dc-1",
+                  featureFlagId = "flag-v2",
+                  state = ReleaseState.AWAITING_RELEASE_APPROVAL,
+                  productionReady = true,
+                  internalValidationPassed = true,
+              )
+
+          val action = nextReleaseAction(release).shouldNotBeNull()
+
+          action.action shouldBe "approve_release"
+          action.command shouldBe "./tools/workflow gate release rel-1"
+        }
+
         test("rollout이 해제된 release이면, cleanup subtask 생성 작업을 반환합니다") {
           val release =
               Release(
