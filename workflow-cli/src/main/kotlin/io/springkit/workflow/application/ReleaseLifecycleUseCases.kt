@@ -182,13 +182,76 @@ class ReleaseLifecycleUseCases(
     if (releaseId == null) {
       return failure(FailureCode.EXTERNAL_FAILURE, "release id could not be issued", candidate.id)
     }
+    val latestSnapshot =
+        if (request.releaseId == null) {
+          loadSnapshot() ?: return lastFailure
+        } else {
+          snapshot
+        }
+    val latestCandidate =
+        if (request.releaseId == null) {
+          latestSnapshot.candidates.firstOrNull { it.id == request.candidateId }
+              ?: return failure(
+                  FailureCode.DEPLOYMENT_NOT_FOUND,
+                  "deployment candidate was not found",
+                  request.candidateId,
+              )
+        } else {
+          candidate
+        }
+    val latestFlagged =
+        if (request.releaseId == null) {
+          featureFlagSubTask(latestSnapshot, latestCandidate, selectedFlagged.featureFlagId)
+              ?: return failure(
+                  FailureCode.INVALID_GATE_STATE,
+                  "production candidate does not contain a Feature Flag SubTask",
+                  latestCandidate.id,
+              )
+        } else {
+          selectedFlagged
+        }
+    val latestExisting =
+        latestSnapshot.releases.firstOrNull {
+          it.candidateId == latestCandidate.id && it.featureFlagId == latestFlagged.featureFlagId
+        }
+    if (latestExisting != null) {
+      if (request.releaseId != null && request.releaseId != latestExisting.id) {
+        return failure(
+            FailureCode.IDEMPOTENCY_CONFLICT,
+            "release request targets a different existing release",
+            latestCandidate.id,
+        )
+      }
+      return responseFor(latestSnapshot, latestExisting)
+    }
+    if (
+        request.releaseId != null &&
+            latestSnapshot.releases.any {
+              it.id == request.releaseId &&
+                  (it.candidateId != latestCandidate.id ||
+                      it.featureFlagId != latestFlagged.featureFlagId)
+            }
+    ) {
+      return failure(
+          FailureCode.IDEMPOTENCY_CONFLICT,
+          "release request targets a different existing release",
+          latestCandidate.id,
+      )
+    }
+    if (latestCandidate.state != DeploymentCandidateState.PRODUCTION) {
+      return failure(
+          FailureCode.RELEASE_GATE_BLOCKED,
+          "release requires a production deployment candidate",
+          latestCandidate.id,
+      )
+    }
     val transaction =
         transaction(
-            snapshot.revision,
+            latestSnapshot.revision,
             "release-create:${request.requestId}:${selectedFlagged.featureFlagId}",
         )
     return executeReleaseTransaction(transaction) { current, changes ->
-      createAndValidate(current, request, candidate, selectedFlagged, releaseId, changes)
+      createAndValidate(current, request, latestCandidate, latestFlagged, releaseId, changes)
     }
   }
 

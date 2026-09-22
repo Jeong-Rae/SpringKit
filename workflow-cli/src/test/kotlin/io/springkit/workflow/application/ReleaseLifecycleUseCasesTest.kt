@@ -4,6 +4,8 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.adapter.store.OkioWorkflowStoreAdapter
+import io.springkit.workflow.adapter.store.StoreIdAdapter
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
@@ -17,6 +19,8 @@ import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.Validation
 import io.springkit.workflow.domain.ValidationStatus
 import io.springkit.workflow.domain.WorkflowResult
+import okio.Path.Companion.toPath
+import okio.fakefilesystem.FakeFileSystem
 
 class ReleaseLifecycleUseCasesTest :
     FunSpec({
@@ -68,6 +72,36 @@ class ReleaseLifecycleUseCasesTest :
           releasePort.createCalls shouldBe 2
           releasePort.validateCalls shouldBe 2
           store.written?.releases?.map { it.featureFlagId } shouldBe listOf("flag-1", "flag-2")
+        }
+
+        test("실제 Store에서 Release ID를 발급하면, 최신 revision으로 여러 Release를 생성합니다") {
+          val fileSystem = FakeFileSystem()
+          val path = "/workflow/state.json".toPath()
+          val store = OkioWorkflowStoreAdapter(fileSystem, path)
+          val initial = snapshot(featureFlagIds = listOf("flag-1", "flag-2")).copy(revision = "0")
+          writeSnapshot(store, initial)
+          val releasePort = ReleaseRecordingPort()
+
+          val result =
+              ReleaseLifecycleUseCases(store, releasePort, idPort = StoreIdAdapter(store))
+                  .handleDeploymentAll(
+                      DeploymentRecorded("candidate-1", DeploymentCandidateState.PRODUCTION)
+                  )
+
+          val success =
+              result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
+          success.data.map { it.release.id } shouldBe listOf("rel-1", "rel-2")
+          success.data.map { it.release.featureFlagId } shouldBe listOf("flag-1", "flag-2")
+          releasePort.createCalls shouldBe 2
+          releasePort.validateCalls shouldBe 2
+          val stored =
+              store
+                  .snapshot(StoreSnapshotRequest())
+                  .shouldBeInstanceOf<PortResult.Success<StoreSnapshotResponse>>()
+          stored.value.snapshot.revision shouldBe "5"
+          stored.value.snapshot.sequence.release shouldBe 2
+          stored.value.snapshot.releases.map { it.featureFlagId } shouldBe
+              listOf("flag-1", "flag-2")
         }
 
         test("한 Feature Flag Release가 이미 있으면, 다른 Feature Flag Release 생성을 생략하지 않습니다") {
@@ -189,6 +223,13 @@ private fun snapshot(
         candidates = listOf(productionCandidate(featureFlagIds)),
         releases = listOfNotNull(release),
     )
+
+private fun writeSnapshot(store: WorkflowStorePort, snapshot: WorkflowStoreSnapshot) {
+  val transaction = StoreTransactionRequest("seed", snapshot.revision, "seed")
+  store.begin(transaction)
+  store.write(StoreWriteRequest(transaction.transactionId, snapshot.revision, snapshot))
+  store.commit(transaction)
+}
 
 private fun productionCandidate(featureFlagIds: List<String>) =
     DeploymentCandidate(
