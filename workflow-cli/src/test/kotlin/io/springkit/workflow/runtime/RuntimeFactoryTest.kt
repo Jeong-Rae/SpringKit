@@ -15,7 +15,10 @@ import io.springkit.workflow.adapter.cli.WorkflowCommandRequest
 import io.springkit.workflow.adapter.github.GithubIssueTaskAdapter
 import io.springkit.workflow.adapter.json.encodeToString
 import io.springkit.workflow.adapter.local.SnapshotTaskAdapter
+import io.springkit.workflow.adapter.provider.ProviderDeploymentAdapter
+import io.springkit.workflow.adapter.store.OkioWorkflowStoreAdapter
 import io.springkit.workflow.adapter.store.WorkflowStateJsonCodec
+import io.springkit.workflow.application.DeploymentLifecycleUseCase
 import io.springkit.workflow.application.PostMergeCleanupBlock
 import io.springkit.workflow.application.PostMergeCleanupResponse
 import io.springkit.workflow.application.PostMergeCleanupState
@@ -25,6 +28,8 @@ import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.domain.Actor
 import io.springkit.workflow.domain.ActorKind
 import io.springkit.workflow.domain.BlockedBy
+import io.springkit.workflow.domain.DeploymentCandidate
+import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
@@ -36,13 +41,18 @@ import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.Task
 import io.springkit.workflow.domain.TaskState
 import io.springkit.workflow.domain.ThreadState
+import io.springkit.workflow.domain.Validation
+import io.springkit.workflow.domain.ValidationStatus
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.WorkflowState
 import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspacePath
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
+import okio.Path.Companion.toPath
 
 class RuntimeFactoryTest :
     FunSpec({
@@ -214,9 +224,49 @@ class RuntimeFactoryTest :
         }
       }
 
+      context("Production 이후 다음 배포 후보를 읽을 때") {
+        test("Store snapshot이 실패하면, STORE_FAILURE을 구조화해 반환합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-next-candidate-store-failure-")
+          val statePath = root.resolve("state.json")
+          Files.writeString(statePath, "잘못된 상태")
+          val store = OkioWorkflowStoreAdapter(statePath.toString().toPath())
+          val deploymentLifecycle =
+              DeploymentLifecycleUseCase(
+                  storePort = store,
+                  deploymentPort =
+                      ProviderDeploymentAdapter(
+                          commandPrefix = listOf("deploy"),
+                          workingDirectory = root,
+                          commandRunner = RuntimeCommandRunner(root),
+                      ),
+              )
+          val production =
+              DeploymentCandidate(
+                  id = "candidate-1",
+                  mainRevision = "main-1",
+                  includedSubTasks = emptyList(),
+                  validations = listOf(Validation("validation-1", "검증", ValidationStatus.PASSED)),
+                  state = DeploymentCandidateState.PRODUCTION,
+              )
+
+          val result =
+              createNextCandidateAfterProduction(
+                  store = store,
+                  deploymentLifecycle = deploymentLifecycle,
+                  production = production,
+                  requestId = "event-1",
+              )
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>()
+          failure.data.code shouldBe FailureCode.STORE_FAILURE
+          failure.data.blockedBy.single().target shouldBe "store"
+        }
+      }
+
       context("기본 런타임을 CLI에 연결할 때") {
         test("help를 요청하면, 공개 Workflow 명령 목록을 출력합니다") {
           val root = Files.createTempDirectory("workflow-runtime-help-")
+          val output = ByteArrayOutputStream()
           val command =
               WorkflowCli(
                   createDefaultRuntime(
@@ -224,14 +274,15 @@ class RuntimeFactoryTest :
                       environment = mapOf("WORKFLOW_REPO_ROOT" to root.toString()),
                       commandRunner = RuntimeCommandRunner(root),
                   ),
+                  stdout = PrintStream(output),
               )
 
           val result = command.test("--help")
 
           result.statusCode shouldBe 0
-          result.stdout shouldContain "start"
-          result.stdout shouldContain "review"
-          result.stdout shouldContain "gate"
+          output.toString() shouldContain "start"
+          output.toString() shouldContain "review"
+          output.toString() shouldContain "gate"
         }
 
         test("빈 Store에서 status JSON을 요청하면, 관리 Workspace 없음 실패를 반환합니다") {
@@ -328,6 +379,7 @@ class RuntimeFactoryTest :
               ),
           )
           Files.writeString(bodyPath, "PR 본문")
+          val commandRunner = RuntimeCommandRunner(root)
           val gateway =
               createDefaultRuntime(
                   currentDirectory = root,
@@ -335,8 +387,10 @@ class RuntimeFactoryTest :
                       mapOf(
                           "WORKFLOW_REPO_ROOT" to root.toString(),
                           "WORKFLOW_STATE_FILE" to statePath.toString(),
+                          "GH_USER" to "agent-1",
+                          "WORKFLOW_ACTOR_KIND" to "AGENT",
                       ),
-                  commandRunner = RuntimeCommandRunner(root),
+                  commandRunner = commandRunner,
               )
 
           gateway
@@ -365,13 +419,13 @@ class RuntimeFactoryTest :
               ReviewThread(
                   id = "thread-open",
                   level = ReviewLevel.R,
-                  comments = listOf(ReviewComment("comment-open", agent, "열린 의견")),
+                  comments = listOf(ReviewComment("comment-open", agent, "[Agent] [R] 열린 의견")),
               )
           val resolvedThread =
               ReviewThread(
                   id = "thread-resolved",
                   level = ReviewLevel.C,
-                  comments = listOf(ReviewComment("comment-resolved", agent, "해결된 의견")),
+                  comments = listOf(ReviewComment("comment-resolved", agent, "[Agent] [C] 해결된 의견")),
                   state = ThreadState.RESOLVED,
               )
           Files.writeString(
@@ -410,6 +464,22 @@ class RuntimeFactoryTest :
               >()
           allThreadsSuccess.data["diff"].toString() shouldContain "\"identity\":\"head-1\""
           allThreadsSuccess.data["threads"].toString() shouldContain "thread-resolved"
+
+          val reviewBeforeComment =
+              WorkflowStateJsonCodec.decode(Files.readString(statePath)).pullRequests.getValue("1")
+          val commentResult =
+              gateway.execute(
+                  WorkflowCommandRequest.ReviewComment(
+                      revision = reviewBeforeComment.reviewRevision.id,
+                      level = "R",
+                      body = "런타임에서 확인했습니다.",
+                  )
+              )
+          commentResult.shouldBeInstanceOf<WorkflowResult.Success<JsonObject>>()
+          val reviewAfterComment =
+              WorkflowStateJsonCodec.decode(Files.readString(statePath)).pullRequests.getValue("1")
+          reviewAfterComment.reviewRevision.id shouldNotBe reviewBeforeComment.reviewRevision.id
+          reviewAfterComment.reviewRevision.threads.size shouldBe 3
 
           val outsideBody = Files.createTempFile("workflow-body-outside-", ".md")
           val invalidResults =
@@ -454,6 +524,8 @@ class RuntimeFactoryTest :
     })
 
 private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRunner {
+  private var reviewCommentCreated = false
+
   override fun run(command: List<String>, workingDirectory: Path): CommandResult =
       when {
         command == listOf("git", "rev-parse", "--show-toplevel") ->
@@ -475,10 +547,40 @@ private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRu
             command.getOrNull(2) == "view" ->
             CommandResult(
                 0,
-                "{\"number\":1,\"title\":\"[sk-101] 변경\",\"body\":\"PR 본문\",\"state\":\"OPEN\",\"isDraft\":true,\"baseRefName\":\"main\",\"headRefName\":\"sk-101\",\"headRefOid\":\"head-1\",\"comments\":[],\"reviews\":[],\"statusCheckRollup\":[]}",
+                pullRequestJson(),
                 "",
             )
+        command.firstOrNull() == "gh" &&
+            command.getOrNull(1) == "api" &&
+            command.getOrNull(2) == "graphql" -> CommandResult(0, reviewThreadsJson(), "")
+        command.firstOrNull() == "gh" &&
+            command.getOrNull(1) == "api" &&
+            command.getOrNull(2) == "--method" &&
+            command.getOrNull(3) == "POST" -> {
+          reviewCommentCreated = true
+          CommandResult(0, "{\"id\":123,\"node_id\":\"node-comment-1\"}", "")
+        }
         command.firstOrNull() == "gh" && command.getOrNull(1) == "pr" -> CommandResult(0, "[]", "")
         else -> CommandResult(0, "", "")
       }
+
+  private fun pullRequestJson(): String {
+    val comments =
+        if (reviewCommentCreated) {
+          """[{"id":"comment-1","databaseId":123,"node_id":"node-comment-1","body":"[Agent] [R] 런타임에서 확인했습니다.","author":{"login":"agent-1"}}]"""
+        } else {
+          "[]"
+        }
+    return """
+    {"number":1,"title":"[sk-101] 변경","body":"PR 본문","state":"OPEN","isDraft":true,"baseRefName":"main","headRefName":"sk-101","headRefOid":"head-1","comments":$comments,"reviews":[],"statusCheckRollup":[]}
+    """
+        .trimIndent()
+  }
+
+  private fun reviewThreadsJson(): String {
+    return """
+    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"thread-open","isResolved":false,"comments":{"nodes":[{"id":"comment-open","body":"[Agent] [R] 열린 의견","author":{"login":"agent-1"}}]}},{"id":"thread-resolved","isResolved":true,"comments":{"nodes":[{"id":"comment-resolved","body":"[Agent] [C] 해결된 의견","author":{"login":"agent-1"}}]}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}},"errors":[]}]
+    """
+        .trimIndent()
+  }
 }
