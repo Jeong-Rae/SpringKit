@@ -33,9 +33,13 @@ import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.ReviewThread
 import java.nio.file.Path
+import java.time.Instant
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.decodeFromJsonElement
 
 /** GitHub pull request 응답에서 Workflow 도메인 객체를 복원합니다. */
 fun interface GithubPullRequestResolver {
@@ -57,6 +61,9 @@ data class GithubPullRequest(
     val author: GithubUser? = null,
     val comments: List<GithubComment> = emptyList(),
     val reviews: List<GithubReview> = emptyList(),
+    val reviewThreads: List<GithubReviewThread> = emptyList(),
+    val reviewThreadsLoaded: Boolean = false,
+    val commentsLoaded: Boolean = false,
 )
 
 @Serializable data class GithubUser(val login: String = "", val name: String? = null)
@@ -64,11 +71,76 @@ data class GithubPullRequest(
 @Serializable
 data class GithubComment(
     val id: String = "",
+    val databaseId: Long? = null,
+    @SerialName("node_id") val nodeId: String? = null,
     val body: String = "",
     val author: GithubUser? = null,
     val createdAt: String? = null,
     val path: String? = null,
     val line: Int? = null,
+)
+
+@Serializable
+data class GithubReviewThread(
+    val id: String = "",
+    val isResolved: Boolean = false,
+    val comments: List<GithubComment> = emptyList(),
+)
+
+@Serializable
+private data class GithubCreatedReviewComment(
+    val id: Long? = null,
+    @SerialName("node_id") val nodeId: String? = null,
+)
+
+@Serializable
+private data class GithubCreatedIssueComment(
+    val id: Long? = null,
+    @SerialName("node_id") val nodeId: String? = null,
+)
+
+private data class GithubCreatedCommentIdentifier(val id: Long?, val nodeId: String?)
+
+@Serializable
+private data class GithubReviewThreadsResponse(
+    val data: GithubReviewThreadsData? = null,
+    val errors: List<GithubGraphQlError> = emptyList(),
+)
+
+@Serializable private data class GithubReviewThreadsData(val repository: GithubRepository? = null)
+
+@Serializable
+private data class GithubRepository(val pullRequest: GithubReviewThreadsPullRequest? = null)
+
+@Serializable
+private data class GithubReviewThreadsPullRequest(
+    val reviewThreads: GithubReviewThreadConnection? = null,
+)
+
+@Serializable
+private data class GithubReviewThreadConnection(
+    val nodes: List<GithubGraphQlReviewThread> = emptyList(),
+    val pageInfo: GithubPageInfo = GithubPageInfo(),
+)
+
+@Serializable
+private data class GithubPageInfo(
+    val hasNextPage: Boolean = false,
+    val endCursor: String? = null,
+)
+
+@Serializable private data class GithubGraphQlError(val message: String = "")
+
+@Serializable
+private data class GithubGraphQlReviewThread(
+    val id: String = "",
+    val isResolved: Boolean = false,
+    val comments: GithubGraphQlCommentConnection = GithubGraphQlCommentConnection(),
+)
+
+@Serializable
+private data class GithubGraphQlCommentConnection(
+    val nodes: List<GithubComment> = emptyList(),
 )
 
 @Serializable
@@ -145,7 +217,7 @@ class GithubReviewAdapter(
 
   override fun get(request: GetReviewRequest): PortResult<GetReviewResponse> {
     val provider =
-        fetch(request.pullRequestId)
+        fetch(request.pullRequestId, includeReviewThreads = true)
             ?: return failure(
                 "GITHUB_GET_FAILED",
                 "GitHub pull request를 조회할 수 없습니다.",
@@ -238,7 +310,15 @@ class GithubReviewAdapter(
     val body = request.comment.body.withReviewLevel(request.level)
     val command =
         if (request.comment.path == null) {
-          listOf("gh", "pr", "comment", request.pullRequestId, "--body", body)
+          listOf(
+              "gh",
+              "api",
+              "--method",
+              "POST",
+              "repos/{owner}/{repo}/issues/${request.pullRequestId}/comments",
+              "-f",
+              "body=$body",
+          )
         } else {
           val current =
               currentPullRequest(request.pullRequestId)
@@ -265,25 +345,106 @@ class GithubReviewAdapter(
               "side=RIGHT",
           )
         }
-    execute(command, request.pullRequestId)
-        ?: return failure(
-            "GITHUB_COMMENT_FAILED",
-            "GitHub pull request에 코멘트를 추가할 수 없습니다.",
-            request.pullRequestId,
-        )
+    val created =
+        execute(command, request.pullRequestId)
+            ?: return failure(
+                "GITHUB_COMMENT_FAILED",
+                "GitHub pull request에 코멘트를 추가할 수 없습니다.",
+                request.pullRequestId,
+            )
+    val createdComment =
+        try {
+          if (request.comment.path == null) {
+            json.decodeFromString<GithubCreatedIssueComment>(created.stdout).let {
+              GithubCreatedCommentIdentifier(it.id, it.nodeId)
+            }
+          } else {
+            json.decodeFromString<GithubCreatedReviewComment>(created.stdout).let {
+              GithubCreatedCommentIdentifier(it.id, it.nodeId)
+            }
+          }
+        } catch (_: SerializationException) {
+          return failure(
+              "GITHUB_RESPONSE_INVALID",
+              "GitHub 코멘트 생성 결과를 해석할 수 없습니다.",
+              request.pullRequestId,
+          )
+        }
+    if (createdComment.id == null && createdComment.nodeId.isNullOrBlank()) {
+      return failure(
+          "GITHUB_RESPONSE_INVALID",
+          "GitHub 코멘트 생성 결과에 provider 식별자가 없습니다.",
+          request.pullRequestId,
+      )
+    }
     val provider =
-        fetch(request.pullRequestId)
+        fetch(request.pullRequestId, includeReviewThreads = true)
             ?: return failure(
                 "GITHUB_COMMENT_FAILED",
                 "추가된 GitHub 코멘트를 조회할 수 없습니다.",
                 request.pullRequestId,
             )
+    if (request.comment.path == null) {
+      val issueComment =
+          provider.comments.firstOrNull { comment ->
+            (createdComment.id != null &&
+                (comment.databaseId == createdComment.id ||
+                    comment.id == createdComment.id.toString())) ||
+                (!createdComment.nodeId.isNullOrBlank() && comment.id == createdComment.nodeId)
+          }
+              ?: return failure(
+                  "GITHUB_ISSUE_COMMENT_NOT_FOUND",
+                  "추가된 GitHub 일반 코멘트를 조회할 수 없습니다.",
+                  request.pullRequestId,
+              )
+      val pullRequest = resolve(provider)
+      val remoteThread =
+          pullRequest.reviewRevision.threads.firstOrNull {
+            it.id == issueCommentThreadId(issueComment)
+          }
+              ?: return failure(
+                  "GITHUB_ISSUE_COMMENT_NOT_FOUND",
+                  "GitHub 일반 코멘트를 Workflow 상태로 변환할 수 없습니다.",
+                  request.pullRequestId,
+              )
+      val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads)
+      return PortResult.Success(
+          AddReviewCommentResponse(
+              revision,
+              remoteThread.id,
+              receipt("comment", request.pullRequestId),
+          ),
+      )
+    }
+    val providerThread =
+        provider.reviewThreads.firstOrNull { thread ->
+          thread.comments.any { comment ->
+            (createdComment.id != null &&
+                (comment.databaseId == createdComment.id ||
+                    comment.id == createdComment.id.toString())) ||
+                (!createdComment.nodeId.isNullOrBlank() && comment.id == createdComment.nodeId)
+          }
+        }
+            ?: return failure(
+                "GITHUB_REVIEW_THREAD_NOT_FOUND",
+                "추가된 GitHub 코드 줄 코멘트의 review thread를 조회할 수 없습니다.",
+                request.pullRequestId,
+            )
     val pullRequest = resolve(provider)
-    val threadId = request.comment.id
-    val thread = ReviewThread(threadId, request.level, listOf(request.comment))
-    val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads + thread)
+    val remoteThread =
+        pullRequest.reviewRevision.threads.firstOrNull { it.id == providerThread.id }
+            ?: return failure(
+                "GITHUB_REVIEW_THREAD_NOT_FOUND",
+                "GitHub review thread를 Workflow 상태로 변환할 수 없습니다.",
+                providerThread.id,
+            )
+    val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads)
     return PortResult.Success(
-        AddReviewCommentResponse(revision, threadId, receipt("comment", request.pullRequestId)),
+        AddReviewCommentResponse(
+            revision,
+            remoteThread.id,
+            receipt("comment", request.pullRequestId),
+        ),
     )
   }
 
@@ -307,6 +468,13 @@ class GithubReviewAdapter(
           request.pullRequestId,
       )
     }
+    if (!isGithubReviewThreadId(currentThread.id)) {
+      return failure(
+          "GITHUB_GENERAL_COMMENT_UNSUPPORTED",
+          "일반 pull request 코멘트에는 review thread 답변을 적용할 수 없습니다.",
+          request.threadId,
+      )
+    }
     val markedComment =
         request.comment.copy(body = request.comment.body.withReviewLevel(currentThread.level))
     val query =
@@ -320,7 +488,7 @@ class GithubReviewAdapter(
                 "-f",
                 "query=$query",
                 "-f",
-                "subjectId=${request.threadId}",
+                "subjectId=${currentThread.id}",
                 "-f",
                 "body=${markedComment.body}",
             ),
@@ -330,25 +498,28 @@ class GithubReviewAdapter(
       return failure("GITHUB_REPLY_FAILED", "GitHub review thread에 답변할 수 없습니다.", request.threadId)
     }
     val provider =
-        fetch(request.pullRequestId)
+        fetch(request.pullRequestId, includeReviewThreads = true)
             ?: return failure(
                 "GITHUB_REPLY_FAILED",
                 "답변된 GitHub review thread를 조회할 수 없습니다.",
                 request.threadId,
             )
     val pullRequest = resolve(provider)
-    val repliedThreads =
-        pullRequest.reviewRevision.threads.map { thread ->
-          if (thread.id == request.threadId) thread.reply(markedComment) else thread
-        }
-    val revision =
-        nextReviewRevision(
-            pullRequest,
-            if (repliedThreads.any { it.id == request.threadId }) repliedThreads
-            else
-                repliedThreads +
-                    ReviewThread(request.threadId, currentThread.level, listOf(markedComment)),
-        )
+    val remoteThread =
+        pullRequest.reviewRevision.threads.firstOrNull { it.id == currentThread.id }
+            ?: return failure(
+                "GITHUB_REPLY_FAILED",
+                "답변된 GitHub review thread를 조회할 수 없습니다.",
+                request.threadId,
+            )
+    if (remoteThread.comments.none { it.body == markedComment.body }) {
+      return failure(
+          "GITHUB_REPLY_FAILED",
+          "GitHub review thread에 추가된 답변을 조회할 수 없습니다.",
+          request.threadId,
+      )
+    }
+    val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads)
     return PortResult.Success(
         ReplyReviewThreadResponse(revision, receipt("reply", request.threadId)),
     )
@@ -373,6 +544,13 @@ class GithubReviewAdapter(
           request.pullRequestId,
       )
     }
+    if (!isGithubReviewThreadId(currentThread.id)) {
+      return failure(
+          "GITHUB_GENERAL_COMMENT_UNSUPPORTED",
+          "일반 pull request 코멘트는 review thread로 해결할 수 없습니다.",
+          request.threadId,
+      )
+    }
     if (currentThread.requiresHumanResolution && !request.actor.isHuman) {
       return failure(
           "HUMAN_REQUIRED",
@@ -391,7 +569,7 @@ class GithubReviewAdapter(
                 "-f",
                 "query=$query",
                 "-f",
-                "threadId=${request.threadId}",
+                "threadId=${currentThread.id}",
             ),
             request.pullRequestId,
         ) == null
@@ -399,7 +577,7 @@ class GithubReviewAdapter(
       return failure("GITHUB_RESOLVE_FAILED", "GitHub review thread를 해결할 수 없습니다.", request.threadId)
     }
     val provider =
-        fetch(request.pullRequestId)
+        fetch(request.pullRequestId, includeReviewThreads = true)
             ?: return failure(
                 "GITHUB_RESOLVE_FAILED",
                 "해결된 GitHub review thread를 조회할 수 없습니다.",
@@ -499,7 +677,7 @@ class GithubReviewAdapter(
     )
   }
 
-  private fun fetch(reference: String): GithubPullRequest? {
+  private fun fetch(reference: String, includeReviewThreads: Boolean = false): GithubPullRequest? {
     val result =
         execute(
             listOf(
@@ -512,10 +690,132 @@ class GithubReviewAdapter(
             ),
             reference,
         ) ?: return null
-    return try {
-      json.decodeFromString<GithubPullRequest>(result.stdout)
-    } catch (_: SerializationException) {
-      null
+    val provider =
+        try {
+          json.decodeFromString<GithubPullRequest>(result.stdout)
+        } catch (_: SerializationException) {
+          return null
+        }
+    if (!includeReviewThreads) {
+      return provider.copy(commentsLoaded = true)
+    }
+    val reviewThreads = fetchReviewThreads(provider.number.toInt()) ?: return null
+    return provider.copy(
+        reviewThreads = reviewThreads,
+        reviewThreadsLoaded = true,
+        commentsLoaded = true,
+    )
+  }
+
+  private fun fetchReviewThreads(pullRequestNumber: Int): List<GithubReviewThread>? {
+    val query =
+        """
+        query(${'$'}owner:String!,${'$'}repo:String!,${'$'}number:Int!,${'$'}endCursor:String) {
+          repository(owner:${'$'}owner,name:${'$'}repo) {
+            pullRequest(number:${'$'}number) {
+              reviewThreads(first:100,after:${'$'}endCursor) {
+                nodes {
+                  id
+                  isResolved
+                  comments(first:100) {
+                    nodes { id databaseId body author { login name } createdAt path line }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }
+        }
+        """
+            .trimIndent()
+    val result =
+        execute(
+            listOf(
+                "gh",
+                "api",
+                "graphql",
+                "--paginate",
+                "--slurp",
+                "-f",
+                "query=$query",
+                "-F",
+                "owner={owner}",
+                "-F",
+                "repo={repo}",
+                "-F",
+                "number=$pullRequestNumber",
+                "-F",
+                "endCursor=null",
+            ),
+            pullRequestNumber.toString(),
+        ) ?: return null
+    val pages =
+        try {
+          val element = json.parseToJsonElement(result.stdout)
+          if (element is JsonArray) element.toList() else listOf(element)
+        } catch (_: SerializationException) {
+          lastFailure =
+              PortResult.Failure(
+                  PortError(
+                      code = "GITHUB_RESPONSE_INVALID",
+                      message = "GitHub review thread 조회 결과를 해석할 수 없습니다.",
+                      target = pullRequestNumber.toString(),
+                  )
+              )
+          return null
+        }
+    val responses = pages.mapNotNull { page ->
+      try {
+        json.decodeFromJsonElement<GithubReviewThreadsResponse>(page)
+      } catch (_: SerializationException) {
+        null
+      }
+    }
+    if (responses.size != pages.size) {
+      lastFailure =
+          PortResult.Failure(
+              PortError(
+                  code = "GITHUB_RESPONSE_INVALID",
+                  message = "GitHub review thread 조회 결과를 해석할 수 없습니다.",
+                  target = pullRequestNumber.toString(),
+              )
+          )
+      return null
+    }
+    val error = responses.flatMap { it.errors }.firstOrNull { it.message.isNotBlank() }
+    if (error != null) {
+      lastFailure =
+          PortResult.Failure(
+              PortError(
+                  code = "GITHUB_REVIEW_THREADS_FAILED",
+                  message = error.message,
+                  target = pullRequestNumber.toString(),
+              )
+          )
+      return null
+    }
+    val connections = responses.mapNotNull { response ->
+      response.data?.repository?.pullRequest?.reviewThreads
+    }
+    if (connections.size != responses.size) {
+      lastFailure =
+          PortResult.Failure(
+              PortError(
+                  code = "GITHUB_RESPONSE_INVALID",
+                  message = "GitHub review thread 조회 결과에 pull request가 없습니다.",
+                  target = pullRequestNumber.toString(),
+              )
+          )
+      return null
+    }
+    return connections.flatMap { connection ->
+      connection.nodes.map { thread ->
+        GithubReviewThread(
+            id = thread.id,
+            isResolved = thread.isResolved,
+            comments = thread.comments.nodes,
+        )
+      }
     }
   }
 
@@ -610,6 +910,20 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
           providerDiffIdentity != null &&
               providerDiffIdentity != previous.changeRevision.diff.identity
       val bodyChanged = providerBody != null && providerBody != previous.body
+      val providerThreads = provider.toDomainThreads()
+      val issueThreads = provider.comments.toIssueCommentThreads()
+      val reviewThreads =
+          when {
+            provider.reviewThreadsLoaded -> providerThreads
+            provider.commentsLoaded ->
+                issueThreads +
+                    previous.reviewRevision.threads.filterNot {
+                      it.id.startsWith("github-issue-comment-")
+                    }
+            providerThreads.isNotEmpty() -> providerThreads
+            else -> previous.reviewRevision.threads
+          }
+      val threadsChanged = reviewThreads != previous.reviewRevision.threads
       val nextChangeRevision =
           if (codeChanged) {
             previous.changeRevision.copy(
@@ -621,11 +935,12 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
             previous.changeRevision
           }
       val nextReviewRevision =
-          if (bodyChanged) {
+          if (bodyChanged || threadsChanged) {
             previous.reviewRevision.copy(
                 id = "github-review-${provider.number}-${previous.reviewRevision.number + 1}",
                 number = previous.reviewRevision.number + 1,
-                body = providerBody,
+                body = providerBody ?: previous.reviewRevision.body,
+                threads = reviewThreads,
             )
           } else {
             previous.reviewRevision
@@ -635,7 +950,7 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
           body = providerBody ?: previous.body,
           base = provider.baseRefName.ifBlank { previous.base },
           state = providerState(provider),
-          reviewRevision = nextReviewRevision,
+          reviewRevision = nextReviewRevision.copy(threads = reviewThreads),
           changeRevision = nextChangeRevision,
           approval = if (codeChanged) null else previous.approval,
           ci = if (codeChanged) CiStatus.PENDING else previous.ci,
@@ -648,6 +963,7 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
     val changeId = "github-change-$number"
     val reviewId = "github-review-$number"
     val diffIdentity = provider.headRefOid ?: "github-diff-$number"
+    val reviewThreads = provider.toDomainThreads()
     return PullRequest(
         id = number,
         subTaskId = provider.headRefName.ifBlank { "github-$number" },
@@ -655,7 +971,7 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
         body = body,
         base = provider.baseRefName.ifBlank { "main" },
         state = providerState(provider),
-        reviewRevision = ReviewRevision(reviewId, 1, body),
+        reviewRevision = ReviewRevision(reviewId, 1, body, threads = reviewThreads),
         changeRevision = ChangeRevision(changeId, 1, Diff(diffIdentity)),
     )
   }
@@ -670,10 +986,80 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
       }
 }
 
+private fun GithubPullRequest.toDomainThreads(): List<ReviewThread> =
+    comments.toIssueCommentThreads() + reviewThreads.toDomainThreads()
+
+private fun List<GithubComment>.toIssueCommentThreads(): List<ReviewThread> =
+    mapNotNull { providerComment ->
+      val comment = providerComment.toDomainComment() ?: return@mapNotNull null
+      ReviewThread(
+          id = issueCommentThreadId(providerComment),
+          level = comment.body.reviewLevel() ?: ReviewLevel.C,
+          comments = listOf(comment),
+      )
+    }
+
+private fun List<GithubReviewThread>.toDomainThreads(): List<ReviewThread> =
+    mapNotNull { providerThread ->
+      val comments = providerThread.comments.mapNotNull { it.toDomainComment() }
+      if (providerThread.id.isBlank() || comments.isEmpty()) {
+        return@mapNotNull null
+      }
+      ReviewThread(
+          id = providerThread.id,
+          level = comments.firstNotNullOfOrNull { it.body.reviewLevel() } ?: ReviewLevel.C,
+          comments = comments,
+          state =
+              if (providerThread.isResolved) {
+                io.springkit.workflow.domain.ThreadState.RESOLVED
+              } else {
+                io.springkit.workflow.domain.ThreadState.OPEN
+              },
+      )
+    }
+
+private fun GithubComment.toDomainComment(): io.springkit.workflow.domain.ReviewComment? {
+  val commentId = id.ifBlank { nodeId.orEmpty() }
+  if (commentId.isBlank() || body.isBlank()) {
+    return null
+  }
+  val actorId = author?.login?.ifBlank { null } ?: "github-comment-$commentId"
+  val actorKind =
+      if (body.trimStart().startsWith("[Agent]")) {
+        io.springkit.workflow.domain.ActorKind.AGENT
+      } else {
+        io.springkit.workflow.domain.ActorKind.HUMAN
+      }
+  val createdAt =
+      createdAt?.let { value ->
+        runCatching { Instant.parse(value).toEpochMilli() }.getOrDefault(0)
+      } ?: 0
+  return io.springkit.workflow.domain.ReviewComment(
+      id = commentId,
+      author = io.springkit.workflow.domain.Actor(actorId, actorKind, author?.name),
+      body = body,
+      createdAtEpochMillis = createdAt,
+      path = path,
+      line = line,
+  )
+}
+
+private fun String.reviewLevel(): ReviewLevel? {
+  val withoutAgent = replaceFirst(Regex("^\\s*\\[Agent]\\s*"), "")
+  return Regex("^\\[(R|C|A)]").find(withoutAgent)?.groupValues?.getOrNull(1)?.let {
+    ReviewLevel.valueOf(it)
+  }
+}
+
 private fun String.withReviewLevel(level: ReviewLevel): String {
-  val agentMarked = startsWith("[Agent]")
-  val withoutAgent = if (agentMarked) removePrefix("[Agent]").trimStart() else this
+  val agentMarked = trimStart().startsWith("[Agent]")
+  val withoutAgent = replaceFirst(Regex("^\\s*\\[Agent]\\s*"), "")
   val withoutLevel = withoutAgent.replaceFirst(Regex("^\\[(R|C|A)]\\s*"), "")
   val levelMarked = "[${level.name}] ${withoutLevel.trimStart()}"
   return if (agentMarked) "[Agent] $levelMarked" else levelMarked
 }
+
+private fun issueCommentThreadId(comment: GithubComment): String =
+    "github-issue-comment-${comment.nodeId?.takeIf { it.isNotBlank() } ?: comment.id}"
+
+private fun isGithubReviewThreadId(id: String): Boolean = id.startsWith("PRRT_")

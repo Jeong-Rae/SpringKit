@@ -13,6 +13,8 @@ import io.springkit.workflow.application.GetReviewResponse
 import io.springkit.workflow.application.OpenReviewRequest
 import io.springkit.workflow.application.OpenReviewResponse
 import io.springkit.workflow.application.PortResult
+import io.springkit.workflow.application.ReplyReviewThreadRequest
+import io.springkit.workflow.application.ResolveReviewThreadRequest
 import io.springkit.workflow.application.StartCiRequest
 import io.springkit.workflow.application.StartCiResponse
 import io.springkit.workflow.application.UpdateReviewRequest
@@ -29,6 +31,7 @@ import io.springkit.workflow.domain.PullRequestState
 import io.springkit.workflow.domain.ReviewComment
 import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.ReviewRevision
+import io.springkit.workflow.domain.ReviewThread
 import io.springkit.workflow.domain.Risk
 import java.nio.file.Path
 
@@ -121,6 +124,20 @@ class GithubAdapterTest :
                   "",
               )
           )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_external",
+                      commentId = "PRRC_external",
+                      databaseId = 201,
+                      body = "[R] 외부에서 확인이 필요합니다",
+                      path = "src/Main.kt",
+                      line = 8,
+                  ),
+                  "",
+              )
+          )
           val result = GithubReviewAdapter(Path.of("/repo"), runner).get(GetReviewRequest("17"))
 
           val pullRequest =
@@ -133,6 +150,8 @@ class GithubAdapterTest :
           pullRequest.subTaskId shouldBe "sk-27"
           pullRequest.state.name shouldBe "APPROVED"
           pullRequest.changeRevision.diff.identity shouldBe "abc123"
+          pullRequest.reviewRevision.threads.single().id shouldBe "PRRT_external"
+          pullRequest.reviewRevision.threads.single().comments.single().id shouldBe "PRRC_external"
         }
 
         test("persisted diff identity와 GitHub head OID가 다르면, 새 change revision을 반환합니다") {
@@ -144,6 +163,7 @@ class GithubAdapterTest :
                   "",
               )
           )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
           val result =
               GithubReviewAdapter(
                       Path.of("/repo"),
@@ -163,45 +183,223 @@ class GithubAdapterTest :
           current.changeRevision.diff.identity shouldBe "diff-2"
           current.ci.name shouldBe "PENDING"
         }
-      }
 
-      context("Review 코멘트를 추가하면") {
-        test("gh pr comment에 본문 토큰을 전달하면, 새로운 thread를 반환합니다") {
+        test("GitHub review thread가 바뀌면, 새 review revision을 반환합니다") {
           val runner = RecordingCommandRunner()
-          runner.enqueue(CommandResult(0, "https://github.com/example/repo/pull/17\n", ""))
           runner.enqueue(
               CommandResult(
                   0,
-                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27"}""",
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
                   "",
               )
           )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_external",
+                      commentId = "PRRC_external",
+                      databaseId = 201,
+                      body = "[R] 외부에서 확인이 필요합니다",
+                      path = "src/Main.kt",
+                      line = 8,
+                  ),
+                  "",
+              )
+          )
+          val previous =
+              pullRequest()
+                  .copy(
+                      reviewRevision =
+                          ReviewRevision(
+                              "rv-1",
+                              1,
+                              "설명",
+                              threads =
+                                  listOf(
+                                      ReviewThread(
+                                          "PRRT_previous",
+                                          ReviewLevel.R,
+                                          listOf(
+                                              ReviewComment(
+                                                  "PRRC_previous",
+                                                  Actor("human-1", ActorKind.HUMAN),
+                                                  "[R] 이전 의견",
+                                                  path = "src/Main.kt",
+                                                  line = 8,
+                                              )
+                                          ),
+                                      )
+                                  ),
+                          )
+                  )
+
+          val result =
+              GithubReviewAdapter(
+                      Path.of("/repo"),
+                      runner,
+                      currentPullRequest = { previous },
+                  )
+                  .get(GetReviewRequest("17"))
+
+          val current =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+          current.reviewRevision.id shouldBe "github-review-17-2"
+          current.reviewRevision.number shouldBe 2
+          current.reviewRevision.threads.single().id shouldBe "PRRT_external"
+        }
+
+        test("동일한 GitHub review thread를 다시 조회하면, review revision을 유지합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
+                  "",
+              )
+          )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_external",
+                      commentId = "PRRC_external",
+                      databaseId = 201,
+                      body = "[R] 외부에서 확인이 필요합니다",
+                      path = "src/Main.kt",
+                      line = 8,
+                  ),
+                  "",
+              )
+          )
+          val previous =
+              pullRequest()
+                  .copy(
+                      reviewRevision =
+                          ReviewRevision(
+                              "rv-1",
+                              1,
+                              "설명",
+                              threads =
+                                  listOf(
+                                      ReviewThread(
+                                          "PRRT_external",
+                                          ReviewLevel.R,
+                                          listOf(
+                                              ReviewComment(
+                                                  "PRRC_external",
+                                                  Actor("reviewer-1", ActorKind.HUMAN, "Reviewer"),
+                                                  "[R] 외부에서 확인이 필요합니다",
+                                                  createdAtEpochMillis = 1_790_035_200_000,
+                                                  path = "src/Main.kt",
+                                                  line = 8,
+                                              )
+                                          ),
+                                      )
+                                  ),
+                          )
+                  )
+
+          val result =
+              GithubReviewAdapter(
+                      Path.of("/repo"),
+                      runner,
+                      currentPullRequest = { previous },
+                  )
+                  .get(GetReviewRequest("17"))
+
+          val current =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+          current.reviewRevision.id shouldBe "rv-1"
+          current.reviewRevision.number shouldBe 1
+        }
+      }
+
+      context("Review 코멘트를 추가하면") {
+        test("일반 pull request 코멘트를 추가하면, issue comment를 도메인 thread로 복원합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, """{"id":501,"node_id":"IC_remote"}""", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """
+                  {
+                    "number":17,
+                    "title":"기능 추가",
+                    "body":"설명",
+                    "state":"OPEN",
+                    "isDraft":false,
+                    "baseRefName":"main",
+                    "headRefName":"sk-27",
+                    "headRefOid":"diff-1",
+                    "comments":[{"id":"IC_remote","databaseId":501,"body":"[C] 확인했습니다","author":{"login":"human-1"},"createdAt":"2026-09-22T00:00:00Z"}]
+                  }
+                  """
+                      .trimIndent(),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
           val comment = ReviewComment("comment-1", Actor("human-1", ActorKind.HUMAN), "확인했습니다")
           val request =
               AddReviewCommentRequest("17", "rv-1", comment.author, ReviewLevel.C, comment)
 
           val result =
-              GithubReviewAdapter(Path.of("/repo"), runner, nowEpochMillis = { 0 }).comment(request)
+              GithubReviewAdapter(
+                      Path.of("/repo"),
+                      runner,
+                      currentPullRequest = { pullRequest() },
+                  )
+                  .comment(request)
 
           val response =
               result
                   .shouldBeTypeOf<PortResult.Success<*>>()
                   .value
                   .shouldBeTypeOf<AddReviewCommentResponse>()
-          response.threadId shouldBe "comment-1"
-          response.reviewRevision.threads.single().comments.single() shouldBe comment
+          response.threadId shouldBe "github-issue-comment-IC_remote"
+          response.reviewRevision.threads.single().comments.single().id shouldBe "IC_remote"
           runner.commands.first().tokens shouldBe
-              listOf("gh", "pr", "comment", "17", "--body", "[C] 확인했습니다")
-          response.reviewRevision.id shouldBe "github-review-17-2-0"
+              listOf(
+                  "gh",
+                  "api",
+                  "--method",
+                  "POST",
+                  "repos/{owner}/{repo}/issues/17/comments",
+                  "-f",
+                  "body=[C] 확인했습니다",
+              )
         }
 
         test("코드 줄과 수준을 지정하면, 현재 diff identity로 리뷰 코멘트를 생성합니다") {
           val runner = RecordingCommandRunner()
-          runner.enqueue(CommandResult(0, "{}", ""))
+          runner.enqueue(CommandResult(0, """{"id":101,"node_id":"PRRC_remote"}""", ""))
           runner.enqueue(
               CommandResult(
                   0,
                   """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
+                  "",
+              )
+          )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_remote",
+                      commentId = "PRRC_remote",
+                      databaseId = 101,
+                      body = "[Agent] [R] 수정이 필요합니다",
+                      path = "src/Main.kt",
+                      line = 12,
+                  ),
                   "",
               )
           )
@@ -222,9 +420,10 @@ class GithubAdapterTest :
                   nowEpochMillis = { 1_000 },
               )
 
-          adapter.comment(
-              AddReviewCommentRequest("17", "rv-1", comment.author, ReviewLevel.R, comment)
-          )
+          val response =
+              adapter.comment(
+                  AddReviewCommentRequest("17", "rv-1", comment.author, ReviewLevel.R, comment)
+              )
 
           runner.commands.first().tokens shouldBe
               listOf(
@@ -244,32 +443,155 @@ class GithubAdapterTest :
                   "-f",
                   "side=RIGHT",
               )
+          response
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<AddReviewCommentResponse>()
+              .threadId shouldBe "PRRT_remote"
         }
+      }
 
-        test("기존 수준 표식이 있으면, 중복 없이 요청한 수준으로 교체합니다") {
+      context("GitHub review thread를 답변하거나 해결하면") {
+        test("provider review thread node ID를 전달하면, 답변 mutation에 같은 ID를 사용합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "{}", ""))
           runner.enqueue(
               CommandResult(
                   0,
-                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27"}""",
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
                   "",
               )
           )
-          val comment =
-              ReviewComment(
-                  "comment-2",
-                  Actor("agent-1", ActorKind.AGENT),
-                  "[Agent] [R] 다시 확인해 주세요",
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_remote",
+                      commentId = "PRRC_remote",
+                      databaseId = 301,
+                      body = "[C] 답변",
+                      path = "src/Main.kt",
+                      line = 12,
+                  ),
+                  "",
               )
+          )
+          val current = remoteThreadPullRequest()
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .reply(
+                      ReplyReviewThreadRequest(
+                          pullRequestId = "17",
+                          reviewRevisionId = "rv-1",
+                          threadId = "PRRT_remote",
+                          comment =
+                              ReviewComment("reply-1", Actor("agent-1", ActorKind.AGENT), "답변"),
+                      )
+                  )
 
-          GithubReviewAdapter(Path.of("/repo"), runner, nowEpochMillis = { 2_000 })
-              .comment(
-                  AddReviewCommentRequest("17", "rv-1", comment.author, ReviewLevel.C, comment)
+          result.shouldBeTypeOf<PortResult.Success<*>>()
+          runner.commands[0].tokens shouldContainExactly
+              listOf(
+                  "gh",
+                  "api",
+                  "graphql",
+                  "-f",
+                  "query=mutation(\u0024subjectId:ID!,\u0024body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:\u0024subjectId,body:\u0024body}){comment{id}}}",
+                  "-f",
+                  "subjectId=PRRT_remote",
+                  "-f",
+                  "body=[C] 답변",
               )
+        }
 
-          runner.commands.first().tokens shouldBe
-              listOf("gh", "pr", "comment", "17", "--body", "[Agent] [C] 다시 확인해 주세요")
+        test("로컬 comment ID를 thread ID로 사용하면, GraphQL mutation 없이 지원 불가를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          val localThread =
+              ReviewThread(
+                  id = "comment-1",
+                  level = ReviewLevel.C,
+                  comments =
+                      listOf(
+                          ReviewComment(
+                              "comment-1",
+                              Actor("agent-1", ActorKind.AGENT),
+                              "[Agent] 확인했습니다",
+                          )
+                      ),
+              )
+          val current =
+              pullRequest()
+                  .copy(
+                      reviewRevision =
+                          pullRequest().reviewRevision.copy(threads = listOf(localThread))
+                  )
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .resolve(
+                      ResolveReviewThreadRequest(
+                          pullRequestId = "17",
+                          reviewRevisionId = "rv-1",
+                          threadId = "comment-1",
+                          actor = Actor("agent-1", ActorKind.AGENT),
+                      )
+                  )
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "GITHUB_GENERAL_COMMENT_UNSUPPORTED"
+          runner.commands shouldBe emptyList()
+        }
+
+        test("provider review thread node ID를 전달하면, resolve mutation에 같은 ID를 사용합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "{}", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
+                  "",
+              )
+          )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_remote",
+                      commentId = "PRRC_remote",
+                      databaseId = 301,
+                      body = "[C] 확인했습니다",
+                      path = "src/Main.kt",
+                      line = 12,
+                      resolved = true,
+                  ),
+                  "",
+              )
+          )
+          val result =
+              GithubReviewAdapter(
+                      Path.of("/repo"),
+                      runner,
+                      currentPullRequest = { remoteThreadPullRequest() },
+                  )
+                  .resolve(
+                      ResolveReviewThreadRequest(
+                          pullRequestId = "17",
+                          reviewRevisionId = "rv-1",
+                          threadId = "PRRT_remote",
+                          actor = Actor("human-1", ActorKind.HUMAN),
+                      )
+                  )
+
+          result.shouldBeTypeOf<PortResult.Success<*>>()
+          runner.commands[0].tokens shouldContainExactly
+              listOf(
+                  "gh",
+                  "api",
+                  "graphql",
+                  "-f",
+                  "query=mutation(\u0024threadId:ID!){resolveReviewThread(input:{threadId:\u0024threadId}){thread{id}}}",
+                  "-f",
+                  "threadId=PRRT_remote",
+              )
         }
       }
 
@@ -461,6 +783,54 @@ private fun pullRequest(): PullRequest =
         reviewRevision = ReviewRevision("rv-1", 1, "설명"),
         changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
     )
+
+private fun remoteThreadPullRequest(): PullRequest =
+    pullRequest()
+        .copy(
+            reviewRevision =
+                ReviewRevision(
+                    "rv-1",
+                    1,
+                    "설명",
+                    threads =
+                        listOf(
+                            ReviewThread(
+                                id = "PRRT_remote",
+                                level = ReviewLevel.C,
+                                comments =
+                                    listOf(
+                                        ReviewComment(
+                                            id = "PRRC_remote",
+                                            author = Actor("human-1", ActorKind.HUMAN),
+                                            body = "[C] 확인했습니다",
+                                            path = "src/Main.kt",
+                                            line = 12,
+                                        )
+                                    ),
+                            )
+                        ),
+                )
+        )
+
+private fun reviewThreadsResponse(
+    threadId: String,
+    commentId: String,
+    databaseId: Long,
+    body: String,
+    path: String,
+    line: Int,
+    resolved: Boolean = false,
+): String =
+    """
+    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"$threadId","isResolved":$resolved,"comments":{"nodes":[{"id":"$commentId","databaseId":$databaseId,"body":"$body","author":{"login":"reviewer-1","name":"Reviewer"},"createdAt":"2026-09-22T00:00:00Z","path":"$path","line":$line}]} }],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]
+    """
+        .trimIndent()
+
+private fun emptyReviewThreadsResponse(): String =
+    """
+    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]
+    """
+        .trimIndent()
 
 private data class Invocation(val tokens: List<String>, val workingDirectory: Path)
 
