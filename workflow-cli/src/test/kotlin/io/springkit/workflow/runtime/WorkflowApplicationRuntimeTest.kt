@@ -1,6 +1,7 @@
 package io.springkit.workflow.runtime
 
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.springkit.workflow.adapter.store.WorkflowStateJsonCodec
@@ -15,20 +16,35 @@ import io.springkit.workflow.application.WorkflowEventPort
 import io.springkit.workflow.common.CommandResult
 import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.domain.ChangeRevision
+import io.springkit.workflow.domain.DeploymentCandidate
+import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.Diff
+import io.springkit.workflow.domain.EventLog
+import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
+import io.springkit.workflow.domain.Integration
+import io.springkit.workflow.domain.IntegrationState
 import io.springkit.workflow.domain.MergeQueueEntry
 import io.springkit.workflow.domain.MergeQueueState
+import io.springkit.workflow.domain.MergeRecorded
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
+import io.springkit.workflow.domain.Release
+import io.springkit.workflow.domain.ReleaseState
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.Task
+import io.springkit.workflow.domain.Validation
+import io.springkit.workflow.domain.ValidationStatus
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.WorkflowState
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class WorkflowApplicationRuntimeTest :
     FunSpec({
@@ -238,8 +254,335 @@ class WorkflowApplicationRuntimeTest :
               "INVALID_ARGUMENT"
           eventPort.acknowledged?.accepted shouldBe false
         }
+
+        test("Production 후보가 여러 Feature Flag를 포함하면, Release를 모두 생성합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-release-all-")
+          val statePath = root.resolve("state.json")
+          val state = productionState(featureFlagIds = listOf("flag-1", "flag-2"))
+          Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
+          val runner = RuntimeProviderCommandRunner(root)
+          val eventPort = RecordingWorkflowEventPort()
+          val runtime = providerRuntime(root, statePath, runner, eventPort)
+
+          val result =
+              runtime.eventUseCases.handle(
+                  ReceiveEventRequest(
+                      ExternalEvent(
+                          id = "deployment-production-1",
+                          kind = ExternalEventKind.DEPLOYMENT_CHANGED,
+                          targetId = "candidate-1",
+                          occurredAtEpochMillis = 1,
+                      )
+                  )
+              )
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<*>>()
+          eventPort.acknowledged?.accepted shouldBe true
+          runner.operationCalls("create-release") shouldBe 2
+          runner.operationCalls("validate-release") shouldBe 2
+          WorkflowStateJsonCodec.decode(Files.readString(statePath)).releases.values.map {
+            it.featureFlagId
+          } shouldBe listOf("flag-1", "flag-2")
+        }
+
+        test("RELEASE_CHANGED가 ROLLOUT이면, Release provider의 rollout을 계속 실행합니다") {
+          val root = Files.createTempDirectory("workflow-runtime-release-rollout-")
+          val statePath = root.resolve("state.json")
+          val state =
+              productionState(
+                  featureFlagIds = listOf("flag-1"),
+                  releaseState = ReleaseState.ROLLOUT,
+              )
+          Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
+          val runner = RuntimeProviderCommandRunner(root)
+          val eventPort = RecordingWorkflowEventPort()
+          val runtime = providerRuntime(root, statePath, runner, eventPort)
+
+          val result =
+              runtime.eventUseCases.handle(
+                  ReceiveEventRequest(
+                      ExternalEvent(
+                          id = "release-rollout-1",
+                          kind = ExternalEventKind.RELEASE_CHANGED,
+                          targetId = "release-1",
+                          occurredAtEpochMillis = 2,
+                          attributes = mapOf("state" to "ROLLOUT"),
+                      )
+                  )
+              )
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<*>>()
+          runner.operationCalls("continue-rollout") shouldBe 1
+          WorkflowStateJsonCodec.decode(Files.readString(statePath))
+              .releases["release-1"]
+              ?.state shouldBe ReleaseState.CLEANUP_REQUIRED
+        }
+
+        test("Production 전환 뒤 후속 merge가 있으면, 최신 main revision으로 다음 후보를 만듭니다") {
+          val root = Files.createTempDirectory("workflow-runtime-next-candidate-")
+          val statePath = root.resolve("state.json")
+          val state = productionState(featureFlagIds = emptyList(), includeNextMerge = true)
+          Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
+          val runner = RuntimeProviderCommandRunner(root)
+          val eventPort = RecordingWorkflowEventPort()
+          val runtime = providerRuntime(root, statePath, runner, eventPort)
+          val event =
+              ExternalEvent(
+                  id = "deployment-production-2",
+                  kind = ExternalEventKind.CANARY_CHANGED,
+                  targetId = "candidate-1",
+                  occurredAtEpochMillis = 3,
+                  attributes = mapOf("outcome" to "SUCCEEDED"),
+              )
+
+          runtime.eventUseCases.handle(ReceiveEventRequest(event))
+          runtime.eventUseCases.handle(
+              ReceiveEventRequest(event.copy(id = "deployment-production-3"))
+          )
+
+          val stored = WorkflowStateJsonCodec.decode(Files.readString(statePath))
+          stored.deploymentCandidates.values.map { it.mainRevision } shouldContain "main-2"
+          runner.operationCalls("create-candidate") shouldBe 1
+        }
+
+        test("Production 뒤 event log가 일부만 남으면, integrations에서 후속 merge를 찾아 후보를 만듭니다") {
+          val root = Files.createTempDirectory("workflow-runtime-partial-event-log-")
+          val statePath = root.resolve("state.json")
+          val state =
+              productionState(
+                  featureFlagIds = emptyList(),
+                  includeNextMerge = true,
+                  partialEventLog = true,
+              )
+          Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
+          val runner = RuntimeProviderCommandRunner(root)
+          val runtime = providerRuntime(root, statePath, runner, RecordingWorkflowEventPort())
+
+          val result =
+              runtime.eventUseCases.handle(
+                  ReceiveEventRequest(
+                      ExternalEvent(
+                          id = "deployment-production-partial-1",
+                          kind = ExternalEventKind.DEPLOYMENT_CHANGED,
+                          targetId = "candidate-1",
+                          occurredAtEpochMillis = 4,
+                      )
+                  )
+              )
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<*>>()
+          WorkflowStateJsonCodec.decode(Files.readString(statePath))
+              .deploymentCandidates
+              .values
+              .map { it.mainRevision } shouldContain "main-2"
+          runner.operationCalls("create-candidate") shouldBe 1
+        }
       }
     })
+
+private fun providerRuntime(
+    root: Path,
+    statePath: Path,
+    runner: RuntimeProviderCommandRunner,
+    eventPort: WorkflowEventPort,
+): WorkflowApplicationRuntime =
+    createDefaultApplicationRuntime(
+        currentDirectory = root,
+        environment =
+            mapOf(
+                "WORKFLOW_REPO_ROOT" to root.toString(),
+                "WORKFLOW_STATE_FILE" to statePath.toString(),
+                "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
+                "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
+                "WORKFLOW_FEATURE_FLAG_COMMAND" to "[\"feature\"]",
+            ),
+        commandRunner = runner,
+        eventPort = eventPort,
+    )
+
+private fun productionState(
+    featureFlagIds: List<String>,
+    releaseState: ReleaseState? = null,
+    includeNextMerge: Boolean = false,
+    partialEventLog: Boolean = false,
+): WorkflowState {
+  val currentSubTasks = featureFlagIds.mapIndexed { index, featureFlagId ->
+    SubTask(
+        id = "sk-flag-${index + 1}",
+        taskId = "task-1",
+        title = "기능 플래그 ${index + 1}",
+        state = SubTaskState.MERGED,
+        exposure = Exposure.FEATURE_FLAG,
+        featureFlagId = featureFlagId,
+    )
+  }
+  val currentSubTask =
+      if (currentSubTasks.isNotEmpty()) {
+        currentSubTasks
+      } else {
+        listOf(
+            SubTask(
+                id = "sk-current",
+                taskId = "task-1",
+                title = "현재 변경",
+                state = SubTaskState.MERGED,
+            )
+        )
+      }
+  val nextSubTask =
+      if (includeNextMerge) {
+        SubTask(
+            id = "sk-next",
+            taskId = "task-1",
+            title = "다음 변경",
+            state = SubTaskState.MERGED,
+        )
+      } else {
+        null
+      }
+  val allSubTasks = currentSubTask + listOfNotNull(nextSubTask)
+  val task =
+      Task(
+          id = "task-1",
+          externalId = ExternalTaskId("TASK-1"),
+          title = "배포 작업",
+          subTaskIds = allSubTasks.map { it.id },
+      )
+  val candidate =
+      DeploymentCandidate(
+          id = "candidate-1",
+          mainRevision = "main-1",
+          includedSubTasks = currentSubTask.map { it.id },
+          validations = listOf(Validation("validation-1", "검증", ValidationStatus.PASSED)),
+          state = DeploymentCandidateState.PRODUCTION,
+      )
+  val release = releaseState?.let {
+    Release(
+        id = "release-1",
+        candidateId = candidate.id,
+        featureFlagId = requireNotNull(featureFlagIds.singleOrNull()),
+        state = it,
+        productionReady = true,
+        internalValidationPassed = true,
+    )
+  }
+  val merges =
+      listOf(MergeRecorded(currentSubTask.first().id, "main-1")) +
+          if (includeNextMerge && !partialEventLog) {
+            listOf(MergeRecorded("sk-next", "main-2"))
+          } else {
+            emptyList()
+          }
+  val integrations =
+      currentSubTask
+          .map { Integration(it.id, IntegrationState.MERGED, mainRevision = "main-1") }
+          .plus(
+              if (includeNextMerge) {
+                listOf(Integration("sk-next", IntegrationState.MERGED, mainRevision = "main-2"))
+              } else {
+                emptyList()
+              }
+          )
+  return WorkflowState(
+      tasks = mapOf(task.id to task),
+      subTasks = allSubTasks.associateBy(SubTask::id),
+      deploymentCandidates = mapOf(candidate.id to candidate),
+      releases = release?.let { mapOf(it.id to it) }.orEmpty(),
+      integrations = integrations.associateBy(Integration::subTaskId),
+      eventLog = EventLog(events = merges),
+  )
+}
+
+private class RuntimeProviderCommandRunner(private val repositoryRoot: Path) : CommandRunner {
+  private data class CandidatePayload(
+      val id: String,
+      val mainRevision: String,
+      val includedSubTasks: String,
+      val risks: String,
+  )
+
+  private val commands = mutableListOf<List<String>>()
+  private val candidates = mutableMapOf<String, CandidatePayload>()
+  private val releases = mutableMapOf<String, Pair<String, String>>()
+
+  fun operationCalls(operation: String): Int = commands.count { it.getOrNull(1) == operation }
+
+  override fun run(command: List<String>, workingDirectory: Path): CommandResult {
+    if (command == listOf("git", "rev-parse", "--show-toplevel")) {
+      return CommandResult(0, repositoryRoot.toString() + "\n", "")
+    }
+    commands += command
+    return when {
+      command.firstOrNull() == "deploy" && command.getOrNull(1) == "create-candidate" ->
+          createCandidate(command)
+      command.firstOrNull() == "deploy" && command.getOrNull(1) == "validate-candidate" ->
+          validateCandidate(command)
+      command.firstOrNull() == "release" && command.getOrNull(1) == "create-release" ->
+          release(command, ReleaseState.SAFE_DEFAULT)
+      command.firstOrNull() == "release" && command.getOrNull(1) == "validate-release" ->
+          release(command, ReleaseState.AWAITING_RELEASE_APPROVAL, true)
+      command.firstOrNull() == "release" && command.getOrNull(1) == "continue-rollout" ->
+          release(command, ReleaseState.RELEASED, true)
+      else -> CommandResult(0, "{}", "")
+    }
+  }
+
+  private fun createCandidate(command: List<String>): CommandResult {
+    val payload = Json.parseToJsonElement(command.last()).jsonObject
+    val revision = payload.getValue("main_revision").jsonPrimitive.content
+    val candidate =
+        CandidatePayload(
+            id = "candidate-$revision",
+            mainRevision = revision,
+            includedSubTasks = payload.getValue("included_subtasks").jsonArray.toString(),
+            risks = payload.getValue("risks").jsonObject.toString(),
+        )
+    candidates[candidate.id] = candidate
+    return CommandResult(0, candidateResponse(candidate, DeploymentCandidateState.CANDIDATE), "")
+  }
+
+  private fun validateCandidate(command: List<String>): CommandResult {
+    val payload = Json.parseToJsonElement(command.last()).jsonObject
+    val id = payload.getValue("candidate_id").jsonPrimitive.content
+    return CommandResult(
+        0,
+        candidateResponse(requireNotNull(candidates[id]), DeploymentCandidateState.CANDIDATE),
+        "",
+    )
+  }
+
+  private fun candidateResponse(
+      candidate: CandidatePayload,
+      state: DeploymentCandidateState,
+  ): String =
+      """{"candidate":{"id":"${candidate.id}","main_revision":"${candidate.mainRevision}","included_subtasks":${candidate.includedSubTasks},"risks":${candidate.risks},"state":"${state.name}"}}"""
+
+  private fun release(
+      command: List<String>,
+      state: ReleaseState,
+      validated: Boolean = false,
+  ): CommandResult {
+    val payload = Json.parseToJsonElement(command.last()).jsonObject
+    val releaseId = payload.getValue("release_id").jsonPrimitive.content
+    val target =
+        if (command.getOrNull(1) == "create-release") {
+          val value =
+              payload.getValue("candidate_id").jsonPrimitive.content to
+                  payload.getValue("feature_flag_id").jsonPrimitive.content
+          releases[releaseId] = value
+          value
+        } else {
+          releases[releaseId] ?: ("candidate-1" to "flag-1")
+        }
+    val candidateId = target.first
+    val featureFlagId = target.second
+    return CommandResult(
+        0,
+        """{"release":{"release_id":"$releaseId","candidate_id":"$candidateId","feature_flag_id":"$featureFlagId","state":"${state.name}","production_ready":$validated,"internal_validation_passed":$validated}}""",
+        "",
+    )
+  }
+}
 
 private object RuntimeCommandRunnerForComposition : CommandRunner {
   override fun run(command: List<String>, workingDirectory: Path): CommandResult =

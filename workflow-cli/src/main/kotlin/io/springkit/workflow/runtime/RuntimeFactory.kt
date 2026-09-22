@@ -19,11 +19,13 @@ import io.springkit.workflow.application.CompensateRequest
 import io.springkit.workflow.application.CompensateResponse
 import io.springkit.workflow.application.CompensationPort
 import io.springkit.workflow.application.ContentPort
+import io.springkit.workflow.application.ContinueRolloutLifecycleRequest
 import io.springkit.workflow.application.CreateCandidateRequest
 import io.springkit.workflow.application.CreateCandidateResponse
 import io.springkit.workflow.application.CreateReleaseRequest
 import io.springkit.workflow.application.CreateReleaseResponse
 import io.springkit.workflow.application.DeploymentLifecycleRequest
+import io.springkit.workflow.application.DeploymentLifecycleResponse
 import io.springkit.workflow.application.DeploymentLifecycleUseCase
 import io.springkit.workflow.application.DeploymentPort
 import io.springkit.workflow.application.ExternalEventKind
@@ -40,6 +42,7 @@ import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.application.PostMergeCleanupRequest
 import io.springkit.workflow.application.PostMergeCleanupResponse
 import io.springkit.workflow.application.PostMergeCleanupUseCase
+import io.springkit.workflow.application.ReleaseLifecycleResponse
 import io.springkit.workflow.application.ReleaseLifecycleUseCases
 import io.springkit.workflow.application.ReleasePort
 import io.springkit.workflow.application.ReviewLifecycleUseCases
@@ -66,9 +69,14 @@ import io.springkit.workflow.application.WorkflowStorePort
 import io.springkit.workflow.application.WorkflowStoreSnapshot
 import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.domain.BlockedBy
+import io.springkit.workflow.domain.DeploymentCandidate
+import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
+import io.springkit.workflow.domain.IntegrationState
+import io.springkit.workflow.domain.MergeRecorded
+import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.ReleaseRecorded
 import io.springkit.workflow.domain.ReleaseState
 import io.springkit.workflow.domain.WorkflowResult
@@ -86,6 +94,13 @@ fun interface RuntimeFactory {
 object DefaultRuntimeFactory : RuntimeFactory {
   override fun create(): WorkflowCommandGateway = createDefaultRuntime()
 }
+
+/** 배포 Event의 후보, Release와 후속 후보를 함께 반환하는 런타임 결과입니다. */
+data class DeploymentEventResponse(
+    val deployment: DeploymentLifecycleResponse,
+    val releases: List<ReleaseLifecycleResponse> = emptyList(),
+    val nextCandidate: DeploymentLifecycleResponse? = null,
+)
 
 /** 로컬 실행 환경에서 Workflow Application과 Outbound Adapter를 조합합니다. */
 fun createDefaultRuntime(
@@ -196,7 +211,14 @@ fun createDefaultApplicationRuntime(
           clockPort = clock,
           projectPrefix = environment["WORKFLOW_PROJECT_PREFIX"] ?: "sk",
       )
-  val review = ReviewUseCases(reviewAdapter, idPort, clock)
+  val review =
+      ReviewUseCases(
+          reviewPort = reviewAdapter,
+          idPort = idPort,
+          clockPort = clock,
+          compensationPort = RuntimeCompensationPort,
+          storePort = store,
+      )
   val reviewLifecycle =
       ReviewLifecycleUseCases(
           workspacePort = workspacePort,
@@ -224,6 +246,7 @@ fun createDefaultApplicationRuntime(
           idPort = idPort,
           clockPort = clock,
           compensationPort = RuntimeCompensationPort,
+          featureFlagPort = featureFlagPort,
       )
   val releaseLifecycle =
       ReleaseLifecycleUseCases(
@@ -265,6 +288,7 @@ fun createDefaultApplicationRuntime(
           idPort = idPort,
           clockPort = clock,
           compensationPort = RuntimeCompensationPort,
+          featureFlagPort = featureFlagPort,
       )
   val commandGateway =
       WorkflowCommandGateway(
@@ -476,30 +500,21 @@ fun createDefaultApplicationRuntime(
                     mapOf(
                         ExternalEventKind.DEPLOYMENT_CHANGED to
                             WorkflowEventHandler { event ->
-                              deploymentLifecycle.handle(event)
+                              handleDeploymentEvent(
+                                  event = event,
+                                  deploymentLifecycle = deploymentLifecycle,
+                                  releaseLifecycle = releaseLifecycle,
+                                  store = store,
+                              )
                             },
                         ExternalEventKind.CANARY_CHANGED to
                             WorkflowEventHandler { event ->
-                              when (val deployment = deploymentLifecycle.handle(event)) {
-                                is io.springkit.workflow.domain.WorkflowResult.Failure -> deployment
-                                is io.springkit.workflow.domain.WorkflowResult.Success -> {
-                                  if (
-                                      deployment.data.candidate.state ==
-                                          io.springkit.workflow.domain.DeploymentCandidateState
-                                              .PRODUCTION
-                                  ) {
-                                    releaseLifecycle.handleDeployment(
-                                        DeploymentRecorded(
-                                            targetId = deployment.data.candidate.id,
-                                            state = deployment.data.candidate.state,
-                                            occurredAtEpochMillis = event.occurredAtEpochMillis,
-                                        )
-                                    )
-                                  } else {
-                                    deployment
-                                  }
-                                }
-                              }
+                              handleDeploymentEvent(
+                                  event = event,
+                                  deploymentLifecycle = deploymentLifecycle,
+                                  releaseLifecycle = releaseLifecycle,
+                                  store = store,
+                              )
                             },
                         ExternalEventKind.RELEASE_CHANGED to
                             WorkflowEventHandler { event ->
@@ -521,12 +536,10 @@ fun createDefaultApplicationRuntime(
                                         event.targetId,
                                     )
                                   }
-                              releaseLifecycle.handle(
-                                  ReleaseRecorded(
-                                      targetId = event.targetId,
-                                      state = state,
-                                      occurredAtEpochMillis = event.occurredAtEpochMillis,
-                                  )
+                              handleReleaseEvent(
+                                  event = event,
+                                  state = state,
+                                  releaseLifecycle = releaseLifecycle,
                               )
                             },
                     )
@@ -540,6 +553,230 @@ fun createDefaultApplicationRuntime(
       releaseLifecycle = releaseLifecycle,
   )
 }
+
+/** 배포 상태를 반영하고 Production 이후 Release와 다음 후보를 순서대로 처리합니다. */
+private fun handleDeploymentEvent(
+    event: io.springkit.workflow.application.ExternalEvent,
+    deploymentLifecycle: DeploymentLifecycleUseCase,
+    releaseLifecycle: ReleaseLifecycleUseCases,
+    store: WorkflowStorePort,
+): WorkflowResult<DeploymentEventResponse> {
+  return when (val deployment = deploymentLifecycle.handle(event)) {
+    is WorkflowResult.Failure -> deployment
+    is WorkflowResult.Success ->
+        handleProductionDeployment(
+            event = event,
+            deployment = deployment,
+            releaseLifecycle = releaseLifecycle,
+            store = store,
+            deploymentLifecycle = deploymentLifecycle,
+        )
+  }
+}
+
+/** Production 후보의 Release와 후속 배포 후보를 처리합니다. */
+private fun handleProductionDeployment(
+    event: io.springkit.workflow.application.ExternalEvent,
+    deployment: WorkflowResult.Success<DeploymentLifecycleResponse>,
+    releaseLifecycle: ReleaseLifecycleUseCases,
+    store: WorkflowStorePort,
+    deploymentLifecycle: DeploymentLifecycleUseCase,
+): WorkflowResult<DeploymentEventResponse> {
+  val deploymentData = deployment.data
+  if (deploymentData.candidate.state != DeploymentCandidateState.PRODUCTION) {
+    return WorkflowResult.Success(
+        DeploymentEventResponse(deployment = deploymentData),
+        next = deployment.next,
+    )
+  }
+
+  val productionEvent =
+      DeploymentRecorded(
+          targetId = deploymentData.candidate.id,
+          state = deploymentData.candidate.state,
+          occurredAtEpochMillis = event.occurredAtEpochMillis,
+      )
+  return when (val releases = releaseLifecycle.handleDeploymentAll(productionEvent)) {
+    is WorkflowResult.Failure -> releases.withRuntimeNext(deployment.next)
+    is WorkflowResult.Success -> {
+      val currentNext = mergeNextActions(deployment.next, releases.data.flatMap { it.next })
+      when (
+          val nextCandidate =
+              createNextCandidateAfterProduction(
+                  store = store,
+                  deploymentLifecycle = deploymentLifecycle,
+                  production = deploymentData.candidate,
+                  requestId = event.id,
+              )
+      ) {
+        is WorkflowResult.Failure -> nextCandidate.withRuntimeNext(currentNext)
+        is WorkflowResult.Success ->
+            WorkflowResult.Success(
+                DeploymentEventResponse(
+                    deployment = deploymentData,
+                    releases = releases.data,
+                    nextCandidate = nextCandidate.data,
+                ),
+                next = mergeNextActions(currentNext, nextCandidate.next),
+            )
+      }
+    }
+  }
+}
+
+/** Release 상태를 반영한 뒤 rollout 상태에서만 공급자 후속 동작을 실행합니다. */
+private fun handleReleaseEvent(
+    event: io.springkit.workflow.application.ExternalEvent,
+    state: ReleaseState,
+    releaseLifecycle: ReleaseLifecycleUseCases,
+): WorkflowResult<ReleaseLifecycleResponse> {
+  return when (
+      val handled =
+          releaseLifecycle.handleRelease(
+              ReleaseRecorded(
+                  targetId = event.targetId,
+                  state = state,
+                  occurredAtEpochMillis = event.occurredAtEpochMillis,
+              )
+          )
+  ) {
+    is WorkflowResult.Failure -> handled
+    is WorkflowResult.Success -> continueReleaseEvent(handled, event, releaseLifecycle)
+  }
+}
+
+/** ROLLOUT을 진행하고 RELEASED 결과는 같은 Event 흐름에서 cleanup까지 처리합니다. */
+private fun continueReleaseEvent(
+    handled: WorkflowResult.Success<ReleaseLifecycleResponse>,
+    event: io.springkit.workflow.application.ExternalEvent,
+    releaseLifecycle: ReleaseLifecycleUseCases,
+): WorkflowResult<ReleaseLifecycleResponse> {
+  if (
+      handled.data.release.state != ReleaseState.ROLLOUT &&
+          handled.data.release.state != ReleaseState.RELEASED
+  ) {
+    return handled
+  }
+  val continued =
+      when (
+          val result =
+              releaseLifecycle.continueRollout(
+                  ContinueRolloutLifecycleRequest(
+                      releaseId = event.targetId,
+                      requestId = event.id,
+                  )
+              )
+      ) {
+        is WorkflowResult.Failure -> return result.withRuntimeNext(handled.next)
+        is WorkflowResult.Success -> result
+      }
+  val afterContinueNext = mergeNextActions(handled.next, continued.next)
+  if (continued.data.release.state != ReleaseState.RELEASED) {
+    return WorkflowResult.Success(continued.data, next = afterContinueNext)
+  }
+  return when (
+      val cleaned =
+          releaseLifecycle.continueRollout(
+              ContinueRolloutLifecycleRequest(
+                  releaseId = event.targetId,
+                  requestId = "${event.id}-cleanup",
+              )
+          )
+  ) {
+    is WorkflowResult.Failure -> cleaned.withRuntimeNext(afterContinueNext)
+    is WorkflowResult.Success ->
+        WorkflowResult.Success(
+            cleaned.data,
+            next = mergeNextActions(afterContinueNext, cleaned.next),
+        )
+  }
+}
+
+/** Production 후보 뒤에 기록된 merge 중 가장 최신 revision으로 다음 후보를 만듭니다. */
+internal fun createNextCandidateAfterProduction(
+    store: WorkflowStorePort,
+    deploymentLifecycle: DeploymentLifecycleUseCase,
+    production: DeploymentCandidate,
+    requestId: String,
+): WorkflowResult<DeploymentLifecycleResponse?> {
+  val stored =
+      when (val result = store.snapshot(StoreSnapshotRequest())) {
+        is PortResult.Failure ->
+            return WorkflowResult.Failure(
+                FailureData(
+                    code = FailureCode.STORE_FAILURE,
+                    message = result.error.message,
+                    blockedBy =
+                        listOf(
+                            BlockedBy(
+                                code = result.error.code,
+                                message = result.error.message,
+                                target = "store",
+                            )
+                        ),
+                )
+            )
+        is PortResult.Success -> result.value.snapshot
+      }
+  val latestRevision =
+      latestMergedRevisionAfter(stored, production.mainRevision)
+          ?: return WorkflowResult.Success(null)
+  val created =
+      deploymentLifecycle.create(
+          DeploymentLifecycleRequest(
+              mainRevision = latestRevision,
+              requestId = "next-candidate-${production.id}-$requestId",
+          )
+      )
+  return when (created) {
+    is WorkflowResult.Failure -> created
+    is WorkflowResult.Success -> WorkflowResult.Success(created.data, created.next)
+  }
+}
+
+/** Store가 보존한 merge 순서에서 현재 Production 이후의 최신 main revision을 찾습니다. */
+private fun latestMergedRevisionAfter(
+    snapshot: WorkflowStoreSnapshot,
+    productionRevision: String,
+): String? {
+  val includedSubTasks =
+      snapshot.candidates
+          .firstOrNull { it.mainRevision == productionRevision }
+          ?.includedSubTasks
+          ?.toSet()
+          .orEmpty()
+  val mergeEvents = snapshot.eventLog.events.filterIsInstance<MergeRecorded>()
+  val productionEventIndex = mergeEvents.indexOfLast { it.mainRevision == productionRevision }
+  val eventRevisions =
+      if (productionEventIndex >= 0) {
+        mergeEvents
+            .drop(productionEventIndex + 1)
+            .filter { it.targetId !in includedSubTasks }
+            .map { it.mainRevision }
+      } else {
+        emptyList()
+      }
+  val integrationRevisions =
+      snapshot.integrations
+          .asSequence()
+          .filter { it.state == IntegrationState.MERGED }
+          .filter { it.subTaskId !in includedSubTasks }
+          .mapNotNull { it.mainRevision }
+          .toList()
+  return (eventRevisions + integrationRevisions)
+      .filter { it.isNotBlank() && it != productionRevision }
+      .lastOrNull()
+}
+
+/** 기존 next action을 중복 없이 이어 붙입니다. */
+private fun mergeNextActions(vararg actions: List<NextAction>): List<NextAction> =
+    actions.asList().flatten().distinctBy { Triple(it.actor, it.action, it.command) }
+
+/** 앞선 런타임 단계의 next action을 후속 실패 결과에도 보존합니다. */
+private fun WorkflowResult.Failure.withRuntimeNext(
+    previous: List<NextAction>
+): WorkflowResult.Failure =
+    WorkflowResult.Failure(data.copy(next = mergeNextActions(previous, data.next)))
 
 private data class ProviderCommandPrefixes(
     val deployment: List<String>,
@@ -777,8 +1014,11 @@ private fun persistMergeQueueEntry(
     entry: io.springkit.workflow.domain.MergeQueueEntry,
 ) {
   val current = store.snapshot(StoreSnapshotRequest())
-  if (current is PortResult.Failure) return
-  val snapshot = (current as PortResult.Success).value.snapshot
+  val snapshot =
+      when (current) {
+        is PortResult.Failure -> return
+        is PortResult.Success -> current.value.snapshot
+      }
   val transaction =
       StoreTransactionRequest(
           transactionId =
