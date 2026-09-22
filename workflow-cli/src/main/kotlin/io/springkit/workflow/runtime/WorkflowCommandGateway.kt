@@ -3,6 +3,7 @@ package io.springkit.workflow.runtime
 import io.springkit.workflow.adapter.cli.WorkflowCommandGateway as CliWorkflowCommandGateway
 import io.springkit.workflow.adapter.cli.WorkflowCommandRequest
 import io.springkit.workflow.adapter.json.WorkflowJson
+import io.springkit.workflow.adapter.local.OkioWorkflowBodyReader
 import io.springkit.workflow.application.AddReviewCommentRequest
 import io.springkit.workflow.application.ApproveGateRequest
 import io.springkit.workflow.application.CheckRequest
@@ -38,8 +39,6 @@ import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.Risk
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.WorkspacePath
-import java.nio.file.Files
-import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -55,9 +54,7 @@ class WorkflowCommandGateway(
     private val reviewGate: ReviewGateUseCases,
     private val deliveryGate: DeliveryGateUseCases,
     private val context: WorkflowRuntimeContextResolver,
-    private val bodyReader: WorkflowBodyReader = WorkflowBodyReader { path ->
-      Files.readString(Path.of(path))
-    },
+    private val bodyReader: WorkflowBodyReader = OkioWorkflowBodyReader(),
     private val commentId: (String) -> PortResult<String> = { revision ->
       PortResult.Success("comment-$revision")
     },
