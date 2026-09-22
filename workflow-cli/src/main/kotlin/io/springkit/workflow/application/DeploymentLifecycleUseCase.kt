@@ -8,10 +8,12 @@ import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
 import io.springkit.workflow.domain.EventLog
+import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.IntegrationState
 import io.springkit.workflow.domain.MainRevision
+import io.springkit.workflow.domain.MergeRecorded
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.Risk
 import io.springkit.workflow.domain.SubTask
@@ -78,12 +80,15 @@ class DeploymentLifecycleUseCase(
     private val idPort: IdPort? = null,
     private val clockPort: ClockPort? = null,
     private val compensationPort: CompensationPort? = null,
+    private val featureFlagPort: FeatureFlagPort? = null,
 ) {
   /** merge된 SubTask로 배포 후보를 만들고 검증을 시작합니다. */
   fun create(request: DeploymentLifecycleRequest): WorkflowResult<DeploymentLifecycleResponse> {
     val initial = readSnapshot(request.expectedStoreRevision, request.mainRevision)
     if (initial is SnapshotRead.Failure) return initial.failure
     val snapshot = (initial as SnapshotRead.Success).snapshot
+    val merged = mergedSubTasks(snapshot, request.mainRevision)
+    if (merged is MergedSubTasks.Failure) return merged.failure
     snapshot.candidates
         .firstOrNull { it.mainRevision == request.mainRevision }
         ?.let {
@@ -92,10 +97,15 @@ class DeploymentLifecycleUseCase(
               nextActions(it),
           )
         }
-
-    val merged = mergedSubTasks(snapshot, request.mainRevision)
-    if (merged is MergedSubTasks.Failure) return merged.failure
     val (subTasks, risks) = (merged as MergedSubTasks.Success).value
+    snapshot.candidates
+        .firstOrNull { it.state.isActiveDeployment() }
+        ?.let {
+          return WorkflowResult.Success(
+              DeploymentLifecycleResponse(it, idempotent = true),
+              nextActions(it),
+          )
+        }
     val transactionRequest =
         StoreTransactionRequest(
             transactionId = issueTransactionId(request.requestId),
@@ -104,6 +114,9 @@ class DeploymentLifecycleUseCase(
         )
 
     return transaction(transactionRequest) { current ->
+          val currentMerged = mergedSubTasks(current, request.mainRevision)
+          if (currentMerged is MergedSubTasks.Failure)
+              return@transaction Operation.Abort(currentMerged.failure.toPortFailure())
           current.candidates
               .firstOrNull { it.mainRevision == request.mainRevision }
               ?.let {
@@ -114,10 +127,17 @@ class DeploymentLifecycleUseCase(
                     )
                 )
               }
-          val currentMerged = mergedSubTasks(current, request.mainRevision)
-          if (currentMerged is MergedSubTasks.Failure)
-              return@transaction Operation.Abort(currentMerged.failure.toPortFailure())
           val (currentSubTasks, currentRisks) = (currentMerged as MergedSubTasks.Success).value
+          current.candidates
+              .firstOrNull { it.state.isActiveDeployment() }
+              ?.let {
+                return@transaction Operation.Commit(
+                    TransactionMutation(
+                        DeploymentLifecycleResponse(it, idempotent = true),
+                        current,
+                    )
+                )
+              }
           if (currentSubTasks.map { it.id } != subTasks.map { it.id } || currentRisks != risks) {
             return@transaction Operation.Abort(
                 failurePort(
@@ -250,6 +270,10 @@ class DeploymentLifecycleUseCase(
                     changes,
                 )
             )
+          }
+
+          validateFeatureFlagDefaults(current, validationCandidate)?.let {
+            return@transaction Operation.Abort(it, changes)
           }
 
           val canary =
@@ -702,6 +726,10 @@ class DeploymentLifecycleUseCase(
             )
           }
 
+          validateFeatureFlagDefaults(latest, validatedCandidate)?.let {
+            return@transaction Operation.Abort(it, listOfNotNull(validationChange))
+          }
+
           val canary =
               when (
                   val result = deploymentPort.startCanary(StartCanaryRequest(latestCandidate.id))
@@ -777,12 +805,29 @@ class DeploymentLifecycleUseCase(
       snapshot: WorkflowStoreSnapshot,
       mainRevision: MainRevision,
   ): MergedSubTasks {
-    val mergedIds =
+    val production = latestProductionCandidate(snapshot)
+    val eventMerges = snapshot.eventLog.events.filterIsInstance<MergeRecorded>()
+    val integrationMerges =
         snapshot.integrations
-            .filter { it.state == IntegrationState.MERGED && it.mainRevision == mainRevision }
-            .map { it.subTaskId }
-            .distinct()
-    if (mergedIds.isEmpty()) {
+            .filter { it.state == IntegrationState.MERGED && !it.mainRevision.isNullOrBlank() }
+            .map {
+              MergePoint(
+                  subTaskId = it.subTaskId,
+                  mainRevision = requireNotNull(it.mainRevision),
+              )
+            }
+    val eventHasTarget = eventMerges.any { it.mainRevision == mainRevision }
+    val eventHasProduction =
+        production == null || eventMerges.any { it.mainRevision == production.mainRevision }
+    val mergePoints =
+        if (eventHasTarget && eventHasProduction) {
+          eventMerges.map { MergePoint(it.targetId, it.mainRevision) }
+        } else {
+          integrationMerges
+        }
+    val targetFirstIndex = mergePoints.indexOfFirst { it.mainRevision == mainRevision }
+    val targetLastIndex = mergePoints.indexOfLast { it.mainRevision == mainRevision }
+    if (targetFirstIndex < 0) {
       return MergedSubTasks.Failure(
           failure(
               FailureCode.DEPLOYMENT_NOT_FOUND,
@@ -791,6 +836,30 @@ class DeploymentLifecycleUseCase(
           )
       )
     }
+    val productionIndex = production?.let { candidate ->
+      mergePoints.indexOfLast { it.mainRevision == candidate.mainRevision }
+    }
+    if (production != null && productionIndex == -1) {
+      return MergedSubTasks.Failure(
+          failure(
+              FailureCode.INVARIANT_VIOLATION,
+              "the current production revision is missing from the merge history",
+              production.mainRevision,
+          )
+      )
+    }
+    if (productionIndex != null && productionIndex >= 0 && targetFirstIndex < productionIndex) {
+      return MergedSubTasks.Failure(
+          failure(
+              FailureCode.STATE_CONFLICT,
+              "deployment target revision precedes the current production revision",
+              mainRevision,
+          )
+      )
+    }
+    val firstCandidateIndex = productionIndex?.plus(1) ?: 0
+    val targetPoints = mergePoints.subList(firstCandidateIndex, targetLastIndex + 1)
+    val mergedIds = targetPoints.map(MergePoint::subTaskId).distinct()
     val subTasks = mergedIds.mapNotNull { id -> snapshot.subTasks.firstOrNull { it.id == id } }
     if (subTasks.size != mergedIds.size) {
       return MergedSubTasks.Failure(
@@ -802,6 +871,20 @@ class DeploymentLifecycleUseCase(
       )
     }
     return MergedSubTasks.Success(subTasks to subTasks.associate { it.id to it.risk })
+  }
+
+  private fun latestProductionCandidate(
+      snapshot: WorkflowStoreSnapshot,
+  ): DeploymentCandidate? {
+    val productionEvents =
+        snapshot.eventLog.events.filterIsInstance<DeploymentRecorded>().filter {
+          it.state == DeploymentCandidateState.PRODUCTION
+        }
+    return productionEvents
+        .asSequence()
+        .mapNotNull { event -> snapshot.candidates.firstOrNull { it.id == event.targetId } }
+        .lastOrNull { it.state == DeploymentCandidateState.PRODUCTION }
+        ?: snapshot.candidates.lastOrNull { it.state == DeploymentCandidateState.PRODUCTION }
   }
 
   private fun validateCandidateIdentity(
@@ -823,6 +906,42 @@ class DeploymentLifecycleUseCase(
             FailureCode.INVARIANT_VIOLATION to "deployment provider changed candidate risks"
         else -> null
       }
+
+  private fun validateFeatureFlagDefaults(
+      snapshot: WorkflowStoreSnapshot,
+      candidate: DeploymentCandidate,
+  ): PortResult.Failure? {
+    val featureFlagIds =
+        candidate.includedSubTasks
+            .mapNotNull { subTaskId ->
+              snapshot.subTasks.firstOrNull { it.id == subTaskId }
+            }
+            .filter { it.exposure == Exposure.FEATURE_FLAG }
+            .mapNotNull(SubTask::featureFlagId)
+            .distinct()
+    if (featureFlagIds.isEmpty()) return null
+    val port =
+        featureFlagPort
+            ?: return failurePort(
+                FailureCode.INVALID_GATE_STATE,
+                "Feature Flag의 안전한 기본 동작을 확인할 공급자가 없습니다.",
+                candidate.id,
+            )
+    featureFlagIds.forEach { featureFlagId ->
+      when (val result = port.validateDefault(ValidateFeatureFlagRequest(featureFlagId))) {
+        is PortResult.Failure -> return result
+        is PortResult.Success ->
+            if (!result.value.safeDefault) {
+              return failurePort(
+                  FailureCode.INVALID_GATE_STATE,
+                  "Feature Flag의 기본 동작이 안전하지 않습니다.",
+                  featureFlagId,
+              )
+            }
+      }
+    }
+    return null
+  }
 
   private fun <T> transaction(
       request: StoreTransactionRequest,
@@ -921,7 +1040,7 @@ class DeploymentLifecycleUseCase(
             listOf(
                 NextAction(
                     io.springkit.workflow.domain.ActorKind.HUMAN,
-                    "approve_deploy",
+                    "approve_deployment",
                     "./tools/workflow gate deploy ${candidate.id}",
                 )
             )
@@ -973,6 +1092,11 @@ class DeploymentLifecycleUseCase(
         val changes: List<ChangeReceipt> = emptyList(),
     ) : Operation<T>
   }
+
+  private data class MergePoint(
+      val subTaskId: SubTaskId,
+      val mainRevision: MainRevision,
+  )
 }
 
 private fun <T> WorkflowResult<T>.mapFailureStage(): WorkflowResult<T> = this
@@ -997,6 +1121,12 @@ private fun DeploymentCandidateState.isAfterValidation(): Boolean =
     this == DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL ||
         this == DeploymentCandidateState.CANARY ||
         this == DeploymentCandidateState.PRODUCTION
+
+private fun DeploymentCandidateState.isActiveDeployment(): Boolean =
+    this == DeploymentCandidateState.CANDIDATE ||
+        this == DeploymentCandidateState.VALIDATING ||
+        this == DeploymentCandidateState.AWAITING_DEPLOY_APPROVAL ||
+        this == DeploymentCandidateState.CANARY
 
 private fun DeploymentCandidate.requiresValidationRefresh(): Boolean =
     validations.isEmpty() ||
