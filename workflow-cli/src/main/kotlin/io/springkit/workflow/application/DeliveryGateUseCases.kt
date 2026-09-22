@@ -6,6 +6,7 @@ import io.springkit.workflow.domain.BlockedBy
 import io.springkit.workflow.domain.CandidateId
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
+import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.GateRecorded
@@ -47,6 +48,7 @@ class DeliveryGateUseCases(
     private val idPort: IdPort? = null,
     private val clockPort: ClockPort? = null,
     private val compensationPort: CompensationPort = NoOpCompensationPort,
+    private val featureFlagPort: FeatureFlagPort? = null,
 ) {
   /** 사람의 배포 승인을 확인하고 고위험 후보의 Production Canary를 시작합니다. */
   fun deploy(request: DeployGateRequest): WorkflowResult<StartCanaryResponse> =
@@ -72,15 +74,14 @@ class DeliveryGateUseCases(
               is PortResult.Failure -> return@executeGate result
               is PortResult.Success -> result.value.candidate
             }
-        if (current.id != stored.id) {
-          return@executeGate failurePort(
-              FailureCode.INVARIANT_VIOLATION,
-              "deployment provider returned a different candidate",
-              request.candidateId,
-          )
+        validateDeploymentProviderResult(current, stored, stored.state)?.let {
+          return@executeGate failurePort(FailureCode.INVARIANT_VIOLATION, it, request.candidateId)
         }
 
         gateFailure(GateType.DEPLOY, actor, stored, current, request.candidateId)?.let {
+          return@executeGate it
+        }
+        validateFeatureFlagDefaults(snapshot, current)?.let {
           return@executeGate it
         }
 
@@ -89,17 +90,19 @@ class DeliveryGateUseCases(
               is PortResult.Failure -> return@executeGate result
               is PortResult.Success -> result.value
             }
-        if (
-            started.candidate.id != current.id ||
-                started.candidate.state != DeploymentCandidateState.CANARY
-        ) {
-          return@executeGate failurePort(
-              FailureCode.INVARIANT_VIOLATION,
-              "deployment provider did not start the candidate canary",
-              request.candidateId,
-              started.change,
-          )
-        }
+        validateDeploymentProviderResult(
+                started.candidate,
+                current,
+                DeploymentCandidateState.CANARY,
+            )
+            ?.let {
+              return@executeGate failurePort(
+                  FailureCode.INVARIANT_VIOLATION,
+                  it,
+                  request.candidateId,
+                  started.change,
+              )
+            }
 
         val occurredAt = now(request.requestId)
         val event = GateRecorded(current.id, GateType.DEPLOY, actor, occurredAt)
@@ -153,12 +156,8 @@ class DeliveryGateUseCases(
                           request.releaseId,
                       )
             }
-        if (current.id != stored.id) {
-          return@executeGate failurePort(
-              FailureCode.INVARIANT_VIOLATION,
-              "release provider returned a different release",
-              request.releaseId,
-          )
+        validateReleaseProviderResult(current, stored, stored.state)?.let {
+          return@executeGate failurePort(FailureCode.INVARIANT_VIOLATION, it, request.releaseId)
         }
 
         gateFailure(GateType.RELEASE, actor, stored, current, request.releaseId)?.let {
@@ -170,10 +169,10 @@ class DeliveryGateUseCases(
               is PortResult.Failure -> return@executeGate result
               is PortResult.Success -> result.value
             }
-        if (started.release.id != current.id || started.release.state != ReleaseState.ROLLOUT) {
+        validateReleaseProviderResult(started.release, current, ReleaseState.ROLLOUT)?.let {
           return@executeGate failurePort(
               FailureCode.INVARIANT_VIOLATION,
-              "release provider did not start the rollout",
+              it,
               request.releaseId,
               started.change,
           )
@@ -276,6 +275,82 @@ class DeliveryGateUseCases(
           targetId,
       )
     }
+  }
+
+  private fun validateDeploymentProviderResult(
+      actual: DeploymentCandidate,
+      expected: DeploymentCandidate,
+      expectedState: DeploymentCandidateState,
+  ): String? =
+      when {
+        actual.id != expected.id -> "deployment provider returned a different candidate"
+        actual.mainRevision != expected.mainRevision ->
+            "deployment provider returned a different main revision"
+        actual.includedSubTasks != expected.includedSubTasks ->
+            "deployment provider changed included subtasks"
+        actual.risks != expected.risks -> "deployment provider changed candidate risks"
+        actual.validations != expected.validations ->
+            "deployment provider changed candidate validations"
+        actual.state != expectedState ->
+            "deployment provider returned an unexpected candidate state"
+        else -> null
+      }
+
+  private fun validateReleaseProviderResult(
+      actual: Release,
+      expected: Release,
+      expectedState: ReleaseState,
+  ): String? =
+      when {
+        actual.id != expected.id -> "release provider returned a different release"
+        actual.candidateId != expected.candidateId ->
+            "release provider returned a different candidate"
+        actual.featureFlagId != expected.featureFlagId ->
+            "release provider returned a different feature flag"
+        actual.cleanupSubTaskId != expected.cleanupSubTaskId ->
+            "release provider changed the cleanup subtask"
+        actual.state != expectedState -> "release provider returned an unexpected release state"
+        actual.productionReady != expected.productionReady ->
+            "release provider changed production readiness"
+        actual.internalValidationPassed != expected.internalValidationPassed ->
+            "release provider changed internal validation readiness"
+        else -> null
+      }
+
+  private fun validateFeatureFlagDefaults(
+      snapshot: WorkflowStoreSnapshot,
+      candidate: DeploymentCandidate,
+  ): PortResult.Failure? {
+    val featureFlagIds =
+        candidate.includedSubTasks
+            .mapNotNull { subTaskId ->
+              snapshot.subTasks.firstOrNull { it.id == subTaskId }
+            }
+            .filter { it.exposure == Exposure.FEATURE_FLAG }
+            .mapNotNull { it.featureFlagId }
+            .distinct()
+    if (featureFlagIds.isEmpty()) return null
+    val port =
+        featureFlagPort
+            ?: return failurePort(
+                FailureCode.INVALID_GATE_STATE,
+                "Feature Flag의 안전한 기본 동작을 확인할 공급자가 없습니다.",
+                candidate.id,
+            )
+    featureFlagIds.forEach { featureFlagId ->
+      when (val result = port.validateDefault(ValidateFeatureFlagRequest(featureFlagId))) {
+        is PortResult.Failure -> return result
+        is PortResult.Success ->
+            if (!result.value.safeDefault) {
+              return failurePort(
+                  FailureCode.INVALID_GATE_STATE,
+                  "Feature Flag의 기본 동작이 안전하지 않습니다.",
+                  featureFlagId,
+              )
+            }
+      }
+    }
+    return null
   }
 
   private fun gateFailure(
