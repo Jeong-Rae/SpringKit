@@ -114,6 +114,32 @@ class StatusUseCaseTest :
           next.single().command shouldBe "./tools/workflow gate ready sk-101 --review-revision rv-1"
         }
       }
+
+      context("CI 상태를 조회하는 상황에서") {
+        test("Review의 CI 상태를 조회하면, 변경 revision의 diff identity를 CI 공급자에 전달합니다") {
+          val ciPort = RecordingCiPort()
+          val result =
+              StatusUseCase(
+                      storePort =
+                          FakeStatusStore(
+                              reviewSnapshot(
+                                  SubTaskState.REVIEW,
+                                  PullRequestState.REVIEW,
+                                  CiStatus.PENDING,
+                              )
+                          ),
+                      ciPort = ciPort,
+                  )
+                  .execute(StatusRequest(subTaskId = "sk-101"))
+
+          result
+              .shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>()
+              .data
+              .review
+              ?.ci shouldBe CiStatus.PASSED
+          ciPort.revision shouldBe "diff-1"
+        }
+      }
     })
 
 private fun reviewSnapshot(
@@ -191,4 +217,16 @@ private class FailingStatusStore : WorkflowStorePort {
 
   private fun <T> unused(): PortResult<T> =
       PortResult.Failure(PortError("UNUSED", "not used by this test"))
+}
+
+private class RecordingCiPort : CiPort {
+  var revision: String? = null
+
+  override fun start(request: StartCiRequest): PortResult<StartCiResponse> =
+      PortResult.Failure(PortError("UNUSED", "not used by this test"))
+
+  override fun get(request: GetCiRequest): PortResult<GetCiResponse> {
+    revision = request.revision
+    return PortResult.Success(GetCiResponse(emptyList(), CiStatus.PASSED))
+  }
 }
