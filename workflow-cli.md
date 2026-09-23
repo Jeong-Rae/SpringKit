@@ -45,7 +45,7 @@ Workflow CLI가 Git과 외부 시스템을 조작하는 신뢰 가능한 기계�
 
 ## 실행 형식
 
-실행 파일은 `tools` 디렉터리에 둡니다. 관련 테스트는 `tools/test` 디렉터리에 둡니다.
+실행 파일은 `tools` 디렉터리에 둡니다. Kotlin 테스트는 `workflow-cli/src/test/kotlin`에 두고, 설치한 Native 바이너리 검증은 Gradle smoke test로 실행합니다.
 
 ```bash
 ./tools/workflow <command> [subcommand] [arguments]
@@ -62,6 +62,20 @@ JSON parser, renderer, 파일 시스템과 범용 네트워크 기능을 직접 
 GitHub Copilot Review는 현재 지원하지 않습니다. 별도 AI Review Adapter가 구성되기 전에는 외부 AI 호출을 수행하지 않고 `ai_review` 상태를 `PENDING`으로 반환합니다. AI Review 미구성 자체는 Merge Queue 차단 조건이 아니며, CI와 사람의 Ready·Approve Gate는 그대로 적용합니다.
 
 Git Adapter는 설치된 `git` CLI를 호출하고 GitHub Adapter는 설치된 `gh` CLI를 호출합니다. 각 CLI가 제공하는 Worktree, 인증, PR과 리뷰 기능을 다시 구현하지 않습니다. 명령 실행에는 `io.springkit.workflow.common`의 최소 프로세스 유틸리티만 사용합니다. 이 유틸리티는 작업 디렉터리, 종료 코드, 표준 출력과 표준 오류만 다루며 shell DSL이나 Git 정책을 제공하지 않습니다.
+
+### 로컬 런타임 구성
+
+Native CLI는 다음 환경 변수로 로컬 저장소와 실행 주체를 구성합니다.
+
+| 환경 변수 | 기본값과 역할 |
+| --- | --- |
+| `WORKFLOW_REPO_ROOT` | `git rev-parse --show-toplevel` 결과, 저장소 루트 |
+| `WORKFLOW_STATE_FILE` | `<repository>/.workflow/state.json`, Workflow Store 파일 |
+| `WORKFLOW_PROJECT_PREFIX` | `sk`, SubTask ID 접두사 |
+| `WORKFLOW_HUMAN_ACTORS` | 빈 목록, 사람 Gate를 수행할 수 있는 GitHub 계정의 쉼표 구분 목록 |
+| `WORKFLOW_ACTOR_KIND` | 로컬 실행에서는 `AGENT`, 자동화에서는 `AGENT` 또는 `WORKFLOW` |
+
+CLI는 `gh api user`로 현재 GitHub 계정을 확인합니다. 계정이 `WORKFLOW_HUMAN_ACTORS`에 포함된 경우에만 Ready, Approve, 배포와 외부 공개 Gate를 수행할 수 있습니다. `WORKFLOW_ACTOR_KIND`만 `HUMAN`으로 설정해서 사람 권한을 부여할 수 없습니다.
 
 ### 외부 provider CLI 구성
 
