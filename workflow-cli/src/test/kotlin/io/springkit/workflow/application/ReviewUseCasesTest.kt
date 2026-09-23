@@ -150,7 +150,7 @@ class ReviewUseCasesTest :
       }
 
       context("리뷰 댓글, 답글, 해결 결과를 Store에 반영하는 상황에서") {
-        test("각 변경 결과를 원자적으로 저장해 다음 작업이 새 revision을 읽습니다") {
+        test("댓글, 답글, 해결 결과를 저장하면, 각 변경 결과를 원자적으로 저장해 다음 작업이 새 revision을 읽습니다") {
           val before =
               pullRequest()
                   .copy(
@@ -260,7 +260,7 @@ class ReviewUseCasesTest :
           port.getCalls shouldBe 3
         }
 
-        test("Store의 revision이 바뀌면 외부 Review 변경 없이 충돌을 반환합니다") {
+        test("Store의 revision이 바뀌면, 외부 Review 변경 없이 충돌을 반환합니다") {
           val providerPullRequest = pullRequest()
           val storePullRequest =
               providerPullRequest.copy(reviewRevision = ReviewRevision("rv-store", 99, "body"))

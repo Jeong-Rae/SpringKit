@@ -49,7 +49,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class WorkflowApplicationRuntimeTest :
     FunSpec({
       context("기본 런타임으로 이벤트를 처리할 때") {
-        test("MERGE_QUEUE_CHANGED 이벤트를 통합과 후속 cleanup에 연결합니다") {
+        test("MERGE_QUEUE_CHANGED 이벤트를 수신하면, 통합과 후속 cleanup에 연결합니다") {
           val root = Files.createTempDirectory("workflow-runtime-merge-event-")
           val statePath = root.resolve("state.json")
           val subTaskId = "sk-101"
@@ -198,7 +198,7 @@ class WorkflowApplicationRuntimeTest :
           eventPort.acknowledged?.accepted shouldBe false
         }
 
-        test("provider가 구성되면 DEPLOYMENT_CHANGED 이벤트를 Deployment lifecycle로 전달합니다") {
+        test("provider가 구성되면, DEPLOYMENT_CHANGED 이벤트를 Deployment lifecycle로 전달합니다") {
           val root = Files.createTempDirectory("workflow-runtime-deployment-event-")
           val eventPort = RecordingWorkflowEventPort()
           val runtime =
@@ -230,7 +230,7 @@ class WorkflowApplicationRuntimeTest :
               AcknowledgeEventRequest(event.id, false, failure.data.message)
         }
 
-        test("provider가 미구성되면 DEPLOYMENT_CHANGED 이벤트를 지원하지 않습니다") {
+        test("provider가 미구성되면, DEPLOYMENT_CHANGED 이벤트를 지원하지 않습니다") {
           val eventPort = RecordingWorkflowEventPort()
           val runtime =
               createDefaultApplicationRuntime(

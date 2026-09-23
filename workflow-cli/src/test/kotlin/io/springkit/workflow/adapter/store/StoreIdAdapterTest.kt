@@ -46,7 +46,7 @@ class StoreIdAdapterTest :
       }
 
       context("Store를 재시작한 뒤 sequence 기반 식별자를 발급할 때") {
-        test("이전에 발급한 다음 번호를 이어서 반환합니다") {
+        test("Store를 재시작하면, 이전에 발급한 다음 번호를 이어서 반환합니다") {
           val fileSystem = FakeFileSystem()
           val path = "/workflow/state.json".toPath()
 
@@ -67,7 +67,7 @@ class StoreIdAdapterTest :
       }
 
       context("여러 adapter 인스턴스가 같은 Store를 사용할 때") {
-        test("동시에 요청해도 중복 없이 sequence를 증가시킵니다") {
+        test("여러 adapter 인스턴스가 동시에 요청하면, 중복 없이 sequence를 증가시킵니다") {
           val store = OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/state.json".toPath())
           val adapters = List(8) { StoreIdAdapter(store) }
           val issued = Collections.synchronizedList(mutableListOf<String>())
@@ -91,7 +91,7 @@ class StoreIdAdapterTest :
       }
 
       context("sequence가 없는 인프라 식별자를 발급할 때") {
-        test("안전하지 않은 요청 ID를 접미사로 보존하면서 충돌하지 않는 ID를 발급합니다") {
+        test("안전하지 않은 요청 ID를 입력하면, 접미사를 보존하면서 충돌하지 않는 ID를 발급합니다") {
           val adapter =
               StoreIdAdapter(
                   OkioWorkflowStoreAdapter(
@@ -116,7 +116,7 @@ class StoreIdAdapterTest :
       }
 
       context("Store transaction이 열리지 않을 때") {
-        test("fallback ID를 만들지 않고 Store 오류를 반환합니다") {
+        test("Store transaction이 열리지 않으면, fallback ID를 만들지 않고 Store 오류를 반환합니다") {
           val store =
               FailingBeginStore(
                   OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/state.json".toPath())
@@ -131,7 +131,7 @@ class StoreIdAdapterTest :
       }
 
       context("발급한 sequence를 snapshot으로 확인할 때") {
-        test("요청한 개수만큼 해당 카운터만 증가합니다") {
+        test("sequence 발급 개수를 요청하면, 해당 카운터만 요청한 개수만큼 증가합니다") {
           val store = OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/state.json".toPath())
 
           StoreIdAdapter(store).issue(IssueIdRequest(IdKind.AUDIT, count = 4))

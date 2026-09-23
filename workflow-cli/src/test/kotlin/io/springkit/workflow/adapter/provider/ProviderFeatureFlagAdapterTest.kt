@@ -16,7 +16,7 @@ import java.nio.file.Path
 class ProviderFeatureFlagAdapterTest :
     FunSpec({
       context("Feature Flag 기본 동작을 provider CLI로 검증하면") {
-        test("JSON 요청과 응답을 FeatureFlagPort 결과로 변환합니다") {
+        test("JSON 요청과 응답을 입력하면, FeatureFlagPort 결과로 변환합니다") {
           val runner =
               ProviderFeatureFlagRecordingCommandRunner(
                   CommandResult(0, "{\"safe_default\":true}", "")
@@ -84,7 +84,7 @@ class ProviderFeatureFlagAdapterTest :
       }
 
       context("Feature Flag 요청을 검증하면") {
-        test("식별자가 비어 있으면 provider 명령을 실행하지 않습니다") {
+        test("식별자가 비어 있으면, provider 명령을 실행하지 않습니다") {
           val runner = ProviderFeatureFlagRecordingCommandRunner()
           val adapter = ProviderFeatureFlagAdapter(listOf("provider"), Path.of("/repo"), runner)
 
@@ -97,7 +97,7 @@ class ProviderFeatureFlagAdapterTest :
       }
 
       context("provider CLI 응답을 처리하면") {
-        test("JSON이 올바르지 않으면 FEATURE_FLAG_RESPONSE_INVALID 오류를 반환합니다") {
+        test("JSON이 올바르지 않으면, FEATURE_FLAG_RESPONSE_INVALID 오류를 반환합니다") {
           val runner = ProviderFeatureFlagRecordingCommandRunner(CommandResult(0, "not-json", ""))
           val adapter = ProviderFeatureFlagAdapter(listOf("provider"), Path.of("/repo"), runner)
 
@@ -130,7 +130,7 @@ class ProviderFeatureFlagAdapterTest :
           failure.error.retryable shouldBe retryable
         }
 
-        test("명령 실행에서 예외가 발생하면 FEATURE_FLAG_COMMAND_FAILED 오류를 반환합니다") {
+        test("명령 실행에서 예외가 발생하면, FEATURE_FLAG_COMMAND_FAILED 오류를 반환합니다") {
           val runner =
               ProviderFeatureFlagThrowingCommandRunner(
                   IllegalStateException("provider is unavailable")

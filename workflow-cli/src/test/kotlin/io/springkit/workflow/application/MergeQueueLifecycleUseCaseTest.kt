@@ -22,7 +22,7 @@ import io.springkit.workflow.domain.WorkflowResult
 class MergeQueueLifecycleUseCaseTest :
     FunSpec({
       context("Merge Queue 검증이 통과한 SubTask를 통합하면") {
-        test("squash merge 결과를 저장하고 PR과 SubTask를 Merged로 전이하며 이벤트를 기록합니다") {
+        test("SubTask를 통합하면, squash merge 결과를 저장하고 PR과 SubTask를 Merged로 전이하며 이벤트를 기록합니다") {
           val store = LifecycleStore(snapshot())
           val mergeQueue = LifecycleMergeQueuePort()
           val task = LifecycleTaskPort()
@@ -71,7 +71,7 @@ class MergeQueueLifecycleUseCaseTest :
       }
 
       context("Merge Queue 검증이 통과하지 않은 상태에서 통합을 요청하면") {
-        test("squash merge를 호출하지 않고 Merge Queue 오류를 반환합니다") {
+        test("Merge Queue 검증이 통과하지 않으면, squash merge를 호출하지 않고 Merge Queue 오류를 반환합니다") {
           val store = LifecycleStore(snapshot(queueState = MergeQueueState.VALIDATING))
           val mergeQueue = LifecycleMergeQueuePort()
 
@@ -83,7 +83,7 @@ class MergeQueueLifecycleUseCaseTest :
           store.written shouldBe null
         }
 
-        test("provider가 다른 통합 대상을 반환하면 상태를 저장하지 않습니다") {
+        test("provider가 다른 통합 대상을 반환하면, 상태를 저장하지 않습니다") {
           val store = LifecycleStore(snapshot())
           val mergeQueue =
               LifecycleMergeQueuePort(

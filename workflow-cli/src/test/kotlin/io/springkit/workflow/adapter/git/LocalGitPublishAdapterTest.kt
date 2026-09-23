@@ -13,7 +13,7 @@ import java.nio.file.Path
 class LocalGitPublishAdapterTest :
     FunSpec({
       context("Worktree 변경을 게시하면") {
-        test("staged 변경이 있으면 PR 제목으로 commit하고 upstream Branch를 push합니다") {
+        test("staged 변경이 있으면, PR 제목으로 commit하고 upstream Branch를 push합니다") {
           val runner = RecordingPublishCommandRunner()
           enqueueInspect(runner, "head-1\n", " M src/Main.kt\n", "diff\n")
           runner.enqueue(CommandResult(0, "", ""))
@@ -75,7 +75,7 @@ class LocalGitPublishAdapterTest :
               )
         }
 
-        test("staged 변경이 없으면 빈 commit을 만들지 않고 push만 수행합니다") {
+        test("staged 변경이 없으면, 빈 commit을 만들지 않고 push만 수행합니다") {
           val runner = RecordingPublishCommandRunner()
           enqueueInspect(runner, "head-1\n", "", "")
           runner.enqueue(CommandResult(0, "", ""))

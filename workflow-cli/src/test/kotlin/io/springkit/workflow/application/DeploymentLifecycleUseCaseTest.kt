@@ -21,7 +21,7 @@ import io.springkit.workflow.domain.WorkflowResult
 class DeploymentLifecycleUseCaseTest :
     FunSpec({
       context("normal 배포 후보를 만들면") {
-        test("고정된 main revision과 SubTask를 보존하고 Canary를 자동으로 시작합니다") {
+        test("normal 배포 후보를 만들면, 고정된 main revision과 SubTask를 보존하고 Canary를 자동으로 시작합니다") {
           val fixture = DeploymentLifecycleFixture()
 
           val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
@@ -104,7 +104,7 @@ class DeploymentLifecycleUseCaseTest :
       }
 
       context("Production 이후의 main revision으로 후보를 만들면") {
-        test("Production 후보 이후 merge된 모든 SubTask를 merge 순서대로 누적합니다") {
+        test("Production 이후 main revision으로 후보를 만들면, merge된 모든 SubTask를 merge 순서대로 누적합니다") {
           val fixture = DeploymentLifecycleFixture()
           val secondSubTask = SubTask("sk-102", "task-1", "두 번째 배포 변경")
           val thirdSubTask = SubTask("sk-103", "task-1", "세 번째 배포 변경")
@@ -159,7 +159,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.createCandidateCalls shouldBe 1
         }
 
-        test("활성 후보가 있으면 추가 merge revision이 기존 후보를 변경하지 않습니다") {
+        test("활성 후보가 있으면, 추가 merge revision이 기존 후보를 변경하지 않습니다") {
           val fixture = DeploymentLifecycleFixture()
           val secondSubTask = SubTask("sk-102", "task-1", "두 번째 배포 변경")
           fixture.store.current =
@@ -196,7 +196,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.store.current.candidates.single().mainRevision shouldBe "main-1"
         }
 
-        test("현재 Production보다 이전인 target revision은 상태 충돌로 차단합니다") {
+        test("현재 Production보다 이전인 target revision이면, 상태 충돌로 차단합니다") {
           val fixture = DeploymentLifecycleFixture()
           val secondSubTask = SubTask("sk-102", "task-1", "두 번째 배포 변경")
           fixture.store.current =
@@ -254,7 +254,7 @@ class DeploymentLifecycleUseCaseTest :
       }
 
       context("high 배포 후보를 만들면") {
-        test("필수 validation 뒤 AWAITING_DEPLOY_APPROVAL 상태로 대기합니다") {
+        test("high 배포 후보를 만들면, 필수 validation 뒤 AWAITING_DEPLOY_APPROVAL 상태로 대기합니다") {
           val fixture = DeploymentLifecycleFixture(risk = Risk.HIGH)
 
           val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
@@ -266,7 +266,7 @@ class DeploymentLifecycleUseCaseTest :
       }
 
       context("DEPLOYMENT_CHANGED 이벤트를 받으면") {
-        test("필수 validation을 통과한 normal 후보를 Canary로 진행합니다") {
+        test("DEPLOYMENT_CHANGED 이벤트를 수신하면, 필수 validation을 통과한 normal 후보를 Canary로 진행합니다") {
           val fixture = DeploymentLifecycleFixture()
           fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
 
@@ -294,7 +294,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.store.rollbacks shouldBe 1
         }
 
-        test("필수 validation을 통과한 high 후보를 배포 승인 대기로 전환합니다") {
+        test("high 후보의 필수 validation이 통과하면, 배포 승인 대기로 전환합니다") {
           val fixture = DeploymentLifecycleFixture(risk = Risk.HIGH)
           fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
 
@@ -305,7 +305,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.startCanaryCalls shouldBe 0
         }
 
-        test("필수 validation이 끝나지 않았으면 VALIDATING 상태를 유지합니다") {
+        test("필수 validation이 끝나지 않았으면, VALIDATING 상태를 유지합니다") {
           val fixture = DeploymentLifecycleFixture()
           fixture.deployment.setValidationResult(
               listOf(Validation("validation-1", "필수 검증", ValidationStatus.PENDING))
@@ -318,7 +318,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.startCanaryCalls shouldBe 0
         }
 
-        test("같은 event id를 다시 받으면 provider를 호출하지 않고 멱등 처리합니다") {
+        test("같은 event id를 다시 받으면, provider를 호출하지 않고 멱등 처리합니다") {
           val fixture = DeploymentLifecycleFixture()
           fixture.deployment.setValidationResult(
               listOf(Validation("validation-1", "필수 검증", ValidationStatus.PENDING))
@@ -334,7 +334,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.validateCalls shouldBe 1
         }
 
-        test("필수 validation이 실패하면 FAILED 상태로 저장합니다") {
+        test("필수 validation이 실패하면, FAILED 상태로 저장합니다") {
           val fixture = DeploymentLifecycleFixture()
           fixture.deployment.setValidationResult(
               listOf(
@@ -355,7 +355,7 @@ class DeploymentLifecycleUseCaseTest :
           response.failureStage shouldBe DeploymentFailureStage.VALIDATION
         }
 
-        test("이미 더 진행된 후보이면 provider를 다시 호출하지 않고 멱등 성공합니다") {
+        test("이미 더 진행된 후보이면, provider를 다시 호출하지 않고 멱등 성공합니다") {
           val fixture = DeploymentLifecycleFixture()
           fixture.prepareCandidate(DeploymentCandidateState.CANARY)
 
@@ -367,7 +367,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.startCanaryCalls shouldBe 0
         }
 
-        test("provider identity가 달라지면 후보를 역행하지 않고 불변식 오류를 반환합니다") {
+        test("provider identity가 달라지면, 후보를 역행하지 않고 불변식 오류를 반환합니다") {
           val fixture = DeploymentLifecycleFixture(validateWithDifferentRevision = true)
           fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
 
@@ -382,7 +382,7 @@ class DeploymentLifecycleUseCaseTest :
       }
 
       context("Canary 완료 결과를 반영하면") {
-        test("성공 시 같은 candidate를 Production으로 승격하고 다시 받아도 멱등 처리합니다") {
+        test("Canary가 성공하면, 같은 candidate를 Production으로 승격하고 다시 받아도 멱등 처리합니다") {
           val fixture = DeploymentLifecycleFixture()
           val created = fixture.useCase().create(DeploymentLifecycleRequest("main-1")).successData()
           val request =
@@ -401,7 +401,7 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.promoteCalls shouldBe 1
         }
 
-        test("실패 시 candidate를 FAILED로 저장하고 같은 결과를 멱등 처리합니다") {
+        test("Canary가 실패하면, candidate를 FAILED로 저장하고 같은 결과를 멱등 처리합니다") {
           val fixture = DeploymentLifecycleFixture()
           val created = fixture.useCase().create(DeploymentLifecycleRequest("main-1")).successData()
           val request =
@@ -422,7 +422,7 @@ class DeploymentLifecycleUseCaseTest :
       }
 
       context("provider 응답이 candidate identity와 다르면") {
-        test("상태를 저장하지 않고 provider 변경을 보상합니다") {
+        test("provider 응답이 candidate identity와 다르면, 상태를 저장하지 않고 provider 변경을 보상합니다") {
           val fixture = DeploymentLifecycleFixture(validateWithDifferentRevision = true)
 
           val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
@@ -436,7 +436,7 @@ class DeploymentLifecycleUseCaseTest :
       }
 
       context("Store transaction 중 provider 동작이 실패하면") {
-        test("rollback 후 이미 적용된 변경을 역순으로 보상합니다") {
+        test("Store transaction 중 provider 동작이 실패하면, rollback 후 이미 적용된 변경을 역순으로 보상합니다") {
           val fixture = DeploymentLifecycleFixture(validationFailure = true)
 
           val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))

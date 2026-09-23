@@ -24,7 +24,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ProviderReleaseAdapterTest :
     FunSpec({
       context("외부 공개 provider CLI에 Release 요청을 전달하면") {
-        test("operation과 request JSON을 하나의 인자로 전달하고 Release를 변환합니다") {
+        test("operation과 request JSON을 전달하면, Release로 변환하고 하나의 인자로 명령을 구성합니다") {
           val runner =
               ProviderReleaseRecordingCommandRunner(resultFor("{\"release\":${releaseJson()}}"))
           val adapter =
@@ -57,7 +57,7 @@ class ProviderReleaseAdapterTest :
           request["feature_flag_id"]?.jsonPrimitive?.content shouldBe "recommendation-v2"
         }
 
-        test("actor가 있으면 최소 actor 필드를 snake_case 요청 JSON에 포함합니다") {
+        test("actor가 있으면, 최소 actor 필드를 snake_case 요청 JSON에 포함합니다") {
           val runner = ProviderReleaseRecordingCommandRunner(resultFor(releaseJson()))
           val adapter = ProviderReleaseAdapter(listOf("provider"), Path.of("/repo"), runner)
 
@@ -75,7 +75,7 @@ class ProviderReleaseAdapterTest :
           actor["name"]?.jsonPrimitive?.content shouldBe "홍길동"
         }
 
-        test("provider change가 있으면 receipt의 상태와 revision을 보존합니다") {
+        test("provider change가 있으면, receipt의 상태와 revision을 보존합니다") {
           val runner =
               ProviderReleaseRecordingCommandRunner(
                   resultFor(
@@ -100,7 +100,7 @@ class ProviderReleaseAdapterTest :
           response.change.afterRevision shouldBe "r2"
         }
 
-        test("provider change가 없으면 작업별 receipt를 생성합니다") {
+        test("provider change가 없으면, 작업별 receipt를 생성합니다") {
           val runner =
               ProviderReleaseRecordingCommandRunner(resultFor("{\"release\":${releaseJson()}}"))
           val adapter = ProviderReleaseAdapter(listOf("provider"), Path.of("/repo"), runner)
@@ -118,7 +118,7 @@ class ProviderReleaseAdapterTest :
       }
 
       context("외부 공개 provider 응답을 해석하면") {
-        test("get 응답의 releases 배열을 Release 목록으로 변환합니다") {
+        test("get 응답에 releases 배열이 있으면, Release 목록으로 변환합니다") {
           val runner =
               ProviderReleaseRecordingCommandRunner(
                   resultFor("{\"releases\":[${releaseJson()},${releaseJson("rel-2")}]}")
@@ -138,7 +138,7 @@ class ProviderReleaseAdapterTest :
           request.containsKey("release_id") shouldBe false
         }
 
-        test("JSON이 유효하지 않으면 응답 오류를 반환합니다") {
+        test("JSON이 유효하지 않으면, 응답 오류를 반환합니다") {
           val adapter =
               ProviderReleaseAdapter(
                   listOf("provider"),
@@ -154,7 +154,7 @@ class ProviderReleaseAdapterTest :
           failure.error.code shouldBe "RELEASE_PROVIDER_RESPONSE_INVALID"
         }
 
-        test("Release 대상이 요청과 다르면 불변식 오류를 반환합니다") {
+        test("Release 대상이 요청과 다르면, 불변식 오류를 반환합니다") {
           val adapter =
               ProviderReleaseAdapter(
                   listOf("provider"),
@@ -172,7 +172,7 @@ class ProviderReleaseAdapterTest :
           failure.error.code shouldBe "RELEASE_PROVIDER_INVARIANT_VIOLATION"
         }
 
-        test("change 필수 필드가 누락되면 응답 오류를 반환합니다") {
+        test("change 필수 필드가 누락되면, 응답 오류를 반환합니다") {
           val adapter =
               ProviderReleaseAdapter(
                   listOf("provider"),
@@ -222,7 +222,7 @@ class ProviderReleaseAdapterTest :
           failure.error.retryable shouldBe retryable
         }
 
-        test("CommandRunner 예외를 재시도 가능한 PortError로 변환합니다") {
+        test("CommandRunner가 예외를 던지면, 재시도 가능한 PortError로 변환합니다") {
           val adapter =
               ProviderReleaseAdapter(
                   listOf("provider"),
@@ -241,7 +241,7 @@ class ProviderReleaseAdapterTest :
       }
 
       context("외부 공개 provider 요청을 검증하면") {
-        test("명령 접두사의 빈 항목이면 provider 명령을 실행하지 않습니다") {
+        test("명령 접두사에 빈 항목이 있으면, provider 명령을 실행하지 않습니다") {
           val runner = ProviderReleaseRecordingCommandRunner(CommandResult(0, "", ""))
           val adapter = ProviderReleaseAdapter(listOf("provider", ""), Path.of("/repo"), runner)
 
@@ -254,7 +254,7 @@ class ProviderReleaseAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("Release 식별자가 비어 있으면 provider 명령을 실행하지 않습니다") {
+        test("Release 식별자가 비어 있으면, provider 명령을 실행하지 않습니다") {
           val runner = ProviderReleaseRecordingCommandRunner(CommandResult(0, "", ""))
           val adapter = ProviderReleaseAdapter(listOf("provider"), Path.of("/repo"), runner)
 

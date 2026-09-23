@@ -165,7 +165,7 @@ class LocalGitAdapterTest :
               listOf(Invocation(listOf("git", "fetch", "origin", "main"), repositoryRoot))
         }
 
-        test("remote가 Git 옵션이면 fetch 전에 입력을 거부합니다") {
+        test("remote가 Git 옵션이면, fetch 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { Path.of("/workspace") }
 
@@ -175,7 +175,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("branch가 Git 옵션이면 fetch 전에 입력을 거부합니다") {
+        test("branch가 Git 옵션이면, fetch 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { Path.of("/workspace") }
 
@@ -213,7 +213,7 @@ class LocalGitAdapterTest :
               )
         }
 
-        test("branch와 기준 revision이 Git 옵션이면 명령 전에 입력을 거부합니다") {
+        test("branch와 기준 revision이 Git 옵션이면, 명령 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { Path.of("/workspace") }
 
@@ -230,7 +230,7 @@ class LocalGitAdapterTest :
       }
 
       context("Git ref 입력을 검증하면") {
-        test("worktree branch가 Git 옵션이면 명령 전에 입력을 거부합니다") {
+        test("worktree branch가 Git 옵션이면, 명령 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { Path.of("/workspace") }
 
@@ -243,7 +243,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("restack 기준 revision이 Git 옵션이면 workspace 조회 전에 입력을 거부합니다") {
+        test("restack 기준 revision이 Git 옵션이면, workspace 조회 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { error("workspace가 조회되면 안 됩니다") }
 
@@ -256,7 +256,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("제거할 branch와 expected revision이 Git 옵션이면 명령 전에 입력을 거부합니다") {
+        test("제거할 branch와 expected revision이 Git 옵션이면, 명령 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { Path.of("/workspace") }
 
@@ -269,7 +269,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("publish remote와 branch가 Git 옵션이면 workspace 조회 전에 입력을 거부합니다") {
+        test("publish remote와 branch가 Git 옵션이면, workspace 조회 전에 입력을 거부합니다") {
           val runner = RecordingCommandRunner()
           val adapter = adapter(runner) { error("workspace가 조회되면 안 됩니다") }
 
@@ -325,7 +325,7 @@ class LocalGitAdapterTest :
         }
       }
 
-      test("관리 root가 주어지면 검증한 절대 경로를 Git 명령에 전달합니다") {
+      test("관리 root가 주어지면, 검증한 절대 경로를 Git 명령에 전달합니다") {
         val runner = RecordingCommandRunner()
         runner.enqueue(CommandResult(0, "", ""))
         val root = Files.createTempDirectory("local-git-root-")
@@ -352,7 +352,7 @@ class LocalGitAdapterTest :
       }
 
       context("managed root 경계를 검사하면") {
-        test("절대 경로가 root 밖이면 worktree 생성을 거부합니다") {
+        test("절대 경로가 root 밖이면, worktree 생성을 거부합니다") {
           val runner = RecordingCommandRunner()
           val root = Files.createTempDirectory("local-git-root-")
           val outside = Files.createTempDirectory("local-git-outside-")
@@ -371,7 +371,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("`..`으로 root 밖으로 탈출하면 worktree 생성을 거부합니다") {
+        test("`..`으로 root 밖으로 탈출하면, worktree 생성을 거부합니다") {
           val runner = RecordingCommandRunner()
           val root = Files.createTempDirectory("local-git-root-")
           val adapter = adapter(runner, root, root) { Path.of("/workspace") }
@@ -389,7 +389,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("외부를 가리키는 심볼릭 링크이면 worktree 생성을 거부합니다") {
+        test("외부를 가리키는 심볼릭 링크이면, worktree 생성을 거부합니다") {
           val runner = RecordingCommandRunner()
           val root = Files.createTempDirectory("local-git-root-")
           val outside = Files.createTempDirectory("local-git-outside-")
@@ -405,7 +405,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("외부 symlink 아래의 미존재 자식 경로이면 worktree 생성을 거부합니다") {
+        test("외부 symlink 아래의 미존재 자식 경로이면, worktree 생성을 거부합니다") {
           val runner = RecordingCommandRunner()
           val root = Files.createTempDirectory("local-git-root-")
           val outside = Files.createTempDirectory("local-git-outside-")
@@ -425,7 +425,7 @@ class LocalGitAdapterTest :
           runner.commands shouldBe emptyList()
         }
 
-        test("root 밖 경로이면 worktree 제거를 Git 명령 전에 거부합니다") {
+        test("root 밖 경로이면, worktree 제거를 Git 명령 전에 거부합니다") {
           val runner = RecordingCommandRunner()
           val root = Files.createTempDirectory("local-git-root-")
           val adapter = adapter(runner, root, root) { Path.of("/workspace") }

@@ -19,7 +19,7 @@ import java.nio.file.Path
 class GithubIssueTaskAdapterTest :
     FunSpec({
       context("GitHub Issue를 외부 Task로 조회하면") {
-        test("gh issue view 응답을 Task 상태로 변환합니다") {
+        test("gh issue view 응답을 입력하면, Task 상태로 변환합니다") {
           val runner = IssueRecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -59,7 +59,7 @@ class GithubIssueTaskAdapterTest :
       }
 
       context("GitHub Issue SubTask를 조회하면") {
-        test("metadata와 상태 marker를 SubTask로 변환합니다") {
+        test("metadata와 상태 marker를 입력하면, SubTask로 변환합니다") {
           val runner = IssueRecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -90,7 +90,7 @@ class GithubIssueTaskAdapterTest :
       }
 
       context("GitHub Issue SubTask를 생성하면") {
-        test("외부 Task를 확인한 뒤 issue를 만들고 생성 결과 metadata를 검증합니다") {
+        test("외부 Task를 확인하고 issue를 생성하면, 생성 결과 metadata를 검증합니다") {
           val runner = IssueRecordingCommandRunner()
           runner.enqueue(
               CommandResult(0, """{"number":42,"title":"부모","state":"OPEN","body":""}""", "")
@@ -138,7 +138,7 @@ class GithubIssueTaskAdapterTest :
       }
 
       context("외부 SubTask 상태를 갱신하면") {
-        test("metadata를 보존한 채 상태를 수정하고 merge 시 issue를 닫습니다") {
+        test("metadata를 보존한 채 외부 SubTask 상태를 수정하면, merge 시 issue를 닫습니다") {
           val runner = IssueRecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -189,7 +189,7 @@ class GithubIssueTaskAdapterTest :
       }
 
       context("GitHub Issue 응답이 실패하면") {
-        test("gh 오류를 재시도 가능한 PortError로 변환합니다") {
+        test("gh 오류가 발생하면, 재시도 가능한 PortError로 변환합니다") {
           val runner = IssueRecordingCommandRunner()
           runner.enqueue(CommandResult(2, "", "gh auth login required"))
 

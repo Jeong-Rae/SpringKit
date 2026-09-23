@@ -109,7 +109,7 @@ class LocalRuntimeAdapterTest :
       }
 
       context("관리 root 경계를 검사하면") {
-        test("상대 Workspace 경로를 관리 root 기준으로 해석합니다") {
+        test("상대 Workspace 경로를 입력하면, 관리 root 기준으로 해석합니다") {
           val root = Files.createTempDirectory("workflow-workspace-root-")
           val current = root.resolve("workspaces/sk-101/src/main")
           val workspace = Workspace("ws-1", "sk-101", WorkspacePath("workspaces/sk-101"), "sk-101")
@@ -123,7 +123,7 @@ class LocalRuntimeAdapterTest :
           adapter.get(WorkspaceLookupRequest()).shouldBeInstanceOf<PortResult.Success<*>>()
         }
 
-        test("절대 경로가 관리 root 밖이면 Workspace 생성을 거부합니다") {
+        test("절대 경로가 관리 root 밖이면, Workspace 생성을 거부합니다") {
           val root = Files.createTempDirectory("workflow-workspace-root-")
           val outside = Files.createTempDirectory("workflow-workspace-outside-")
           val adapter = LocalWorkspaceAdapter(WorkflowStoreSnapshot("1"), root, root)
@@ -143,7 +143,7 @@ class LocalRuntimeAdapterTest :
               "WORKSPACE_PATH_INVALID"
         }
 
-        test("`..`으로 관리 root 밖으로 탈출한 경로의 Workspace 삭제를 거부합니다") {
+        test("`..`으로 관리 root 밖으로 탈출한 경로이면, Workspace 삭제를 거부합니다") {
           val root = Files.createTempDirectory("workflow-workspace-root-")
           val workspace = Workspace("ws-1", "sk-101", WorkspacePath("../outside"), "sk-101")
           val adapter =
@@ -159,7 +159,7 @@ class LocalRuntimeAdapterTest :
               "WORKSPACE_PATH_INVALID"
         }
 
-        test("외부를 가리키는 심볼릭 링크 경로의 Workspace 조회를 거부합니다") {
+        test("외부를 가리키는 심볼릭 링크 경로이면, Workspace 조회를 거부합니다") {
           val root = Files.createTempDirectory("workflow-workspace-root-")
           val outside = Files.createTempDirectory("workflow-workspace-outside-")
           Files.createSymbolicLink(root.resolve("link"), outside)
@@ -171,7 +171,7 @@ class LocalRuntimeAdapterTest :
               "WORKSPACE_PATH_INVALID"
         }
 
-        test("외부를 가리키는 심볼릭 링크 아래의 미존재 자식 경로도 거부합니다") {
+        test("외부를 가리키는 심볼릭 링크 아래의 미존재 자식 경로이면, Workspace 조회를 거부합니다") {
           val root = Files.createTempDirectory("workflow-workspace-root-")
           val outside = Files.createTempDirectory("workflow-workspace-outside-")
           Files.createSymbolicLink(root.resolve("link"), outside)
@@ -278,7 +278,7 @@ class LocalRuntimeAdapterTest :
       }
 
       context("시스템 시계를 조회하면") {
-        test("주입한 epoch 값을 반환합니다") {
+        test("epoch 값을 주입하면, 해당 epoch 값을 반환합니다") {
           val result = SystemClockAdapter { 1_723_456_789L }.now()
 
           val response = result.shouldBeInstanceOf<PortResult.Success<NowResponse>>().value
@@ -305,7 +305,7 @@ class LocalRuntimeAdapterTest :
           runner.command shouldBe listOf("gh", "api", "user", "--jq", ".login")
         }
 
-        test("환경 변수만 HUMAN으로 지정해도 gh principal을 HUMAN actor로 승격하지 않습니다") {
+        test("환경 변수만 HUMAN으로 지정하면, gh principal을 AGENT actor로 유지합니다") {
           val runner = RecordingCommandRunner(CommandResult(0, "octocat\n", ""))
           val adapter =
               EnvironmentIdentityAdapter(
@@ -322,7 +322,7 @@ class LocalRuntimeAdapterTest :
               .kind shouldBe ActorKind.AGENT
         }
 
-        test("명시적 human allowlist에 있는 gh principal만 HUMAN actor로 반환합니다") {
+        test("gh principal이 명시적 human allowlist에 포함되면, HUMAN actor로 반환합니다") {
           val runner = RecordingCommandRunner(CommandResult(0, "octocat\n", ""))
           val adapter =
               EnvironmentIdentityAdapter(

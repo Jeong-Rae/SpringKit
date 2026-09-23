@@ -44,7 +44,7 @@ class PostMergeCleanupUseCaseTest :
           git.localExpectedRevisions[parent.branch] shouldBe "parent-revision"
         }
 
-        test("요청하지 않은 다른 merged SubTask는 branch와 worktree를 정리하지 않습니다") {
+        test("요청하지 않은 다른 merged SubTask이면, branch와 worktree를 정리하지 않습니다") {
           val parent = subTask("sk-parent", SubTaskState.MERGED)
           val other = subTask("sk-other", SubTaskState.MERGED)
           val git =
@@ -110,7 +110,7 @@ class PostMergeCleanupUseCaseTest :
           git.operations.any { it.startsWith("local:") } shouldBe false
         }
 
-        test("원격 Branch가 이미 삭제되었으면 저장된 diff identity로 로컬 정리를 재시도합니다") {
+        test("원격 Branch가 이미 삭제되었으면, 저장된 diff identity로 로컬 정리를 재시도합니다") {
           val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
           val git =
               CleanupGit(
@@ -140,7 +140,7 @@ class PostMergeCleanupUseCaseTest :
           git.localExpectedRevisions[parent.branch] shouldBe "parent-diff"
         }
 
-        test("원격 Branch가 없고 기대 revision을 증명할 수 없으면 로컬 정리를 차단합니다") {
+        test("원격 Branch가 없고 기대 revision을 증명할 수 없으면, 로컬 정리를 차단합니다") {
           val parent = subTask("sk-parent", SubTaskState.MERGED)
           val git = CleanupGit(remoteBranches = emptyList())
           val store = CleanupStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(parent)))

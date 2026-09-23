@@ -41,7 +41,7 @@ class WorkflowResultJsonTest :
               "{\"data\":{\"blocked_by\":[{\"code\":\"HUMAN_REQUIRED\",\"message\":\"사람만 실행할 수 있습니다.\",\"target\":\"sk-1\"}],\"code\":\"HUMAN_REQUIRED\",\"message\":\"사람의 결정이 필요합니다.\",\"next\":[{\"action\":\"approve_change\",\"actor\":\"human\",\"command\":\"workflow gate approve sk-1\"}]},\"type\":\"failure\"}"
         }
 
-        test("동기화 충돌이면 Worktree와 충돌 파일의 구조화 정보를 반환합니다") {
+        test("동기화 충돌이면, Worktree와 충돌 파일의 구조화 정보를 반환합니다") {
           val result =
               WorkflowResult.Failure(
                   FailureData(

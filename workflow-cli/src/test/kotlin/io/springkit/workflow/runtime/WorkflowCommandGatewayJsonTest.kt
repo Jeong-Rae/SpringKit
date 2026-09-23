@@ -11,7 +11,7 @@ import io.springkit.workflow.domain.WorkspacePath
 class WorkflowCommandGatewayJsonTest :
     FunSpec({
       context("stack 성공 결과를 JSON으로 변환할 때") {
-        test("실제 diff가 바뀌면 invalidated_state에 무효화된 상태를 반환합니다") {
+        test("실제 diff가 바뀌면, invalidated_state에 무효화된 상태를 반환합니다") {
           val response = responseStack(invalidatedState = listOf("change_revision", "approval"))
 
           stackResponseJson(response)["invalidated_state"].toString() shouldBe
@@ -20,7 +20,7 @@ class WorkflowCommandGatewayJsonTest :
       }
 
       context("sync 성공 결과를 JSON으로 변환할 때") {
-        test("diff가 유지되면 빈 invalidated_state를 반환합니다") {
+        test("diff가 유지되면, 빈 invalidated_state를 반환합니다") {
           val response = responseSync(invalidatedState = emptyList())
 
           syncResponseJson(response)["invalidated_state"].toString() shouldBe "[]"

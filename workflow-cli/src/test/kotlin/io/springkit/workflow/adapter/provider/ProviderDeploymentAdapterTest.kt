@@ -22,7 +22,7 @@ import kotlinx.serialization.json.jsonObject
 class ProviderDeploymentAdapterTest :
     FunSpec({
       context("provider CLI로 배포 후보를 생성하면") {
-        test("요청 JSON과 후보 검증 결과를 도메인 객체로 변환합니다") {
+        test("요청 JSON과 후보 검증 결과를 입력하면, 도메인 객체로 변환합니다") {
           val runner =
               ProviderDeploymentRecordingCommandRunner(
                   commandResult(candidateResponse(withChange = true))
@@ -58,7 +58,7 @@ class ProviderDeploymentAdapterTest :
       }
 
       context("provider CLI로 배포 후보를 조회하면") {
-        test("candidate 응답을 반환하고 조회 명령을 구성합니다") {
+        test("candidate 응답을 조회하면, 응답을 반환하고 조회 명령을 구성합니다") {
           val runner =
               ProviderDeploymentRecordingCommandRunner(
                   commandResult(candidateResponse(withChange = false))
@@ -80,7 +80,7 @@ class ProviderDeploymentAdapterTest :
       }
 
       context("변경 영수증이 없는 provider 응답을 받으면") {
-        test("operation과 대상 기반 영수증을 생성합니다") {
+        test("변경 영수증이 없는 provider 응답을 받으면, operation과 대상 기반 영수증을 생성합니다") {
           val runner =
               ProviderDeploymentRecordingCommandRunner(
                   commandResult(candidateResponse(withChange = false))
@@ -140,7 +140,7 @@ class ProviderDeploymentAdapterTest :
       }
 
       context("provider CLI 응답이 올바르지 않으면") {
-        test("JSON 오류를 PortError로 변환합니다") {
+        test("provider CLI 응답이 JSON 오류이면, PortError로 변환합니다") {
           val runner = ProviderDeploymentRecordingCommandRunner(CommandResult(0, "{invalid", ""))
           val result =
               ProviderDeploymentAdapter(listOf("deployctl"), Path.of("/repo"), runner)
@@ -150,7 +150,7 @@ class ProviderDeploymentAdapterTest :
           failure.error.code shouldBe "DEPLOYMENT_PROVIDER_RESPONSE_INVALID"
         }
 
-        test("후보 불변식 오류를 PortError로 변환합니다") {
+        test("후보 불변식 오류가 발생하면, PortError로 변환합니다") {
           val runner =
               ProviderDeploymentRecordingCommandRunner(
                   commandResult(
@@ -170,7 +170,7 @@ class ProviderDeploymentAdapterTest :
       }
 
       context("provider CLI 실행이 실패하면") {
-        test("종료 코드와 표준 오류를 PortError로 보존합니다") {
+        test("provider CLI가 종료 코드와 표준 오류를 반환하면, PortError로 보존합니다") {
           val runner =
               ProviderDeploymentRecordingCommandRunner(CommandResult(7, "", "provider unavailable"))
           val result =
@@ -182,7 +182,7 @@ class ProviderDeploymentAdapterTest :
           failure.error.message shouldBe "provider unavailable"
         }
 
-        test("명령 예외를 재시도 가능한 PortError로 변환합니다") {
+        test("provider CLI 명령에서 예외가 발생하면, 재시도 가능한 PortError로 변환합니다") {
           val runner =
               ProviderDeploymentFailingCommandRunner(IllegalStateException("not installed"))
           val result =
@@ -196,7 +196,7 @@ class ProviderDeploymentAdapterTest :
       }
 
       context("배포 요청 인자가 비어 있으면") {
-        test("provider 명령을 실행하지 않고 PortError를 반환합니다") {
+        test("배포 요청 인자가 비어 있으면, provider 명령을 실행하지 않고 PortError를 반환합니다") {
           val runner =
               ProviderDeploymentRecordingCommandRunner(
                   commandResult(candidateResponse(withChange = true))

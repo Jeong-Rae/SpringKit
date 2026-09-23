@@ -18,7 +18,7 @@ import java.nio.file.Path
 class GithubMergeQueueAdapterTest :
     FunSpec({
       context("GitHub pull request를 Merge Queue에 등록하면") {
-        test("gh pr merge에 squash와 auto 토큰을 전달하고 요청 메타데이터를 보존합니다") {
+        test("squash와 auto 토큰으로 gh pr merge를 실행하면, 요청 메타데이터를 보존합니다") {
           val runner = FakeCommandRunner(CommandResult(0, "queued", ""))
           val adapter = GithubMergeQueueAdapter(Path.of("/repo"), runner)
 
@@ -50,7 +50,7 @@ class GithubMergeQueueAdapterTest :
       }
 
       context("GitHub Merge Queue 상태를 조회하면") {
-        test("gh JSON의 상태와 검증 결과를 MergeQueueEntry로 변환합니다") {
+        test("gh JSON을 입력하면, 상태와 검증 결과를 MergeQueueEntry로 변환합니다") {
           val runner =
               FakeCommandRunner(
                   CommandResult(
@@ -97,7 +97,7 @@ class GithubMergeQueueAdapterTest :
       }
 
       context("Merge Queue 항목을 squash merge하면") {
-        test("gh 명령과 병합 JSON을 사용해 통합 revision을 반환합니다") {
+        test("gh 명령과 병합 JSON을 사용하면, 통합 revision을 반환합니다") {
           val persisted = mutableMapOf<String, io.springkit.workflow.domain.MergeQueueEntry>()
           val runner =
               FakeCommandRunner(
@@ -176,7 +176,7 @@ class GithubMergeQueueAdapterTest :
               )
         }
 
-        test("조회된 change revision이 다르면 squash merge를 실행하지 않습니다") {
+        test("조회된 change revision이 다르면, squash merge를 실행하지 않습니다") {
           val persisted =
               io.springkit.workflow.domain.MergeQueueEntry(
                   id = "github-merge-queue-17",
@@ -242,7 +242,7 @@ class GithubMergeQueueAdapterTest :
       }
 
       context("gh 명령이 실패하면") {
-        test("종료 코드와 stderr를 PortError로 변환하고 네트워크를 호출하지 않습니다") {
+        test("gh 명령이 종료 코드와 stderr를 반환하면, PortError로 변환하고 네트워크를 호출하지 않습니다") {
           val runner = FakeCommandRunner(CommandResult(1, "", "permission denied"))
           val result =
               GithubMergeQueueAdapter(Path.of("/repo"), runner)
@@ -254,7 +254,7 @@ class GithubMergeQueueAdapterTest :
           runner.commands.size shouldBe 1
         }
 
-        test("CommandRunner가 예외를 던지면 재시도 가능한 PortError로 변환합니다") {
+        test("CommandRunner가 예외를 던지면, 재시도 가능한 PortError로 변환합니다") {
           val runner = CommandRunner { _, _ -> error("gh unavailable") }
           val result =
               GithubMergeQueueAdapter(Path.of("/repo"), runner)
@@ -268,7 +268,7 @@ class GithubMergeQueueAdapterTest :
       }
 
       context("프로세스를 다시 시작한 뒤 Merge Queue를 병합하면") {
-        test("영속 조회가 없으면 인메모리 상태를 추측하지 않고 상태 필요 오류를 반환합니다") {
+        test("영속 조회가 없으면, 인메모리 상태를 추측하지 않고 상태 필요 오류를 반환합니다") {
           val runner =
               FakeCommandRunner(
                   CommandResult(

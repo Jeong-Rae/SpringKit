@@ -42,7 +42,7 @@ class LocalValidationAdapterTest :
               )
         }
 
-        test("명령 토큰에 공백이 포함되어도, 셸을 거치지 않고 토큰 목록을 전달합니다") {
+        test("명령 토큰에 공백이 포함되어 있으면, 셸을 거치지 않고 토큰 목록을 전달합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "", ""))
           val workspace = Path.of("/workspace/sk 101")

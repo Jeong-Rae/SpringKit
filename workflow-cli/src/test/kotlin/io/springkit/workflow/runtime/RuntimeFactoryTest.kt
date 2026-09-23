@@ -57,7 +57,7 @@ import okio.Path.Companion.toPath
 class RuntimeFactoryTest :
     FunSpec({
       context("Task provider를 런타임에 연결할 때") {
-        test("설정이 없으면 기존 snapshot adapter를 선택합니다") {
+        test("설정이 없으면, 기존 snapshot adapter를 선택합니다") {
           val adapter =
               createTaskPort(
                   repositoryRoot = Path.of("/repo"),
@@ -69,7 +69,7 @@ class RuntimeFactoryTest :
           adapter.shouldBeInstanceOf<SnapshotTaskAdapter>()
         }
 
-        test("snapshot을 지정하면 기존 snapshot adapter를 선택합니다") {
+        test("snapshot을 지정하면, 기존 snapshot adapter를 선택합니다") {
           val adapter =
               createTaskPort(
                   repositoryRoot = Path.of("/repo"),
@@ -81,7 +81,7 @@ class RuntimeFactoryTest :
           adapter.shouldBeInstanceOf<SnapshotTaskAdapter>()
         }
 
-        test("github-issue를 지정하면 GitHub Issue adapter를 선택합니다") {
+        test("github-issue를 지정하면, GitHub Issue adapter를 선택합니다") {
           val adapter =
               createTaskPort(
                   repositoryRoot = Path.of("/repo"),
@@ -93,7 +93,7 @@ class RuntimeFactoryTest :
           adapter.shouldBeInstanceOf<GithubIssueTaskAdapter>()
         }
 
-        test("지원하지 않는 provider이면 두 기본 런타임 모두 명확한 예외를 반환합니다") {
+        test("지원하지 않는 provider이면, 두 기본 런타임 모두 명확한 예외를 반환합니다") {
           val root = Files.createTempDirectory("workflow-runtime-provider-")
           val environment =
               mapOf(
@@ -122,7 +122,7 @@ class RuntimeFactoryTest :
       }
 
       context("외부 provider CLI를 런타임에 연결할 때") {
-        test("세 provider 명령을 JSON 배열로 설정하면 Application lifecycle을 구성합니다") {
+        test("세 provider 명령을 JSON 배열로 설정하면, Application lifecycle을 구성합니다") {
           val root = Files.createTempDirectory("workflow-runtime-providers-")
           val environment =
               mapOf(
@@ -143,7 +143,7 @@ class RuntimeFactoryTest :
           runtime.releaseLifecycle shouldNotBe null
         }
 
-        test("provider 명령 하나가 빠지면 명확한 IllegalArgumentException을 반환합니다") {
+        test("provider 명령 하나가 빠지면, 명확한 IllegalArgumentException을 반환합니다") {
           val root = Files.createTempDirectory("workflow-runtime-provider-missing-")
           val environment =
               mapOf(
@@ -164,7 +164,7 @@ class RuntimeFactoryTest :
           failure.message shouldContain "WORKFLOW_FEATURE_FLAG_COMMAND"
         }
 
-        test("provider 명령이 JSON 배열이 아니면 명확한 IllegalArgumentException을 반환합니다") {
+        test("provider 명령이 JSON 배열이 아니면, 명확한 IllegalArgumentException을 반환합니다") {
           val root = Files.createTempDirectory("workflow-runtime-provider-json-")
           val environment =
               mapOf(
@@ -189,7 +189,7 @@ class RuntimeFactoryTest :
       }
 
       context("병합 이후 cleanup과 배포가 모두 실패하면") {
-        test("배포 실패 결과에 cleanup 차단 원인과 재시도 행동을 보존합니다") {
+        test("병합 이후 cleanup과 배포가 모두 실패하면, 배포 실패 결과에 cleanup 차단 원인과 재시도 행동을 보존합니다") {
           val deploymentFailure =
               WorkflowResult.Failure(
                   FailureData(
@@ -462,11 +462,12 @@ class RuntimeFactoryTest :
               allThreads.shouldBeInstanceOf<
                   io.springkit.workflow.domain.WorkflowResult.Success<JsonObject>
               >()
-          allThreadsSuccess.data["diff"].toString() shouldContain "\"identity\":\"head-1\""
+          allThreadsSuccess.data["diff"].toString() shouldNotContain "\"identity\":\"head-1\""
           allThreadsSuccess.data["threads"].toString() shouldContain "thread-resolved"
 
           val reviewBeforeComment =
               WorkflowStateJsonCodec.decode(Files.readString(statePath)).pullRequests.getValue("1")
+          reviewBeforeComment.changeRevision.providerRevision shouldBe "head-1"
           val commentResult =
               gateway.execute(
                   WorkflowCommandRequest.ReviewComment(
