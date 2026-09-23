@@ -89,7 +89,7 @@ class StatusUseCaseTest :
       }
 
       context("Review가 Merge Queue 차단 조건을 가진 상황에서") {
-        test("차단 사유와 해결 행동을 반환하고 승인을 다음 행동으로 제안하지 않습니다") {
+        test("Review가 Merge Queue를 차단하면, 차단 사유와 해결 행동을 반환하고 승인을 다음 행동으로 제안하지 않습니다") {
           val snapshot =
               reviewSnapshot(SubTaskState.REVIEW, PullRequestState.REVIEW, CiStatus.PENDING)
 
@@ -102,7 +102,7 @@ class StatusUseCaseTest :
           status.next.map { it.action } shouldNotContain "approve_change"
         }
 
-        test("Draft Review는 정규화된 ready 명령을 반환합니다") {
+        test("Draft Review이면, 정규화된 ready 명령을 반환합니다") {
           val snapshot =
               reviewSnapshot(SubTaskState.DRAFT, PullRequestState.DRAFT, CiStatus.PENDING)
 
@@ -138,6 +138,41 @@ class StatusUseCaseTest :
               .review
               ?.ci shouldBe CiStatus.PASSED
           ciPort.revision shouldBe "diff-1"
+        }
+
+        test("provider revision이 있으면, CI 공급자에 provider revision을 전달합니다") {
+          val snapshot =
+              reviewSnapshot(SubTaskState.REVIEW, PullRequestState.REVIEW, CiStatus.PENDING)
+                  .copy(
+                      pullRequests =
+                          listOf(
+                              reviewSnapshot(
+                                      SubTaskState.REVIEW,
+                                      PullRequestState.REVIEW,
+                                      CiStatus.PENDING,
+                                  )
+                                  .pullRequests
+                                  .single()
+                                  .copy(
+                                      changeRevision =
+                                          ChangeRevision(
+                                              "cr-1",
+                                              1,
+                                              Diff("diff-1"),
+                                              providerRevision = "head-1",
+                                          )
+                                  )
+                          )
+                  )
+          val ciPort = RecordingCiPort()
+
+          val result =
+              StatusUseCase(FakeStatusStore(snapshot), ciPort = ciPort)
+                  .execute(StatusRequest(subTaskId = "sk-101"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>()
+          result.data.review?.ci shouldBe CiStatus.PASSED
+          ciPort.revision shouldBe "head-1"
         }
       }
     })

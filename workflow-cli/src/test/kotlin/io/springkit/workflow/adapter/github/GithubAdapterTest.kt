@@ -23,7 +23,9 @@ import io.springkit.workflow.common.CommandResult
 import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.domain.Actor
 import io.springkit.workflow.domain.ActorKind
+import io.springkit.workflow.domain.Approval
 import io.springkit.workflow.domain.ChangeRevision
+import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.PullRequest
@@ -75,7 +77,8 @@ class GithubAdapterTest :
                   .shouldBeTypeOf<PortResult.Success<*>>()
                   .value
                   .shouldBeTypeOf<OpenReviewResponse>()
-          response.pullRequest.changeRevision shouldBe changeRevision
+          response.pullRequest.changeRevision shouldBe
+              changeRevision.copy(providerRevision = "abc123")
           response.pullRequest.reviewRevision shouldBe reviewRevision
           runner.commands shouldContainExactly
               listOf(
@@ -108,6 +111,74 @@ class GithubAdapterTest :
                       Path.of("/repo"),
                   ),
               )
+        }
+
+        test("open 결과를 저장한 뒤 같은 head OID를 조회하면, change revision과 상태를 유지합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "https://github.com/example/repo/pull/17\n", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":true,"baseRefName":"main","headRefName":"sk-27","headRefOid":"head-1"}""",
+                  "",
+              )
+          )
+          var persisted: PullRequest? = null
+          val adapter =
+              GithubReviewAdapter(
+                  Path.of("/repo"),
+                  runner,
+                  currentPullRequest = { persisted },
+              )
+
+          val opened =
+              adapter
+                  .open(
+                      OpenReviewRequest(
+                          subTaskId = "sk-27",
+                          title = "기능 추가",
+                          body = "설명",
+                          base = "main",
+                          branch = "sk-27",
+                          risk = Risk.NORMAL,
+                          exposure = Exposure.UNCHANGED,
+                          changeRevision = ChangeRevision("cr-1", 1, Diff("local-fp")),
+                          reviewRevision = ReviewRevision("rv-1", 1, "설명"),
+                      )
+                  )
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<OpenReviewResponse>()
+                  .pullRequest
+          opened.changeRevision.providerRevision shouldBe "head-1"
+          persisted =
+              opened.copy(
+                  approval =
+                      Approval("ap-1", Actor("human-1", ActorKind.HUMAN), "cr-1", "local-fp"),
+                  ci = CiStatus.PASSED,
+              )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":true,"baseRefName":"main","headRefName":"sk-27","headRefOid":"head-1"}""",
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+
+          val current =
+              adapter
+                  .get(GetReviewRequest("17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+
+          current.changeRevision.id shouldBe "cr-1"
+          current.changeRevision.number shouldBe 1
+          current.changeRevision.providerRevision shouldBe "head-1"
+          current.ci shouldBe CiStatus.PASSED
+          current.approval shouldBe persisted.approval
         }
       }
 
@@ -180,7 +251,8 @@ class GithubAdapterTest :
                   .pullRequest
           current.changeRevision.number shouldBe 2
           current.changeRevision.id shouldBe "github-change-17-2"
-          current.changeRevision.diff.identity shouldBe "diff-2"
+          current.changeRevision.diff.identity shouldBe "diff-1"
+          current.changeRevision.providerRevision shouldBe "diff-2"
           current.ci.name shouldBe "PENDING"
         }
 
@@ -379,7 +451,7 @@ class GithubAdapterTest :
               )
         }
 
-        test("코드 줄과 수준을 지정하면, 현재 diff identity로 리뷰 코멘트를 생성합니다") {
+        test("코드 줄과 수준을 지정하면, provider revision으로 리뷰 코멘트를 생성합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, """{"id":101,"node_id":"PRRC_remote"}""", ""))
           runner.enqueue(
@@ -403,7 +475,12 @@ class GithubAdapterTest :
                   "",
               )
           )
-          val current = pullRequest()
+          val current =
+              pullRequest()
+                  .copy(
+                      changeRevision =
+                          pullRequest().changeRevision.copy(providerRevision = "head-1")
+                  )
           val comment =
               ReviewComment(
                   "comment-1",
@@ -435,7 +512,7 @@ class GithubAdapterTest :
                   "-f",
                   "body=[Agent] [R] 수정이 필요합니다",
                   "-f",
-                  "commit_id=diff-1",
+                  "commit_id=head-1",
                   "-f",
                   "path=src/Main.kt",
                   "-F",
@@ -642,7 +719,7 @@ class GithubAdapterTest :
           )
           val before = pullRequest()
           val nextReview = ReviewRevision("rv-2", 2, "설명")
-          val nextChange = ChangeRevision("cr-2", 2, Diff("diff-2"))
+          val nextChange = ChangeRevision("cr-2", 2, Diff("diff-2"), providerRevision = "diff-2")
           val adapter =
               GithubReviewAdapter(
                   Path.of("/repo"),

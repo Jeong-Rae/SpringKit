@@ -157,10 +157,15 @@ data class ChangeRevision(
     val number: Long,
     val diff: Diff,
     val createdAtEpochMillis: Long = 0,
+    /** 외부 Review provider가 부여한 소스 커밋 revision입니다. */
+    val providerRevision: String? = null,
 ) {
   init {
     require(id.isNotBlank()) { "change revision id must not be blank" }
     require(number > 0) { "change revision number must be positive" }
+    require(providerRevision == null || providerRevision.isNotBlank()) {
+      "provider revision must not be blank"
+    }
   }
 }
 

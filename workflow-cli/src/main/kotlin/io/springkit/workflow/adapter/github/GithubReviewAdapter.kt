@@ -207,7 +207,11 @@ class GithubReviewAdapter(
               exposure = request.exposure,
               featureFlagId = request.featureFlagId,
               reviewRevision = request.reviewRevision,
-              changeRevision = request.changeRevision,
+              changeRevision =
+                  request.changeRevision.copy(
+                      providerRevision =
+                          provider.headRefOid ?: request.changeRevision.providerRevision
+                  ),
           )
         }
     return PortResult.Success(
@@ -273,7 +277,11 @@ class GithubReviewAdapter(
               body = request.body ?: current.body,
               base = request.base ?: current.base,
               reviewRevision = request.reviewRevision ?: current.reviewRevision,
-              changeRevision = request.changeRevision ?: current.changeRevision,
+              changeRevision =
+                  request.changeRevision?.copy(
+                      providerRevision =
+                          provider.headRefOid ?: request.changeRevision.providerRevision
+                  ) ?: current.changeRevision,
           )
         }
     return PortResult.Success(
@@ -336,7 +344,7 @@ class GithubReviewAdapter(
               "-f",
               "body=$body",
               "-f",
-              "commit_id=${current.changeRevision.diff.identity}",
+              "commit_id=${current.changeRevision.providerRevision ?: current.changeRevision.diff.identity}",
               "-f",
               "path=${request.comment.path}",
               "-F",
@@ -905,10 +913,12 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
   override fun resolve(provider: GithubPullRequest, previous: PullRequest?): PullRequest {
     if (previous != null) {
       val providerBody = provider.body.takeIf { it.isNotBlank() }
-      val providerDiffIdentity = provider.headRefOid?.takeIf { it.isNotBlank() }
+      val providerRevision = provider.headRefOid?.takeIf { it.isNotBlank() }
+      val previousProviderRevision = previous.changeRevision.providerRevision
       val codeChanged =
-          providerDiffIdentity != null &&
-              providerDiffIdentity != previous.changeRevision.diff.identity
+          providerRevision != null &&
+              (previousProviderRevision?.let { it != providerRevision }
+                  ?: (providerRevision != previous.changeRevision.diff.identity))
       val bodyChanged = providerBody != null && providerBody != previous.body
       val providerThreads = provider.toDomainThreads()
       val issueThreads = provider.comments.toIssueCommentThreads()
@@ -929,7 +939,7 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
             previous.changeRevision.copy(
                 id = "github-change-${provider.number}-${previous.changeRevision.number + 1}",
                 number = previous.changeRevision.number + 1,
-                diff = previous.changeRevision.diff.copy(identity = providerDiffIdentity),
+                providerRevision = providerRevision,
             )
           } else {
             previous.changeRevision

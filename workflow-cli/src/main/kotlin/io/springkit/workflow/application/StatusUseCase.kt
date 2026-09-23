@@ -518,7 +518,13 @@ class StatusUseCase(
   private fun readCi(review: PullRequest?): ReadResult<CiStatus> {
     if (review == null || ciPort == null) return ReadResult.Value(review?.ci ?: CiStatus.PENDING)
     return when (
-        val result = ciPort.get(GetCiRequest(review.id, review.changeRevision.diff.identity))
+        val result =
+            ciPort.get(
+                GetCiRequest(
+                    review.id,
+                    review.changeRevision.providerRevision ?: review.changeRevision.diff.identity,
+                )
+            )
     ) {
       is PortResult.Success -> ReadResult.Value(result.value.status)
       is PortResult.Failure ->

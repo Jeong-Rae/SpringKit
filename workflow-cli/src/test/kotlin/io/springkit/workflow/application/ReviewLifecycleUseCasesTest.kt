@@ -30,7 +30,7 @@ import io.springkit.workflow.domain.WorkspacePath
 class ReviewLifecycleUseCasesTest :
     FunSpec({
       context("Review를 처음 게시하는 상황에서") {
-        test("현재 fingerprint의 모든 check가 PASSED이면 제목과 base를 만들고 Draft PR과 게이트를 저장합니다") {
+        test("현재 fingerprint의 모든 check가 PASSED이면, 제목과 base를 만들고 Draft PR과 게이트를 저장합니다") {
           val fixture = ReviewLifecycleFixture()
 
           val result =
@@ -62,7 +62,7 @@ class ReviewLifecycleUseCasesTest :
           fixture.store.current.eventLog.events.single().shouldBeInstanceOf<ReviewOpened>()
         }
 
-        test("현재 fingerprint와 check가 일치하지 않으면 외부 게시 없이 CHECK 오류를 반환합니다") {
+        test("현재 fingerprint와 check가 일치하지 않으면, 외부 게시 없이 CHECK 오류를 반환합니다") {
           val fixture = ReviewLifecycleFixture(statusFingerprint = "changed-fingerprint")
 
           val result =
@@ -84,7 +84,7 @@ class ReviewLifecycleUseCasesTest :
           fixture.store.current.pullRequests shouldBe emptyList()
         }
 
-        test("Feature Flag 기본 동작이 안전하지 않으면 PR을 게시하지 않고 Gate 오류를 반환합니다") {
+        test("Feature Flag 기본 동작이 안전하지 않으면, PR을 게시하지 않고 Gate 오류를 반환합니다") {
           val fixture = ReviewLifecycleFixture(featureSafeDefault = false)
 
           val result =
@@ -106,7 +106,7 @@ class ReviewLifecycleUseCasesTest :
           fixture.publish.requests shouldBe emptyList()
         }
 
-        test("AI Review 공급자가 없으면 Draft PR을 열고 AI Review를 PENDING으로 유지합니다") {
+        test("AI Review 공급자가 없으면, Draft PR을 열고 AI Review를 PENDING으로 유지합니다") {
           val fixture = ReviewLifecycleFixture(withAiReview = false)
 
           val result =
@@ -131,7 +131,7 @@ class ReviewLifecycleUseCasesTest :
       }
 
       context("Review를 갱신하는 상황에서") {
-        test("본문만 바뀌면 change revision과 승인과 게이트를 유지하고 review revision만 갱신합니다") {
+        test("본문만 바뀌면, change revision과 승인과 게이트를 유지하고 review revision만 갱신합니다") {
           val fixture = ReviewLifecycleFixture(withPullRequest = true)
 
           val result =
@@ -163,7 +163,7 @@ class ReviewLifecycleUseCasesTest :
           fixture.ai.starts shouldBe 0
         }
 
-        test("fingerprint가 바뀌면 PASSED check 이후 새 change revision과 무효화된 게이트를 게시합니다") {
+        test("fingerprint가 바뀌면, PASSED check 이후 새 change revision과 무효화된 게이트를 게시합니다") {
           val fixture =
               ReviewLifecycleFixture(
                   withPullRequest = true,
@@ -202,7 +202,7 @@ class ReviewLifecycleUseCasesTest :
           fixture.ai.starts shouldBe 1
         }
 
-        test("CI 시작이 실패하면 Store를 커밋하지 않고 외부 변경 보상을 요청합니다") {
+        test("CI 시작이 실패하면, Store를 커밋하지 않고 외부 변경 보상을 요청합니다") {
           val fixture = ReviewLifecycleFixture(ciFailure = true)
 
           val result =

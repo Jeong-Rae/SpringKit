@@ -138,7 +138,7 @@ private fun fixture(): WorkflowState {
           10,
       )
   val diff = Diff("diff-1", listOf("state.kt"), additions = 12, deletions = 2)
-  val change = ChangeRevision("cr-1", 1, diff, 10)
+  val change = ChangeRevision("cr-1", 1, diff, 10, providerRevision = "head-1")
   val pullRequest =
       PullRequest(
           "pr-1",

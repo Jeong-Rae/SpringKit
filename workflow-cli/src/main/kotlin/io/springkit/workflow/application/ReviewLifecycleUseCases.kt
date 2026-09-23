@@ -261,7 +261,7 @@ class ReviewLifecycleUseCases(
             base = base,
             state = PullRequestState.DRAFT,
             reviewRevision = reviewRevision,
-            changeRevision = changeRevision,
+            changeRevision = opened.pullRequest.changeRevision,
             ci = ci.run.status,
             aiReview = aiStatus,
         )
@@ -500,7 +500,7 @@ class ReviewLifecycleUseCases(
         updated.pullRequest.copy(
             body = request.body ?: stored.body,
             reviewRevision = reviewRevision,
-            changeRevision = changeRevision,
+            changeRevision = updated.pullRequest.changeRevision,
             approval = if (codeChanged) null else stored.approval,
             ci = ciStatus,
             aiReview = aiStatus,
