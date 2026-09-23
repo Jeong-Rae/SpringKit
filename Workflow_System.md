@@ -47,6 +47,8 @@ Workflow 도구는 Kotlin으로 구현합니다. CLI(Command line interface) 계
 
 Domain과 Application은 Clikt, 파일 시스템, 프로세스 실행, 네트워크와 provider SDK에 의존하지 않습니다. 외부 상태는 소유 Adapter의 Port를 통해서만 읽고 변경합니다. CLI 표현과 provider 응답 형식은 Adapter에서 Domain 모델로 변환합니다.
 
+`change_revision`은 사람이 확인하는 코드 변경 단위입니다. 그 안의 `diff.identity`는 로컬 코드의 fingerprint를 나타냅니다. `provider_revision`은 GitHub head SHA처럼 외부 provider가 코드 상태를 식별하는 revision입니다. Adapter는 CI 조회와 코드 위치 Review 요청에 `provider_revision`을 사용하며, 이 값을 `diff.identity`로 대체하지 않습니다. 같은 `provider_revision`을 다시 동기화할 때는 `change_revision`과 기존 승인을 유지합니다.
+
 기반 기능은 직접 다시 구현하지 않고 다음 기준에 따라 외부 라이브러리를 우선 사용합니다.
 
 1. Kotlin API와 컴파일 시점 타입 검증을 자연스럽게 지원합니다.
