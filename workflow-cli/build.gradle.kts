@@ -4,6 +4,12 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 
@@ -70,6 +76,7 @@ graalvmNative {
   binaries {
     named("main") {
       imageName = "workflow"
+      buildArgs.add("--initialize-at-build-time=kotlin.DeprecationLevel")
     }
   }
 }
@@ -87,10 +94,18 @@ val installWorkflowNative =
 abstract class WorkflowNativeSmokeTest : DefaultTask() {
   @get:Inject abstract val execOperations: ExecOperations
 
+  /** 실행 위치와 환경 변수에만 사용하므로 입력 fingerprint에서 제외한 저장소 루트입니다. */
+  @get:Internal abstract val repositoryRoot: DirectoryProperty
+
+  /** 시작과 JSON 결과 계약을 검증할 Native 실행 파일입니다. */
+  @get:InputFile
+  @get:PathSensitive(PathSensitivity.RELATIVE)
+  abstract val executable: RegularFileProperty
+
   @TaskAction
   fun verifyNativeBinary() {
-    val repositoryRoot = project.layout.projectDirectory.dir("..").asFile
-    val executable = project.layout.projectDirectory.file("../tools/workflow").asFile
+    val repositoryRootFile = repositoryRoot.get().asFile
+    val executableFile = executable.get().asFile
     val stateFile = temporaryDir.resolve("state.json")
     stateFile.writeText(
         """
@@ -111,7 +126,7 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
             .trimIndent()
     )
 
-    val help = invoke(executable, repositoryRoot, stateFile, "--help")
+    val help = invoke(executableFile, repositoryRootFile, stateFile, "--help")
     check(help.exitCode == 0) {
       "Native 바이너리의 --help 실행이 실패했습니다. 종료 코드: ${help.exitCode}\n${help.stderr}"
     }
@@ -121,8 +136,8 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
 
     val success =
         invoke(
-            executable,
-            repositoryRoot,
+            executableFile,
+            repositoryRootFile,
             stateFile,
             "status",
             "--task",
@@ -133,8 +148,8 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
 
     val failure =
         invoke(
-            executable,
-            repositoryRoot,
+            executableFile,
+            repositoryRootFile,
             stateFile,
             "status",
             "--subtask",
@@ -206,4 +221,6 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
 
 tasks.register<WorkflowNativeSmokeTest>("workflowNativeSmokeTest") {
   dependsOn(installWorkflowNative)
+  repositoryRoot.set(layout.projectDirectory.dir(".."))
+  executable.set(layout.projectDirectory.file("../tools/workflow"))
 }
