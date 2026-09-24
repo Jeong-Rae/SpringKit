@@ -23,6 +23,15 @@ class SampleTest :
         }
       }
 
+      context("sampleOf의 null 값 반환값") {
+        test("타입을 명시하고 null을 입력하면, null 값과 선언 타입을 보존한다") {
+          val sample = sampleOf<String>(null)
+
+          sample.value shouldBe null
+          sample.type shouldBe typeOf<String>()
+        }
+      }
+
       context("sampleOf의 enum 타입 반환값") {
         test("enum 값을 입력하면, 값과 KType을 보존한다") {
           val sample = sampleOf(SampleUserRole.ADMIN)
@@ -111,7 +120,7 @@ private fun collectionSampleCases(): List<SampleContractCase> =
 private fun sampleCase(
     typeName: String,
     sample: Sample,
-    expectedValue: Any,
+    expectedValue: Any?,
     expectedType: KType,
 ): SampleContractCase =
     SampleContractCase(
@@ -132,7 +141,7 @@ private fun booleanSampleCase(value: Boolean): SampleContractCase =
 private data class SampleContractCase(
     val testName: String,
     val sample: Sample,
-    val expectedValue: Any,
+    val expectedValue: Any?,
     val expectedType: KType,
 )
 
