@@ -947,7 +947,7 @@ production 배포와 내부 검수가 끝나면 사람이 `gate release`로 외�
 
 ## 외부 Task 동기화
 
-Workflow는 SubTask의 `main` 통합, 배포와 공개 상태를 외부 하위 작업에 반영합니다.
+Workflow는 SubTask의 실제 `main` 통합 상태를 외부 하위 작업에 반영합니다. 배포와 공개 상태는 Workflow Store와 각 provider에서 관리하고 `status`로 함께 조회합니다. 이 상태를 외부 Task의 완료 상태로 덮어쓰지 않습니다.
 
 모든 SubTask가 merge됐다는 이유만으로 상위 Task를 자동 완료하지 않습니다. 상위 Task의 완료는 외부 시스템이 정의한 제품 및 공개 조건에 따라 판단합니다.
 
