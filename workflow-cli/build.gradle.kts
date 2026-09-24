@@ -161,6 +161,43 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
     check(failureData?.get("code") == "SUBTASK_NOT_FOUND") {
       "대표 JSON 실패 코드가 예상과 다릅니다.\n${failure.stdout}"
     }
+
+    val configurationFailure =
+        invoke(
+            executableFile,
+            repositoryRootFile,
+            stateFile,
+            "status",
+            "--json",
+            extraEnvironment =
+                mapOf(
+                    "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
+                    "WORKFLOW_RELEASE_COMMAND" to "",
+                    "WORKFLOW_FEATURE_FLAG_COMMAND" to "",
+                ),
+        )
+    val configurationJson =
+        requireJsonResult(configurationFailure, expectedType = "failure", expectedExitCode = 1)
+    val configurationData = configurationJson["data"] as? Map<*, *>
+    check(configurationData?.get("code") == "INVALID_ARGUMENT") {
+      "구성 오류가 공통 JSON 실패로 변환되지 않았습니다.\n${configurationFailure.stdout}"
+    }
+
+    val actorConfigurationFailure =
+        invoke(
+            executableFile,
+            repositoryRootFile,
+            stateFile,
+            "status",
+            "--json",
+            extraEnvironment = mapOf("WORKFLOW_ACTOR_KIND" to "HUMAN"),
+        )
+    val actorConfigurationJson =
+        requireJsonResult(actorConfigurationFailure, expectedType = "failure", expectedExitCode = 1)
+    val actorConfigurationData = actorConfigurationJson["data"] as? Map<*, *>
+    check(actorConfigurationData?.get("code") == "INVALID_ARGUMENT") {
+      "주체 종류 구성 오류가 공통 JSON 실패로 변환되지 않았습니다.\n${actorConfigurationFailure.stdout}"
+    }
   }
 
   private fun invoke(
@@ -168,6 +205,7 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
       repositoryRoot: File,
       stateFile: File,
       vararg arguments: String,
+      extraEnvironment: Map<String, String> = emptyMap(),
   ): NativeInvocation {
     val stdout = ByteArrayOutputStream()
     val stderr = ByteArrayOutputStream()
@@ -176,6 +214,7 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
       workingDir(repositoryRoot)
       environment("WORKFLOW_REPO_ROOT", repositoryRoot.absolutePath)
       environment("WORKFLOW_STATE_FILE", stateFile.absolutePath)
+      extraEnvironment.forEach { (name, value) -> environment(name, value) }
       standardOutput = stdout
       errorOutput = stderr
       isIgnoreExitValue = true

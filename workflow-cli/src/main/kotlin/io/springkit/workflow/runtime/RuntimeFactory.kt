@@ -80,6 +80,7 @@ import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.ReleaseRecorded
 import io.springkit.workflow.domain.ReleaseState
 import io.springkit.workflow.domain.WorkflowResult
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -94,6 +95,10 @@ fun interface RuntimeFactory {
 object DefaultRuntimeFactory : RuntimeFactory {
   override fun create(): WorkflowCommandGateway = createDefaultRuntime()
 }
+
+/** 실행 환경 설정이 Workflow 초기화를 막을 때 사용하는 명시적인 오류입니다. */
+internal class WorkflowConfigurationException(message: String, cause: Throwable? = null) :
+    IllegalArgumentException(message, cause)
 
 /** 배포 Event의 후보, Release와 후속 후보를 함께 반환하는 런타임 결과입니다. */
 data class DeploymentEventResponse(
@@ -124,9 +129,13 @@ fun createDefaultApplicationRuntime(
         io.springkit.workflow.common.LocalCommandRunner(),
     eventPort: io.springkit.workflow.application.WorkflowEventPort = UnconfiguredWorkflowEventPort,
 ): WorkflowApplicationRuntime {
+  validateActorKind(environment)
   val workingDirectory = currentDirectory.toAbsolutePath().normalize()
   val repositoryRoot = resolveRepositoryRoot(workingDirectory, environment, commandRunner)
-  val configuredStatePath = environment["WORKFLOW_STATE_FILE"]?.let(Path::of)
+  val configuredStatePath =
+      environment["WORKFLOW_STATE_FILE"]?.let {
+        configurationPath("WORKFLOW_STATE_FILE", it)
+      }
   val statePath =
       (configuredStatePath?.let { if (it.isAbsolute) it else workingDirectory.resolve(it) }
               ?: repositoryRoot.resolve(".workflow").resolve("state.json"))
@@ -795,8 +804,10 @@ private fun providerCommands(environment: Map<String, String>): ProviderCommandP
           .mapValues { (_, value) -> value?.trim()?.takeIf(String::isNotBlank) }
   if (values.values.all { it == null }) return null
   val missing = values.filterValues { it == null }.keys
-  require(missing.isEmpty()) {
-    "provider CLI 설정은 세 환경 변수를 모두 지정해야 합니다. 누락: ${missing.joinToString(", ")}"
+  if (missing.isNotEmpty()) {
+    throw WorkflowConfigurationException(
+        "provider CLI 설정은 세 환경 변수를 모두 지정해야 합니다. 누락: ${missing.joinToString(", ")}"
+    )
   }
   return ProviderCommandPrefixes(
       deployment =
@@ -823,13 +834,13 @@ private fun decodeProviderCommand(name: String, value: String): List<String> {
       try {
         providerCommandJson.decodeFromString<List<String>>(value)
       } catch (failure: SerializationException) {
-        throw IllegalArgumentException(
+        throw WorkflowConfigurationException(
             "$name 값은 provider CLI 토큰의 JSON 문자열 배열이어야 합니다.",
             failure,
         )
       }
-  require(command.isNotEmpty() && command.none(String::isBlank)) {
-    "$name 값은 비어 있지 않은 provider CLI 토큰 배열이어야 합니다."
+  if (command.isEmpty() || command.any(String::isBlank)) {
+    throw WorkflowConfigurationException("$name 값은 비어 있지 않은 provider CLI 토큰 배열이어야 합니다.")
   }
   return command
 }
@@ -862,7 +873,7 @@ internal fun createTaskPort(
       "snapshot" -> SnapshotTaskAdapter(snapshotProvider)
       "github-issue" -> GithubIssueTaskAdapter(repositoryRoot, commandRunner)
       else ->
-          throw IllegalArgumentException(
+          throw WorkflowConfigurationException(
               "지원하지 않는 WORKFLOW_TASK_PROVIDER입니다. " + "지원 값: snapshot, github-issue",
           )
     }
@@ -874,7 +885,7 @@ private fun resolveRepositoryRoot(
     commandRunner: io.springkit.workflow.common.CommandRunner,
 ): Path {
   environment["WORKFLOW_REPO_ROOT"]?.let {
-    val configured = Path.of(it)
+    val configured = configurationPath("WORKFLOW_REPO_ROOT", it)
     return (if (configured.isAbsolute) configured else currentDirectory.resolve(configured))
         .toAbsolutePath()
         .normalize()
@@ -891,6 +902,23 @@ private fun resolveRepositoryRoot(
       ?.toAbsolutePath()
       ?.normalize() ?: currentDirectory
 }
+
+/** 문서에 정의된 실행 주체 종류만 런타임 구성으로 허용합니다. */
+private fun validateActorKind(environment: Map<String, String>) {
+  val configured =
+      environment["WORKFLOW_ACTOR_KIND"]?.trim()?.takeIf(String::isNotBlank)?.uppercase()
+  if (configured != null && configured !in setOf("AGENT", "WORKFLOW")) {
+    throw WorkflowConfigurationException("WORKFLOW_ACTOR_KIND는 AGENT 또는 WORKFLOW여야 합니다.")
+  }
+}
+
+/** 환경 변수의 경로를 해석하고 잘못된 경로를 구성 오류로 변환합니다. */
+private fun configurationPath(name: String, value: String): Path =
+    try {
+      Path.of(value)
+    } catch (failure: InvalidPathException) {
+      throw WorkflowConfigurationException("$name 값이 올바른 경로가 아닙니다.", failure)
+    }
 
 /** 저장된 Workspace 경로를 Local Git 어댑터가 사용할 절대 경로로 변환합니다. */
 private fun workspacePathResolver(
