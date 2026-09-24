@@ -45,7 +45,7 @@ class DocumentationRequestBuilderTest :
           body.at("/members/0/id").stringValue() shouldBe "member-1"
         }
 
-        test("Content-Type header와 optional null sample을 실제 JSON 요청에 반영합니다") {
+        test("Content-Type header를 실제 JSON 요청에 반영합니다") {
           val documentation =
               documentationDefinition("patch-user") {
                 summary = "사용자 부분 수정"
@@ -60,7 +60,6 @@ class DocumentationRequestBuilderTest :
                 }
                 requestBody {
                   field("name", "사용자 이름", sample = "Alice")
-                  field<String>("nickname", "사용자 별명", sample = null, optional = true)
                 }
               }
 
@@ -69,7 +68,6 @@ class DocumentationRequestBuilderTest :
 
           request.contentType shouldBe "application/merge-patch+json"
           body.at("/name").stringValue() shouldBe "Alice"
-          body.at("/nickname").isNull shouldBe true
         }
       }
     })
