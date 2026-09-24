@@ -12,8 +12,11 @@ import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.SubTask
+import io.springkit.workflow.domain.SubTaskCleanupState
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.WorkflowResult
+import io.springkit.workflow.domain.Workspace
+import io.springkit.workflow.domain.WorkspacePath
 
 class StatusUseCaseTest :
     FunSpec({
@@ -76,6 +79,115 @@ class StatusUseCaseTest :
 
           result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
               FailureCode.WORKSPACE_NOT_FOUND
+        }
+      }
+
+      context("정리가 완료된 workspace의 상태를 조회하는 상황에서") {
+        test("완료된 workspace이면, 삭제된 경로를 다시 검사하지 않고 상태를 반환합니다") {
+          val workspace =
+              Workspace(
+                  id = "ws-sk-parent",
+                  subTaskId = "sk-parent",
+                  path = WorkspacePath("/managed/sk-parent"),
+                  branch = "sk-parent",
+              )
+          val snapshot =
+              WorkflowStoreSnapshot(
+                  revision = "store-1",
+                  subTasks =
+                      listOf(
+                          SubTask(
+                              id = "sk-parent",
+                              taskId = "task-1",
+                              title = "정리 완료",
+                              state = SubTaskState.MERGED,
+                              workspace = workspace,
+                              cleanupState = SubTaskCleanupState.COMPLETED,
+                          )
+                      ),
+              )
+
+          val result =
+              StatusUseCase(
+                      FakeStatusStore(snapshot),
+                      workspacePort =
+                          FixedStatusWorkspacePort(
+                              PortResult.Success(WorkspaceLookupResponse(workspace))
+                          ),
+                  )
+                  .execute()
+
+          val status = result.shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>().data
+          status.subTask?.id shouldBe "sk-parent"
+          status.workspace shouldBe null
+        }
+
+        test("관리 worktree가 아닌 현재 경로이면, 완료 SubTask를 임의로 선택하지 않습니다") {
+          val snapshot =
+              WorkflowStoreSnapshot(
+                  revision = "store-1",
+                  subTasks =
+                      listOf(
+                          SubTask(
+                              id = "sk-parent",
+                              taskId = "task-1",
+                              title = "정리 완료",
+                              state = SubTaskState.MERGED,
+                              cleanupState = SubTaskCleanupState.COMPLETED,
+                          )
+                      ),
+              )
+
+          val result =
+              StatusUseCase(
+                      FakeStatusStore(snapshot),
+                      workspacePort =
+                          FixedStatusWorkspacePort(
+                              PortResult.Failure(
+                                  PortError("NOT_MANAGED_WORKTREE", "현재 경로는 관리 대상이 아닙니다")
+                              )
+                          ),
+                  )
+                  .execute()
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.WORKSPACE_NOT_FOUND
+        }
+
+        test("원격 branch만 제거되었으면, 남아 있는 workspace를 계속 표시합니다") {
+          val workspace =
+              Workspace(
+                  id = "ws-sk-parent",
+                  subTaskId = "sk-parent",
+                  path = WorkspacePath("/managed/sk-parent"),
+                  branch = "sk-parent",
+              )
+          val snapshot =
+              WorkflowStoreSnapshot(
+                  revision = "store-1",
+                  subTasks =
+                      listOf(
+                          SubTask(
+                              id = "sk-parent",
+                              taskId = "task-1",
+                              title = "원격 정리 진행 중",
+                              state = SubTaskState.MERGED,
+                              workspace = workspace,
+                              cleanupState = SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
+                          )
+                      ),
+              )
+
+          val result =
+              StatusUseCase(FakeStatusStore(snapshot))
+                  .execute(StatusRequest(subTaskId = "sk-parent"))
+
+          result
+              .shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>()
+              .data
+              .workspace
+              ?.workspace
+              ?.id shouldBe workspace.id
         }
       }
 
@@ -231,6 +343,15 @@ private class FakeStatusStore(
 
   private fun <T> unused(): PortResult<T> =
       PortResult.Failure(PortError("UNUSED", "not used by this test"))
+}
+
+private class FixedStatusWorkspacePort(private val result: PortResult<WorkspaceLookupResponse>) :
+    WorkspacePort {
+  override fun get(request: WorkspaceLookupRequest) = result
+
+  override fun create(request: CreateWorkspaceRequest) = error("not used")
+
+  override fun delete(request: DeleteWorkspaceRequest) = error("not used")
 }
 
 private class FailingStatusStore : WorkflowStorePort {

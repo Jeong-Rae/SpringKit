@@ -10,6 +10,7 @@ import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.SubTask
+import io.springkit.workflow.domain.SubTaskCleanupState
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
@@ -31,6 +32,7 @@ class PostMergeCleanupUseCaseTest :
           val response =
               result.shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>().data
 
+          response.blocks shouldBe emptyList()
           response.state shouldBe PostMergeCleanupState.COMPLETED
           response.restackedSubTaskIds shouldBe listOf(child.id)
           response.removedRemoteBranches shouldBe listOf(parent.branch)
@@ -66,6 +68,7 @@ class PostMergeCleanupUseCaseTest :
           val response =
               result.shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>().data
 
+          response.blocks shouldBe emptyList()
           response.state shouldBe PostMergeCleanupState.COMPLETED
           response.removedRemoteBranches shouldBe listOf(parent.branch)
           git.operations shouldContain "remote:${parent.branch}"
@@ -156,6 +159,289 @@ class PostMergeCleanupUseCaseTest :
           git.operations.any { it.startsWith("worktree:") } shouldBe false
           git.operations.any { it.startsWith("local:") } shouldBe false
         }
+
+        test("local branch 정리가 실패하면, 성공한 원격과 worktree 정리 단계를 저장하고 재시도합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit(failLocalOnce = true)
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  )
+              )
+          val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+
+          val first =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          first.state shouldBe PostMergeCleanupState.BLOCKED
+          store.current.subTasks.single().cleanupState shouldBe SubTaskCleanupState.WORKTREE_REMOVED
+          val operationsAfterFailure = git.operations.toList()
+
+          val retry =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          retry.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations.count { it == "remote:${parent.branch}" } shouldBe 1
+          git.operations.count { it == "worktree:ws-${parent.id}" } shouldBe 1
+          git.operations.drop(operationsAfterFailure.size) shouldBe
+              listOf("local:${parent.branch}", "fetch:origin/main")
+          store.current.subTasks.single().cleanupState shouldBe SubTaskCleanupState.COMPLETED
+        }
+
+        test("worktree 삭제 뒤 상태 저장이 실패하면, 재시도에서 삭제된 worktree를 건너뜁니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit(failInspectAfterWorktreeRemoval = true)
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  ),
+                  failWriteState = SubTaskCleanupState.WORKTREE_REMOVED,
+              )
+          val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+
+          val first =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          first.state shouldBe PostMergeCleanupState.BLOCKED
+          store.current.subTasks.single().cleanupState shouldBe
+              SubTaskCleanupState.REMOTE_BRANCH_REMOVED
+          val retry =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          retry.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations.count { it == "worktree:ws-${parent.id}" } shouldBe 1
+          git.operations.count { it == "remote:${parent.branch}" } shouldBe 1
+        }
+
+        test("원격 삭제 뒤 상태 저장이 실패하면, 재시도에서 원격 삭제를 반복하지 않습니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit()
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  ),
+                  failWriteState = SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
+              )
+          val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+
+          val first =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          first.state shouldBe PostMergeCleanupState.BLOCKED
+          val retry =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          retry.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations.count { it == "remote:${parent.branch}" } shouldBe 1
+        }
+
+        test("local branch 삭제가 저장된 뒤 완료 저장이 실패하면, 재시도에서 삭제를 반복하지 않습니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit()
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  ),
+                  failWriteState = SubTaskCleanupState.COMPLETED,
+              )
+          val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+
+          val first =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          first.state shouldBe PostMergeCleanupState.BLOCKED
+          store.current.subTasks.single().cleanupState shouldBe
+              SubTaskCleanupState.LOCAL_BRANCH_REMOVED
+          val retry =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          retry.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations.count { it == "local:${parent.branch}" } shouldBe 1
+          store.current.subTasks.single().cleanupState shouldBe SubTaskCleanupState.COMPLETED
+        }
+
+        test("main revision 갱신이 실패하면, 재시도에서 branch 삭제 없이 갱신을 다시 시도합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit(failRefreshOnce = true)
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  )
+              )
+          val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+
+          val first =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          first.state shouldBe PostMergeCleanupState.BLOCKED
+          store.current.subTasks.single().cleanupState shouldBe
+              SubTaskCleanupState.LOCAL_BRANCH_REMOVED
+          val firstOperations = git.operations.toList()
+          val retry =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          retry.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations.count { it == "remote:${parent.branch}" } shouldBe 1
+          git.operations.count { it == "worktree:ws-${parent.id}" } shouldBe 1
+          git.operations.count { it == "local:${parent.branch}" } shouldBe 1
+          git.operations.drop(firstOperations.size) shouldBe listOf("fetch:origin/main")
+          store.current.subTasks.single().cleanupState shouldBe SubTaskCleanupState.COMPLETED
+        }
+
+        test("완료된 정리를 다시 실행하면, 삭제 단계를 다시 호출하지 않습니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit()
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  )
+              )
+          val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+
+          useCase.execute(PostMergeCleanupRequest(parent.id))
+          val operationsAfterCompletion = git.operations.toList()
+          val rerun =
+              useCase
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          rerun.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations shouldBe operationsAfterCompletion
+        }
+
+        test("workspace가 없는 merged SubTask이면, local branch까지 정리하고 단계를 저장합니다") {
+          val parent =
+              subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+                  .copy(workspace = null)
+          val git = CleanupGit()
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  )
+              )
+
+          val result =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          result.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations shouldContain "remote:${parent.branch}"
+          git.operations shouldContain "local:${parent.branch}"
+          git.operations.any { it.startsWith("worktree:") } shouldBe false
+          store.current.subTasks.single().cleanupState shouldBe SubTaskCleanupState.COMPLETED
+        }
+
+        test("main refresh 뒤 completion 대상이 없으면, 완료 저장을 차단합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  )
+              )
+          val git =
+              CleanupGit(
+                  afterRefresh = { store.current = store.current.copy(subTasks = emptyList()) }
+              )
+
+          val result =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          result.state shouldBe PostMergeCleanupState.BLOCKED
+          result.blocks.single().code shouldBe "SUBTASK_NOT_FOUND"
+        }
+
+        test("main refresh 뒤 completion 상태가 다르면, 상태 충돌로 완료를 차단합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                  )
+              )
+          val git =
+              CleanupGit(
+                  afterRefresh = {
+                    store.current =
+                        store.current.copy(
+                            subTasks =
+                                store.current.subTasks.map {
+                                  it.copy(cleanupState = SubTaskCleanupState.WORKTREE_REMOVED)
+                                }
+                        )
+                  }
+              )
+
+          val result =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          result.state shouldBe PostMergeCleanupState.BLOCKED
+          result.blocks.single().code shouldBe "STATE_CONFLICT"
+        }
       }
     })
 
@@ -187,7 +473,10 @@ private fun pullRequest(id: String, diffIdentity: String) =
         changeRevision = ChangeRevision("change-$id", 1, Diff(diffIdentity)),
     )
 
-private class CleanupStore(var current: WorkflowStoreSnapshot) : WorkflowStorePort {
+private class CleanupStore(
+    var current: WorkflowStoreSnapshot,
+    private var failWriteState: SubTaskCleanupState? = null,
+) : WorkflowStorePort {
   override fun snapshot(request: StoreSnapshotRequest) =
       PortResult.Success(StoreSnapshotResponse(current))
 
@@ -197,6 +486,11 @@ private class CleanupStore(var current: WorkflowStoreSnapshot) : WorkflowStorePo
       )
 
   override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> {
+    val newState = request.snapshot.subTasks.singleOrNull()?.cleanupState
+    if (failWriteState != null && newState == failWriteState) {
+      failWriteState = null
+      return PortResult.Failure(PortError("STORE_DOWN", "store write failed"))
+    }
     current = request.snapshot.copy(revision = "${request.snapshot.revision}-next")
     return PortResult.Success(StoreWriteResponse(current.revision))
   }
@@ -218,30 +512,45 @@ private class CleanupStore(var current: WorkflowStoreSnapshot) : WorkflowStorePo
 private class CleanupGit(
     private val parentDirty: Boolean = false,
     private val parentRevision: String = "parent-revision",
-    private val remoteBranches: List<RemoteBranch> =
+    remoteBranches: List<RemoteBranch> =
         listOf(RemoteBranch("origin", "sk-parent", "parent-revision")),
+    private var failLocalOnce: Boolean = false,
+    private var failInspectAfterWorktreeRemoval: Boolean = false,
+    private var failRefreshOnce: Boolean = false,
+    private val afterRefresh: (() -> Unit)? = null,
 ) : GitPort {
   val operations = mutableListOf<String>()
   val remoteExpectedRevisions = mutableMapOf<String, String?>()
   val localExpectedRevisions = mutableMapOf<String, String?>()
+  private var remoteBranches = remoteBranches.toMutableList()
+  private val removedWorktrees = mutableSetOf<String>()
 
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> {
     operations += "fetch:${request.remote}/${request.branch}"
+    if (failRefreshOnce) {
+      failRefreshOnce = false
+      return PortResult.Failure(PortError("MAIN_REVISION_REFRESH_FAILED", "fetch failed"))
+    }
+    afterRefresh?.invoke()
     return PortResult.Success(MainRevisionResponse("main-revision"))
   }
 
-  override fun inspect(request: GitInspectRequest) =
-      PortResult.Success(
-          GitInspectResponse(
-              GitStatus(
-                  revision =
-                      if (request.workspaceId == "ws-sk-parent") parentRevision
-                      else "${request.workspaceId}-revision",
-                  fingerprint = "${request.workspaceId}-fingerprint",
-                  dirty = parentDirty && request.workspaceId == "ws-sk-parent",
-              )
-          )
-      )
+  override fun inspect(request: GitInspectRequest): PortResult<GitInspectResponse> {
+    if (failInspectAfterWorktreeRemoval && request.workspaceId in removedWorktrees) {
+      return PortResult.Failure(PortError("WORKSPACE_NOT_FOUND", "workspace is missing"))
+    }
+    return PortResult.Success(
+        GitInspectResponse(
+            GitStatus(
+                revision =
+                    if (request.workspaceId == "ws-sk-parent") parentRevision
+                    else "${request.workspaceId}-revision",
+                fingerprint = "${request.workspaceId}-fingerprint",
+                dirty = parentDirty && request.workspaceId == "ws-sk-parent",
+            )
+        )
+    )
+  }
 
   override fun createBranch(request: CreateBranchRequest) = error("not used")
 
@@ -262,6 +571,10 @@ private class CleanupGit(
   override fun removeBranch(request: RemoveBranchRequest): PortResult<RemoveBranchResponse> {
     operations += "local:${request.branch}"
     localExpectedRevisions[request.branch] = request.expectedRevision
+    if (failLocalOnce) {
+      failLocalOnce = false
+      return PortResult.Failure(PortError("LOCAL_BRANCH_BUSY", "local branch is busy"))
+    }
     return PortResult.Success(
         RemoveBranchResponse(
             request.branch,
@@ -278,6 +591,7 @@ private class CleanupGit(
   ): PortResult<RemoveRemoteBranchResponse> {
     operations += "remote:${request.branch}"
     remoteExpectedRevisions[request.branch] = request.expectedRevision
+    remoteBranches.removeAll { it.remote == request.remote && it.branch == request.branch }
     return PortResult.Success(
         RemoveRemoteBranchResponse(
             request.remote,
@@ -289,6 +603,7 @@ private class CleanupGit(
 
   override fun removeWorktree(request: RemoveWorktreeRequest): PortResult<RemoveWorktreeResponse> {
     operations += "worktree:${request.workspaceId}"
+    removedWorktrees += request.workspaceId
     return PortResult.Success(
         RemoveWorktreeResponse(
             request.workspaceId,

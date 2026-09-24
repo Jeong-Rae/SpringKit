@@ -7,6 +7,7 @@ import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.IntegrationState
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.SubTask
+import io.springkit.workflow.domain.SubTaskCleanupState
 import io.springkit.workflow.domain.SubTaskId
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.WorkflowResult
@@ -133,30 +134,34 @@ class PostMergeCleanupUseCase(
     var removedWorkspaces = emptyList<String>()
     var removedLocal = emptyList<String>()
     if (blocks.none { it.phase == "restack" } && current != null) {
-      val currentSnapshot = current
+      var currentSnapshot = current
       val candidate =
           currentSnapshot.subTasks.singleOrNull {
             it.id == request.mergedSubTaskId && isMerged(currentSnapshot, it)
           }
-      val remoteResult = gitPort.listRemoteBranches(ListRemoteBranchesRequest())
-      when (remoteResult) {
-        is PortResult.Failure ->
-            blocks += remoteResult.toCleanupBlock("remote-branch", request.mergedSubTaskId)
-        is PortResult.Success -> {
-          if (candidate == null) {
-            blocks +=
-                PostMergeCleanupBlock(
-                    phase = "remote-branch",
-                    target = request.mergedSubTaskId,
-                    code = FailureCode.SUBTASK_NOT_FOUND.name,
-                    message = "정리할 merged SubTask를 찾을 수 없습니다.",
-                )
-          } else {
-            val remoteBranch =
-                remoteResult.value.branches.singleOrNull { it.branch == candidate.branch }
-            when {
-              remoteBranch == null -> {
-                val expectedRevision = expectedLocalRevision(currentSnapshot, candidate)
+      if (candidate == null) {
+        blocks +=
+            PostMergeCleanupBlock(
+                phase = "remote-branch",
+                target = request.mergedSubTaskId,
+                code = FailureCode.SUBTASK_NOT_FOUND.name,
+                message = "정리할 merged SubTask를 찾을 수 없습니다.",
+            )
+      } else {
+        var cleanupState = cleanupState(currentSnapshot, candidate)
+        if (cleanupState == SubTaskCleanupState.COMPLETED) {
+          return completedResponse(request.mergedSubTaskId, restacked)
+        }
+        var expectedRevision: String? = null
+        if (cleanupState < SubTaskCleanupState.REMOTE_BRANCH_REMOVED) {
+          when (val remoteResult = gitPort.listRemoteBranches(ListRemoteBranchesRequest())) {
+            is PortResult.Failure ->
+                blocks += remoteResult.toCleanupBlock("remote-branch", candidate.branch)
+            is PortResult.Success -> {
+              val remoteBranch =
+                  remoteResult.value.branches.singleOrNull { it.branch == candidate.branch }
+              if (remoteBranch == null) {
+                expectedRevision = expectedLocalRevision(currentSnapshot, candidate)
                 if (expectedRevision == null) {
                   blocks +=
                       PostMergeCleanupBlock(
@@ -166,49 +171,27 @@ class PostMergeCleanupUseCase(
                           message = "원격 Branch가 없고 로컬 정리를 검증할 기대 revision을 확인할 수 없습니다.",
                       )
                 } else {
-                  val hasWorkspace =
-                      candidate.workspace != null ||
-                          currentSnapshot.workspaces.any { it.subTaskId == candidate.id }
-                  val inspection = inspectLocalArtifact(currentSnapshot, candidate, blocks)
-                  if (inspection != null && inspection.status.revision != expectedRevision) {
-                    blocks +=
-                        PostMergeCleanupBlock(
-                            phase = "worktree",
-                            target = inspection.workspaceId,
-                            code = "UNPUSHED_COMMIT",
-                            message = "Worktree HEAD가 저장된 기대 revision과 달라 정리하지 않았습니다.",
-                        )
-                  }
-                  if (
-                      (!hasWorkspace || inspection != null) &&
-                          blocks.none { it.phase == "worktree" }
-                  ) {
-                    val local =
-                        removeLocalArtifacts(
-                            candidate,
-                            inspection,
-                            expectedRevision,
-                            blocks,
-                        )
-                    removedWorkspaces = local.workspaces
-                    removedLocal = local.branches
-                  }
+                  currentSnapshot =
+                      persistCleanupState(
+                          currentSnapshot,
+                          candidate,
+                          SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
+                          blocks,
+                      ) ?: currentSnapshot
+                  cleanupState = cleanupState(currentSnapshot, candidate)
                 }
-              }
-              remoteBranch.revision.isNullOrBlank() ->
-                  blocks +=
-                      PostMergeCleanupBlock(
-                          phase = "remote-branch",
-                          target = candidate.branch,
-                          code = "REMOTE_REVISION_UNAVAILABLE",
-                          message = "원격 Branch revision을 확인할 수 없습니다.",
-                      )
-              else -> {
-                val hasWorkspace =
-                    candidate.workspace != null ||
-                        currentSnapshot.workspaces.any { it.subTaskId == candidate.id }
+              } else if (remoteBranch.revision.isNullOrBlank()) {
+                blocks +=
+                    PostMergeCleanupBlock(
+                        phase = "remote-branch",
+                        target = candidate.branch,
+                        code = "REMOTE_REVISION_UNAVAILABLE",
+                        message = "원격 Branch revision을 확인할 수 없습니다.",
+                    )
+              } else {
+                expectedRevision = remoteBranch.revision
                 val inspection = inspectLocalArtifact(currentSnapshot, candidate, blocks)
-                if (inspection != null && inspection.status.revision != remoteBranch.revision) {
+                if (inspection != null && inspection.status.revision != expectedRevision) {
                   blocks +=
                       PostMergeCleanupBlock(
                           phase = "worktree",
@@ -217,12 +200,9 @@ class PostMergeCleanupUseCase(
                           message = "Worktree HEAD가 원격 Branch revision과 달라 정리하지 않았습니다.",
                       )
                 }
-                if (
-                    !(hasWorkspace && inspection == null) &&
-                        !(inspection != null && blocks.any { it.phase == "worktree" })
-                ) {
+                if (blocks.none { it.phase == "worktree" }) {
                   when (
-                      val result =
+                      val removed =
                           gitPort.removeRemoteBranch(
                               RemoveRemoteBranchRequest(
                                   remote = remoteBranch.remote,
@@ -232,21 +212,90 @@ class PostMergeCleanupUseCase(
                           )
                   ) {
                     is PortResult.Failure ->
-                        blocks += result.toCleanupBlock("remote-branch", remoteBranch.branch)
+                        blocks += removed.toCleanupBlock("remote-branch", candidate.branch)
                     is PortResult.Success -> {
-                      removedRemote = listOf(remoteBranch.branch)
-                      val local =
-                          removeLocalArtifacts(
+                      removedRemote = listOf(candidate.branch)
+                      currentSnapshot =
+                          persistCleanupState(
+                              currentSnapshot,
                               candidate,
-                              inspection,
-                              remoteBranch.revision,
+                              SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
                               blocks,
-                          )
-                      removedWorkspaces = local.workspaces
-                      removedLocal = local.branches
+                          ) ?: currentSnapshot
+                      cleanupState = cleanupState(currentSnapshot, candidate)
                     }
                   }
                 }
+              }
+            }
+          }
+        }
+        if (blocks.isEmpty() && cleanupState == SubTaskCleanupState.REMOTE_BRANCH_REMOVED) {
+          if (expectedRevision == null)
+              expectedRevision = expectedLocalRevision(currentSnapshot, candidate)
+          val inspection =
+              inspectLocalArtifact(currentSnapshot, candidate, blocks, allowMissing = true)
+          if (inspection != null && inspection.status.revision != expectedRevision) {
+            blocks +=
+                PostMergeCleanupBlock(
+                    phase = "worktree",
+                    target = inspection.workspaceId,
+                    code = "UNPUSHED_COMMIT",
+                    message = "Worktree HEAD가 저장된 기대 revision과 달라 정리하지 않았습니다.",
+                )
+          }
+          if (blocks.none { it.phase == "worktree" }) {
+            if (inspection != null) {
+              when (
+                  val removed =
+                      gitPort.removeWorktree(
+                          RemoveWorktreeRequest(inspection.workspaceId, inspection.path)
+                      )
+              ) {
+                is PortResult.Failure ->
+                    blocks += removed.toCleanupBlock("worktree", inspection.workspaceId)
+                is PortResult.Success -> removedWorkspaces = listOf(inspection.workspaceId)
+              }
+            }
+            if (blocks.none { it.phase == "worktree" }) {
+              currentSnapshot =
+                  persistCleanupState(
+                      currentSnapshot,
+                      candidate,
+                      SubTaskCleanupState.WORKTREE_REMOVED,
+                      blocks,
+                  ) ?: currentSnapshot
+              cleanupState = cleanupState(currentSnapshot, candidate)
+            }
+          }
+        }
+        if (blocks.isEmpty() && cleanupState == SubTaskCleanupState.WORKTREE_REMOVED) {
+          val localRevision = expectedRevision ?: expectedLocalRevision(currentSnapshot, candidate)
+          if (localRevision == null) {
+            blocks +=
+                PostMergeCleanupBlock(
+                    phase = "local-branch",
+                    target = candidate.branch,
+                    code = "EXPECTED_REVISION_UNAVAILABLE",
+                    message = "로컬 Branch 정리를 검증할 기대 revision을 확인할 수 없습니다.",
+                )
+          } else {
+            when (
+                val removed =
+                    gitPort.removeBranch(RemoveBranchRequest(candidate.branch, localRevision))
+            ) {
+              is PortResult.Failure ->
+                  blocks += removed.toCleanupBlock("local-branch", candidate.branch)
+              is PortResult.Success -> {
+                removedLocal = listOf(candidate.branch)
+                currentSnapshot =
+                    persistCleanupState(
+                        currentSnapshot,
+                        candidate,
+                        SubTaskCleanupState.LOCAL_BRANCH_REMOVED,
+                        blocks,
+                    ) ?: currentSnapshot
+                cleanupState = cleanupState(currentSnapshot, candidate)
               }
             }
           }
@@ -263,6 +312,47 @@ class PostMergeCleanupUseCase(
             null
           }
         }
+    if (mainRevision != null && blocks.isEmpty()) {
+      val completionSnapshot = loadSnapshot()
+      if (completionSnapshot == null) {
+        blocks +=
+            PostMergeCleanupBlock(
+                phase = "store",
+                target = request.mergedSubTaskId,
+                code = "STORE_FAILURE",
+                message = lastFailure.data.message,
+            )
+      } else {
+        val completionCandidate =
+            completionSnapshot.subTasks.singleOrNull { it.id == request.mergedSubTaskId }
+        when {
+          completionCandidate == null ->
+              blocks +=
+                  PostMergeCleanupBlock(
+                      phase = "store",
+                      target = request.mergedSubTaskId,
+                      code = FailureCode.SUBTASK_NOT_FOUND.name,
+                      message = "완료 저장할 SubTask를 찾을 수 없습니다.",
+                  )
+          cleanupState(completionSnapshot, completionCandidate) !=
+              SubTaskCleanupState.LOCAL_BRANCH_REMOVED ->
+              blocks +=
+                  PostMergeCleanupBlock(
+                      phase = "store",
+                      target = request.mergedSubTaskId,
+                      code = FailureCode.STATE_CONFLICT.name,
+                      message = "SubTask의 cleanup 상태가 완료 저장 단계와 일치하지 않습니다.",
+                  )
+          else ->
+              persistCleanupState(
+                  completionSnapshot,
+                  completionCandidate,
+                  SubTaskCleanupState.COMPLETED,
+                  blocks,
+              )
+        }
+      }
+    }
     val state =
         if (blocks.isEmpty()) PostMergeCleanupState.COMPLETED else PostMergeCleanupState.BLOCKED
     val response =
@@ -299,13 +389,21 @@ class PostMergeCleanupUseCase(
       snapshot: WorkflowStoreSnapshot,
       subTask: SubTask,
       blocks: MutableList<PostMergeCleanupBlock>,
+      allowMissing: Boolean = false,
   ): LocalInspection? {
-    val workspace =
-        subTask.workspace ?: snapshot.workspaces.firstOrNull { it.subTaskId == subTask.id }
+    val storedWorkspace =
+        snapshot.subTasks.firstOrNull { it.id == subTask.id }?.workspace
+            ?: snapshot.workspaces.firstOrNull { it.subTaskId == subTask.id }
+            ?: subTask.workspace
+    val workspace = storedWorkspace?.takeIf {
+      cleanupState(snapshot, subTask) < SubTaskCleanupState.WORKTREE_REMOVED
+    }
     if (workspace == null) return null
     return when (val inspected = gitPort.inspect(GitInspectRequest(workspace.id))) {
       is PortResult.Failure -> {
-        blocks += inspected.toCleanupBlock("worktree", workspace.id)
+        if (!allowMissing || inspected.error.code != "WORKSPACE_NOT_FOUND") {
+          blocks += inspected.toCleanupBlock("worktree", workspace.id)
+        }
         null
       }
       is PortResult.Success -> {
@@ -325,40 +423,70 @@ class PostMergeCleanupUseCase(
     }
   }
 
-  private fun removeLocalArtifacts(
-      candidate: SubTask,
-      inspection: LocalInspection?,
-      expectedBranchRevision: String,
+  private fun cleanupState(snapshot: WorkflowStoreSnapshot, subTask: SubTask) =
+      snapshot.subTasks.firstOrNull { it.id == subTask.id }?.cleanupState ?: subTask.cleanupState
+
+  private fun persistCleanupState(
+      snapshot: WorkflowStoreSnapshot,
+      subTask: SubTask,
+      state: SubTaskCleanupState,
       blocks: MutableList<PostMergeCleanupBlock>,
-  ): LocalCleanup {
-    val workspaces = mutableListOf<String>()
-    val branches = mutableListOf<String>()
-    if (inspection != null) {
-      when (
-          val removed =
-              gitPort.removeWorktree(RemoveWorktreeRequest(inspection.workspaceId, inspection.path))
-      ) {
-        is PortResult.Failure ->
-            blocks += removed.toCleanupBlock("worktree", inspection.workspaceId)
-        is PortResult.Success -> workspaces += inspection.workspaceId
+  ): WorkflowStoreSnapshot? {
+    val storedSubTask = snapshot.subTasks.firstOrNull { it.id == subTask.id } ?: subTask
+    if (storedSubTask.cleanupState >= state) return snapshot
+    val updatedSubTasks =
+        snapshot.subTasks.map {
+          if (it.id != subTask.id) it else it.copy(cleanupState = state)
+        }
+    val updated = snapshot.copy(subTasks = updatedSubTasks)
+    val transaction =
+        StoreTransactionRequest(
+            transactionId = "tx-cleanup-${subTask.id}-${snapshot.revision}-${state.name}",
+            expectedRevision = snapshot.revision,
+            idempotencyKey = "cleanup:${subTask.id}:${snapshot.revision}:${state.name}",
+        )
+    when (val begun = storePort.begin(transaction)) {
+      is PortResult.Failure -> {
+        blocks += begun.toCleanupBlock("store", subTask.id)
+        return null
       }
+      is PortResult.Success -> Unit
     }
-    if (blocks.none { it.phase == "worktree" }) {
-      when (
-          val removed =
-              gitPort.removeBranch(
-                  RemoveBranchRequest(
-                      branch = candidate.branch,
-                      expectedRevision = expectedBranchRevision,
-                  )
-              )
-      ) {
-        is PortResult.Success -> branches += candidate.branch
-        is PortResult.Failure -> blocks += removed.toCleanupBlock("local-branch", candidate.branch)
+    val writtenRevision =
+        when (
+            val write =
+                storePort.write(
+                    StoreWriteRequest(transaction.transactionId, snapshot.revision, updated)
+                )
+        ) {
+          is PortResult.Failure -> {
+            storePort.rollback(transaction)
+            blocks += write.toCleanupBlock("store", subTask.id)
+            return null
+          }
+          is PortResult.Success -> write.value.revision
+        }
+    when (val committed = storePort.commit(transaction)) {
+      is PortResult.Failure -> {
+        storePort.rollback(transaction)
+        blocks += committed.toCleanupBlock("store", subTask.id)
+        return null
       }
+      is PortResult.Success -> return updated.copy(revision = writtenRevision)
     }
-    return LocalCleanup(workspaces, branches)
   }
+
+  private fun completedResponse(
+      subTaskId: SubTaskId,
+      restacked: List<SubTaskId>,
+  ): WorkflowResult.Success<PostMergeCleanupResponse> =
+      WorkflowResult.Success(
+          PostMergeCleanupResponse(
+              mergedSubTaskId = subTaskId,
+              state = PostMergeCleanupState.COMPLETED,
+              restackedSubTaskIds = restacked,
+          )
+      )
 
   private fun isMerged(snapshot: WorkflowStoreSnapshot, subTask: SubTask): Boolean =
       subTask.state == SubTaskState.MERGED ||
@@ -387,11 +515,6 @@ class PostMergeCleanupUseCase(
               blockedBy = listOf(BlockedBy(code.name, message, target)),
           )
       )
-
-  private data class LocalCleanup(
-      val workspaces: List<String>,
-      val branches: List<String>,
-  )
 
   private data class LocalInspection(
       val workspaceId: String,

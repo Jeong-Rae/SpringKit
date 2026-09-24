@@ -323,6 +323,16 @@ class LocalGitAdapterTest :
                   )
               )
         }
+
+        test("worktree 경로가 사라지면, WORKSPACE_NOT_FOUND 오류를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(128, "", "fatal: not a git repository"))
+          val adapter = adapter(runner) { Path.of("/tmp/workspace/sk-101") }
+
+          val result = adapter.inspect(GitInspectRequest("workspace-1"))
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "WORKSPACE_NOT_FOUND"
+        }
       }
 
       test("관리 root가 주어지면, 검증한 절대 경로를 Git 명령에 전달합니다") {
@@ -565,6 +575,33 @@ class LocalGitAdapterTest :
                       repositoryRoot,
                   ),
                   Invocation(listOf("git", "branch", "-D", "feature/sk-106"), repositoryRoot),
+              )
+        }
+
+        test("expectedRevision 대상 branch가 이미 없으면, 삭제 완료로 처리합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(128, "", "fatal: bad revision"))
+          runner.enqueue(CommandResult(1, "", ""))
+          val repositoryRoot = Path.of("/repo")
+          val adapter = adapter(runner, repositoryRoot) { Path.of("/workspace") }
+
+          val result = adapter.removeBranch(RemoveBranchRequest("feature/sk-106", "revision-6"))
+
+          result
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<io.springkit.workflow.application.RemoveBranchResponse>()
+              .branch shouldBe "feature/sk-106"
+          runner.commands shouldContainExactly
+              listOf(
+                  Invocation(
+                      listOf("git", "rev-parse", "refs/heads/feature/sk-106"),
+                      repositoryRoot,
+                  ),
+                  Invocation(
+                      listOf("git", "show-ref", "--verify", "--quiet", "refs/heads/feature/sk-106"),
+                      repositoryRoot,
+                  ),
               )
         }
       }

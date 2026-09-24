@@ -27,6 +27,7 @@ import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.ReviewThread
 import io.springkit.workflow.domain.Risk
 import io.springkit.workflow.domain.SubTask
+import io.springkit.workflow.domain.SubTaskCleanupState
 import io.springkit.workflow.domain.SubTaskId
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.Task
@@ -242,6 +243,10 @@ class StatusUseCase(
               return failure(workspaceResult.error, FailureCode.WORKSPACE_NOT_FOUND)
         }
     val subTaskId = workspace.workspace.subTaskId
+    val storedSubTask = snapshot.subTasks.firstOrNull { it.id == subTaskId }
+    if (storedSubTask?.cleanupState?.let { it >= SubTaskCleanupState.WORKTREE_REMOVED } == true) {
+      return subTask(snapshot, subTaskId, current = false)
+    }
     return subTask(snapshot, subTaskId, current = true, workspaceResult = workspace)
   }
 
@@ -299,17 +304,21 @@ class StatusUseCase(
         if (workspaceResult != null) {
           readWorkspace(workspaceResult)
         } else {
-          val snapshotWorkspace =
+          val storedWorkspace =
               subTask.workspace ?: snapshot.workspaces.firstOrNull { it.subTaskId == id }
-          when (
-              val workspaceLookup =
+          val snapshotWorkspace = storedWorkspace?.takeIf {
+            (stored?.cleanupState ?: subTask.cleanupState) < SubTaskCleanupState.WORKTREE_REMOVED
+          }
+          val workspaceLookup =
+              if (storedWorkspace != null && snapshotWorkspace == null) null
+              else
                   workspacePort?.get(
                       WorkspaceLookupRequest(
-                          workspaceId = subTask.workspace?.id,
+                          workspaceId = snapshotWorkspace?.id,
                           subTaskId = id,
                       )
                   )
-          ) {
+          when (workspaceLookup) {
             is PortResult.Success -> readWorkspace(workspaceLookup.value)
             is PortResult.Failure ->
                 if (current)

@@ -37,6 +37,16 @@ data class Task(
   }
 }
 
+/** Merge 이후 SubTask 정리 진행 상태입니다. */
+@Serializable
+enum class SubTaskCleanupState {
+  ACTIVE,
+  REMOTE_BRANCH_REMOVED,
+  WORKTREE_REMOVED,
+  LOCAL_BRANCH_REMOVED,
+  COMPLETED,
+}
+
 @Serializable
 data class Workspace(
     val id: WorkspaceId,
@@ -106,6 +116,8 @@ data class SubTask(
     val risk: Risk = Risk.NORMAL,
     val exposure: Exposure = Exposure.UNCHANGED,
     val featureFlagId: FeatureFlagId? = null,
+    /** Merge 이후 정리 과정에서 마지막으로 저장한 상태입니다. */
+    val cleanupState: SubTaskCleanupState = SubTaskCleanupState.ACTIVE,
 ) {
   init {
     require(id.isNotBlank()) { "subtask id must not be blank" }

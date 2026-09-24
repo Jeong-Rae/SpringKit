@@ -70,7 +70,7 @@ class LocalGitAdapter(
   override fun inspect(request: GitInspectRequest): PortResult<GitInspectResponse> {
     val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
     val revision = run(listOf("git", "rev-parse", "HEAD"), path)
-    if (revision is Execution.Failure) return revision.result
+    if (revision is Execution.Failure) return workspaceInspectFailure(revision.result)
     val revisionResult = (revision as Execution.Success).result
     val status = run(listOf("git", "status", "--porcelain=v1", "--untracked-files=all"), path)
     if (status is Execution.Failure) return status.result
@@ -295,7 +295,17 @@ class LocalGitAdapter(
     }
     if (request.expectedRevision != null) {
       val revision = run(listOf("git", "rev-parse", "refs/heads/${request.branch}"), repositoryRoot)
-      if (revision is Execution.Failure) return revision.result
+      if (revision is Execution.Failure) {
+        if (branchExists(request.branch) == false) {
+          return PortResult.Success(
+              RemoveBranchResponse(
+                  request.branch,
+                  receipt("git-remove-branch-${request.branch}", "remove-branch"),
+              )
+          )
+        }
+        return revision.result
+      }
       val currentRevision = (revision as Execution.Success).result.stdout.trim()
       if (currentRevision != request.expectedRevision) {
         return failure(
@@ -308,7 +318,17 @@ class LocalGitAdapter(
       }
     }
     val result = run(listOf("git", "branch", "-D", request.branch), repositoryRoot)
-    if (result is Execution.Failure) return result.result
+    if (result is Execution.Failure) {
+      if (branchExists(request.branch) == false) {
+        return PortResult.Success(
+            RemoveBranchResponse(
+                request.branch,
+                receipt("git-remove-branch-${request.branch}", "remove-branch"),
+            )
+        )
+      }
+      return result.result
+    }
     return PortResult.Success(
         RemoveBranchResponse(
             request.branch,
@@ -610,6 +630,36 @@ class LocalGitAdapter(
         workspacePath(workspaceId)
       } catch (_: Exception) {
         null
+      }
+
+  private fun branchExists(branch: String): Boolean? =
+      try {
+        val result =
+            commandRunner.run(
+                listOf("git", "show-ref", "--verify", "--quiet", "refs/heads/$branch"),
+                repositoryRoot,
+            )
+        when (result.exitCode) {
+          0 -> true
+          1 -> false
+          else -> null
+        }
+      } catch (_: Exception) {
+        null
+      }
+
+  private fun workspaceInspectFailure(result: PortResult.Failure): PortResult.Failure =
+      if (
+          result.error.message.contains("not a git repository", ignoreCase = true) ||
+              result.error.message.contains("no such file or directory", ignoreCase = true)
+      ) {
+        failure(
+            code = "WORKSPACE_NOT_FOUND",
+            message = result.error.message,
+            target = result.error.target,
+        )
+      } else {
+        result
       }
 
   private fun restackFailure(
