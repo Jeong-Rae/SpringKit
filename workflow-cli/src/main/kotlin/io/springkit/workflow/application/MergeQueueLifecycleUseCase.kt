@@ -94,15 +94,26 @@ class MergeQueueLifecycleUseCase(
       return WorkflowResult.Success(it)
     }
 
+    val providerQueue =
+        when (val refreshed = refreshProviderQueue(snapshot, request)) {
+          is WorkflowResult.Failure -> return refreshed
+          is WorkflowResult.Success -> refreshed.data
+        }
+    val refreshedSnapshot =
+        when (val result = storePort.snapshot(StoreSnapshotRequest(StoreScope.ALL))) {
+          is PortResult.Failure -> return result.toWorkflowFailure(FailureCode.STORE_FAILURE)
+          is PortResult.Success -> result.value.snapshot
+        }
+
     val transactionRequest =
         StoreTransactionRequest(
             transactionId = issueTransactionId(request.requestId),
-            expectedRevision = snapshot.revision,
+            expectedRevision = refreshedSnapshot.revision,
             idempotencyKey = request.requestId,
         )
     return WorkflowTransaction(storePort, compensationGateway()).execute(transactionRequest) {
         current ->
-      mergeIn(current, request)
+      mergeIn(current, request, providerQueue)
     }
   }
 
@@ -113,6 +124,7 @@ class MergeQueueLifecycleUseCase(
   private fun mergeIn(
       snapshot: WorkflowStoreSnapshot,
       request: MergeQueueLifecycleRequest,
+      providerQueue: MergeQueueEntry,
   ): PortResult<TransactionMutation<MergeQueueLifecycleResponse>> {
     val subTask =
         snapshot.subTasks.firstOrNull { it.id == request.subTaskId }
@@ -189,19 +201,6 @@ class MergeQueueLifecycleUseCase(
       )
     }
 
-    val providerQueue =
-        when (
-            val result = mergeQueuePort.get(GetMergeQueueRequest(pullRequestId = pullRequest.id))
-        ) {
-          is PortResult.Failure -> return result
-          is PortResult.Success ->
-              result.value.entries.singleOrNull { it.subTaskId == subTask.id }
-                  ?: return failurePort(
-                      FailureCode.MERGE_QUEUE_FAILED,
-                      "merge queue provider did not return the requested entry",
-                      queue.id,
-                  )
-        }
     if (
         providerQueue.changeRevisionId != changeRevisionId ||
             providerQueue.pullRequestId != pullRequest.id ||
@@ -210,6 +209,20 @@ class MergeQueueLifecycleUseCase(
       return failurePort(
           FailureCode.STALE_REVISION,
           "merge queue provider state is stale",
+          subTask.id,
+      )
+    }
+    val currentProviderRevision = providerQueue.providerRevision
+    val expectedProviderRevision =
+        pullRequest.changeRevision.providerRevision ?: pullRequest.changeRevision.diff.identity
+    if (
+        currentProviderRevision == null ||
+            currentProviderRevision != expectedProviderRevision ||
+            (queue.providerRevision != null && queue.providerRevision != currentProviderRevision)
+    ) {
+      return failurePort(
+          FailureCode.STALE_REVISION,
+          "merge queue provider revision is stale",
           subTask.id,
       )
     }
@@ -333,6 +346,109 @@ class MergeQueueLifecycleUseCase(
       )
     }
     return result
+  }
+
+  private fun refreshProviderQueue(
+      snapshot: WorkflowStoreSnapshot,
+      request: MergeQueueLifecycleRequest,
+  ): WorkflowResult<MergeQueueEntry> {
+    val subTask =
+        snapshot.subTasks.firstOrNull { it.id == request.subTaskId }
+            ?: return failure(
+                FailureCode.SUBTASK_NOT_FOUND,
+                "subtask was not found",
+                request.subTaskId,
+            )
+    val pullRequestId =
+        subTask.pullRequestId
+            ?: return failure(
+                FailureCode.REVIEW_NOT_FOUND,
+                "subtask does not have a pull request",
+                subTask.id,
+            )
+    val pullRequest =
+        snapshot.pullRequests.firstOrNull { it.id == pullRequestId }
+            ?: return failure(
+                FailureCode.REVIEW_NOT_FOUND,
+                "pull request was not found",
+                pullRequestId,
+            )
+    val queue =
+        snapshot.mergeQueue.firstOrNull {
+          if (request.mergeQueueEntryId != null) it.id == request.mergeQueueEntryId
+          else it.subTaskId == subTask.id
+        }
+            ?: return failure(
+                FailureCode.MERGE_QUEUE_FAILED,
+                "merge queue entry was not found",
+                subTask.id,
+            )
+    val providerQueue =
+        when (
+            val result = mergeQueuePort.get(GetMergeQueueRequest(pullRequestId = pullRequest.id))
+        ) {
+          is PortResult.Failure -> return result.toWorkflowFailure(FailureCode.EXTERNAL_FAILURE)
+          is PortResult.Success ->
+              result.value.entries.singleOrNull { it.subTaskId == subTask.id }
+                  ?: return failure(
+                      FailureCode.MERGE_QUEUE_FAILED,
+                      "merge queue provider did not return the requested entry",
+                      queue.id,
+                  )
+        }
+    if (providerQueue.pullRequestId != pullRequest.id) {
+      return failure(
+          FailureCode.INVARIANT_VIOLATION,
+          "merge queue provider returned a different pull request",
+          queue.id,
+      )
+    }
+    val expectedChangeRevisionId = request.changeRevisionId ?: pullRequest.changeRevision.id
+    if (providerQueue.changeRevisionId != expectedChangeRevisionId) {
+      return failure(FailureCode.STALE_REVISION, "change revision is stale", subTask.id)
+    }
+    val expectedProviderRevision =
+        pullRequest.changeRevision.providerRevision ?: pullRequest.changeRevision.diff.identity
+    val refreshedEntry =
+        providerQueue.copy(
+            id = queue.id,
+            subTaskId = queue.subTaskId,
+            pullRequestId = queue.pullRequestId,
+            providerRevision =
+                queue.providerRevision
+                    ?: expectedProviderRevision.takeIf {
+                      providerQueue.providerRevision == expectedProviderRevision
+                    },
+        )
+    if (refreshedEntry == queue) return WorkflowResult.Success(providerQueue)
+
+    val refreshKey =
+        "merge-queue-refresh:${request.requestId}:${refreshedEntry.state}:${refreshedEntry.providerRevision ?: "unknown"}:${refreshedEntry.validations.hashCode()}"
+    val transactionRequest =
+        StoreTransactionRequest(
+            transactionId = issueTransactionId(refreshKey),
+            expectedRevision = snapshot.revision,
+            idempotencyKey = refreshKey,
+        )
+    return WorkflowTransaction(storePort, compensationGateway()).execute(transactionRequest) {
+        current ->
+      val currentQueue =
+          current.mergeQueue.firstOrNull {
+            it.id == queue.id ||
+                (it.subTaskId == queue.subTaskId && it.pullRequestId == queue.pullRequestId)
+          }
+      val currentEntry = refreshedEntry.copy(id = currentQueue?.id ?: refreshedEntry.id)
+      val updatedQueue =
+          current.mergeQueue.replaceOrAdd(currentEntry) {
+            it.id
+          }
+      PortResult.Success(
+          TransactionMutation(
+              providerQueue,
+              current.copy(mergeQueue = updatedQueue),
+          )
+      )
+    }
   }
 
   private fun idempotentResponse(

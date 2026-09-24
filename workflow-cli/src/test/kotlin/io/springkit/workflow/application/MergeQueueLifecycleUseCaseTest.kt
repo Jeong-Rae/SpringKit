@@ -71,9 +71,65 @@ class MergeQueueLifecycleUseCaseTest :
       }
 
       context("Merge Queue 검증이 통과하지 않은 상태에서 통합을 요청하면") {
+        test("provider 상태가 PASSED이면, Store에 상태를 반영한 뒤 squash merge를 실행합니다") {
+          val store = LifecycleStore(snapshot(queueState = MergeQueueState.VALIDATING))
+          val mergeQueue = LifecycleMergeQueuePort(queue(MergeQueueState.PASSED))
+
+          val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<MergeQueueLifecycleResponse>>()
+          store.writes.first().mergeQueue.single().state shouldBe MergeQueueState.PASSED
+          store.written?.mergeQueue?.single()?.state shouldBe MergeQueueState.MERGED
+          mergeQueue.requests.size shouldBe 1
+        }
+
+        test("저장된 provider revision이 없고 head가 diff identity와 같으면, revision을 보완하고 통합합니다") {
+          val legacyPullRequest =
+              pullRequest()
+                  .copy(
+                      changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
+                  )
+          val legacyQueue = queue().copy(providerRevision = null)
+          val store =
+              LifecycleStore(
+                  snapshot()
+                      .copy(
+                          pullRequests = listOf(legacyPullRequest),
+                          mergeQueue = listOf(legacyQueue),
+                      )
+              )
+          val mergeQueue = LifecycleMergeQueuePort(queue().copy(providerRevision = "diff-1"))
+
+          val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<MergeQueueLifecycleResponse>>()
+          store.writes.first().mergeQueue.single().providerRevision shouldBe "diff-1"
+          mergeQueue.requests.size shouldBe 1
+        }
+
+        test("provider head가 바뀌면, queue 시점 revision을 보존하고 squash merge를 막습니다") {
+          val store = LifecycleStore(snapshot(queueState = MergeQueueState.VALIDATING))
+          val mergeQueue =
+              LifecycleMergeQueuePort(
+                  queue(MergeQueueState.PASSED).copy(providerRevision = "head-2")
+              )
+
+          val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
+          val retry = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.STALE_REVISION
+          retry.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.STALE_REVISION
+          store.writes.single().mergeQueue.single().state shouldBe MergeQueueState.PASSED
+          store.writes.single().mergeQueue.single().providerRevision shouldBe "head-1"
+          store.current.mergeQueue.single().providerRevision shouldBe "head-1"
+          mergeQueue.requests shouldBe emptyList()
+        }
+
         test("Merge Queue 검증이 통과하지 않으면, squash merge를 호출하지 않고 Merge Queue 오류를 반환합니다") {
           val store = LifecycleStore(snapshot(queueState = MergeQueueState.VALIDATING))
-          val mergeQueue = LifecycleMergeQueuePort()
+          val mergeQueue = LifecycleMergeQueuePort(queue(MergeQueueState.VALIDATING))
 
           val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
 
@@ -136,15 +192,16 @@ private fun pullRequest() =
         base = "main",
         state = PullRequestState.QUEUED,
         reviewRevision = ReviewRevision("rv-1", 1, "본문"),
-        changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
+        changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1"), providerRevision = "head-1"),
     )
 
 private fun queue(state: MergeQueueState = MergeQueueState.PASSED) =
-    MergeQueueEntry("mq-1", "sk-101", "pr-1", "cr-1", state)
+    MergeQueueEntry("mq-1", "sk-101", "pr-1", "cr-1", state, providerRevision = "head-1")
 
 private class LifecycleStore(initial: WorkflowStoreSnapshot) : WorkflowStorePort {
   var current = initial
   var written: WorkflowStoreSnapshot? = null
+  val writes = mutableListOf<WorkflowStoreSnapshot>()
   private var transactions = emptySet<String>()
 
   override fun snapshot(request: StoreSnapshotRequest): PortResult<StoreSnapshotResponse> =
@@ -159,6 +216,7 @@ private class LifecycleStore(initial: WorkflowStoreSnapshot) : WorkflowStorePort
 
   override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> {
     written = request.snapshot
+    writes += request.snapshot
     current = request.snapshot
     return PortResult.Success(StoreWriteResponse("store-2"))
   }
@@ -182,14 +240,15 @@ private class LifecycleStore(initial: WorkflowStoreSnapshot) : WorkflowStorePort
 }
 
 private class LifecycleMergeQueuePort(
+    private val providerEntry: MergeQueueEntry = queue(),
     private val integration: Integration =
         Integration(
             "sk-101",
             IntegrationState.MERGED,
-            queue(MergeQueueState.MERGED),
+            providerEntry.copy(state = MergeQueueState.MERGED),
             "main-2",
             "squash-2",
-        )
+        ),
 ) : MergeQueuePort {
   val requests = mutableListOf<MergeQueueMergeRequest>()
 
@@ -197,7 +256,7 @@ private class LifecycleMergeQueuePort(
       error("사용하지 않는 포트 동작입니다")
 
   override fun get(request: GetMergeQueueRequest): PortResult<GetMergeQueueResponse> =
-      PortResult.Success(GetMergeQueueResponse(listOf(queue())))
+      PortResult.Success(GetMergeQueueResponse(listOf(providerEntry)))
 
   override fun merge(request: MergeQueueMergeRequest): PortResult<MergeQueueMergeResponse> {
     requests += request

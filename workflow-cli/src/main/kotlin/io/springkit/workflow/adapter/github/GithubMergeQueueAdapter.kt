@@ -73,21 +73,57 @@ class GithubMergeQueueAdapter(
     private val entryPersister: (MergeQueueEntry) -> Unit = {},
 ) : MergeQueuePort {
   override fun enqueue(request: EnqueueMergeRequest): PortResult<EnqueueMergeResponse> {
-    val command = listOf("gh", "pr", "merge", request.pullRequestId, "--squash", "--auto")
-    val result = run(command, request.pullRequestId) ?: return lastFailure(request.pullRequestId)
+    val viewResult =
+        run(
+            listOf("gh", "pr", "view", request.pullRequestId, "--json", JSON_FIELDS),
+            request.pullRequestId,
+        ) ?: return lastFailure(request.pullRequestId)
+    val provider =
+        decode(viewResult.stdout, request.pullRequestId)
+            ?: return lastFailure(request.pullRequestId)
+    val providerRevision = provider.headRefOid?.takeIf { it.isNotBlank() }
+    if (providerRevision == null) {
+      return PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+              message = "GitHub pull request의 queue 시점 revision이 없습니다.",
+              target = request.pullRequestId,
+          ),
+          ChangeReceipt(
+              id = "github-merge-queue-enqueue-${request.pullRequestId}",
+              operation = "github-merge-queue-enqueue",
+              status = io.springkit.workflow.application.ChangeStatus.PENDING,
+          ),
+      )
+    }
+    val command =
+        listOf(
+            "gh",
+            "pr",
+            "merge",
+            request.pullRequestId,
+            "--squash",
+            "--auto",
+            "--match-head-commit",
+            providerRevision,
+        )
+    run(command, request.pullRequestId, staleRevision = true)
+        ?: return lastFailure(request.pullRequestId)
     val fallback =
         MergeQueueEntry(
             id = entryId(request.pullRequestId),
             subTaskId = request.subTaskId,
             pullRequestId = request.pullRequestId,
             changeRevisionId = request.changeRevisionId,
+            providerRevision = providerRevision,
             state = MergeQueueState.QUEUED,
         )
     val entry =
-        entryResolver.resolve(
-            GithubMergeQueuePullRequest(number = number(request.pullRequestId)),
-            fallback,
-        )
+        resolvedEntry(provider, fallback)
+            .copy(
+                state = MergeQueueState.QUEUED,
+                providerRevision = providerRevision,
+            )
     entryPersister(entry)
     return PortResult.Success(
         EnqueueMergeResponse(
@@ -139,7 +175,7 @@ class GithubMergeQueueAdapter(
               .map { provider ->
                 val pullRequestId = provider.number.toString()
                 val fallback = fallbackEntry(provider, request, pullRequestId)
-                val entry = entryResolver.resolve(provider, fallback)
+                val entry = resolvedEntry(provider, fallback)
                 entry
               }
       PortResult.Success(GetMergeQueueResponse(entries))
@@ -192,12 +228,22 @@ class GithubMergeQueueAdapter(
             state = beforeProvider.toMergeQueueState(),
             validations = beforeProvider.validations(),
         )
-    val beforeEntry = entryResolver.resolve(beforeProvider, beforeFallback)
+    val beforeEntry = resolvedEntry(beforeProvider, beforeFallback)
     if (beforeEntry.changeRevisionId != request.expectedChangeRevisionId) {
       return PortResult.Failure(
           PortError(
               code = "STALE_REVISION",
               message = "요청한 change revision과 GitHub pull request revision이 다릅니다.",
+              target = pullRequestId,
+          )
+      )
+    }
+    val queuedProviderRevision = previous.providerRevision ?: beforeEntry.providerRevision
+    if (queuedProviderRevision == null || queuedProviderRevision != headRefOid) {
+      return PortResult.Failure(
+          PortError(
+              code = "STALE_REVISION",
+              message = "Merge Queue 등록 이후 GitHub pull request revision이 변경되었습니다.",
               target = pullRequestId,
           )
       )
@@ -250,7 +296,7 @@ class GithubMergeQueueAdapter(
             changeRevisionId = request.expectedChangeRevisionId,
             state = MergeQueueState.MERGED,
         )
-    val entry = entryResolver.resolve(provider, fallback).copy(state = MergeQueueState.MERGED)
+    val entry = resolvedEntry(provider, fallback).copy(state = MergeQueueState.MERGED)
     entryPersister(entry)
     val integration =
         Integration(
@@ -287,11 +333,23 @@ class GithubMergeQueueAdapter(
                 pullRequestId = pullRequestId,
                 changeRevisionId = provider.headRefOid ?: "github-change-$pullRequestId",
                 state = MergeQueueState.QUEUED,
+                providerRevision = provider.headRefOid,
             ))
         .copy(
             state = provider.toMergeQueueState(),
             validations = provider.validations(),
         )
+  }
+
+  private fun resolvedEntry(
+      provider: GithubMergeQueuePullRequest,
+      fallback: MergeQueueEntry,
+  ): MergeQueueEntry {
+    val resolved = entryResolver.resolve(provider, fallback)
+    return resolved.copy(
+        providerRevision =
+            provider.headRefOid?.takeIf { it.isNotBlank() } ?: resolved.providerRevision
+    )
   }
 
   private fun run(

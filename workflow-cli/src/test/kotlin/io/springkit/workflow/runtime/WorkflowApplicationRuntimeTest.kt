@@ -626,12 +626,12 @@ private class MergeQueueEventCommandRunner(private val root: Path) : CommandRunn
             0,
             if (pullRequestViewCalls >= 3) {
               """
-              {"number":17,"state":"MERGED","headRefName":"sk-101","headRefOid":"change-1","mergeCommit":{"oid":"main-1"}}
+              {"number":17,"state":"MERGED","headRefName":"sk-101","headRefOid":"diff-1","mergeCommit":{"oid":"main-1"}}
               """
                   .trimIndent()
             } else {
               """
-              {"number":17,"state":"OPEN","mergeStateStatus":"CLEAN","headRefName":"sk-101","headRefOid":"change-1","statusCheckRollup":[],"isInMergeQueue":false}
+              {"number":17,"state":"OPEN","mergeStateStatus":"CLEAN","headRefName":"sk-101","headRefOid":"diff-1","statusCheckRollup":[],"isInMergeQueue":false}
               """
                   .trimIndent()
             },
