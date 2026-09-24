@@ -35,7 +35,7 @@ internal class DocumentationRequestBuilder(private val objectMapper: ObjectMappe
         else -> arrayOf(requestValue(value))
       }
 
-  private fun requestValue(value: Any?): String {
+  private fun requestValue(value: Any): String {
     val serialized = objectMapper.writeValueAsString(value)
     return if (serialized.startsWith('"') && serialized.endsWith('"')) {
       objectMapper.readValue(serialized, String::class.java)
@@ -46,12 +46,12 @@ internal class DocumentationRequestBuilder(private val objectMapper: ObjectMappe
 
   private fun requestValue(sample: Sample): String = requestValue(sample.value)
 
-  private fun requestBody(fields: List<Field>): Map<String, Any?> =
-      linkedMapOf<String, Any?>().apply {
+  private fun requestBody(fields: List<Field>): Map<String, Any> =
+      linkedMapOf<String, Any>().apply {
         fields.forEach { field -> putField(field.key.split('.'), field.sample.value) }
       }
 
-  private fun MutableMap<String, Any?>.putField(path: List<String>, value: Any?) {
+  private fun MutableMap<String, Any>.putField(path: List<String>, value: Any) {
     val segment = path.first()
     val key = segment.removeSuffix("[]")
     if (path.size == 1) {
@@ -62,15 +62,15 @@ internal class DocumentationRequestBuilder(private val objectMapper: ObjectMappe
     if (segment.endsWith("[]")) {
       @Suppress("UNCHECKED_CAST")
       val items =
-          getOrPut(key) { mutableListOf<MutableMap<String, Any?>>() }
-              as MutableList<MutableMap<String, Any?>>
-      val item = items.firstOrNull() ?: linkedMapOf<String, Any?>().also(items::add)
+          getOrPut(key) { mutableListOf<MutableMap<String, Any>>() }
+              as MutableList<MutableMap<String, Any>>
+      val item = items.firstOrNull() ?: linkedMapOf<String, Any>().also(items::add)
       item.putField(path.drop(1), value)
       return
     }
 
     @Suppress("UNCHECKED_CAST")
-    val child = getOrPut(key) { linkedMapOf<String, Any?>() } as MutableMap<String, Any?>
+    val child = getOrPut(key) { linkedMapOf<String, Any>() } as MutableMap<String, Any>
     child.putField(path.drop(1), value)
   }
 }
