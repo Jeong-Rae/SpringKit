@@ -11,9 +11,6 @@ import org.springframework.http.MediaType
 @SpringBootTest(classes = [SpringFixtureApplication::class])
 class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
 
-  @Disabled(
-      "DocumentationRequestBuilder가 동일한 query parameter를 여러 값으로 확장하지 못합니다."
-  )
   @Test
   fun getMembers() {
     documentation("get-members") {
@@ -24,7 +21,7 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
         queryParameter("page", "페이지 번호", sample = 0)
         queryParameter("size", "페이지 크기", sample = 20)
         queryParameter("status", "회원 상태", sample = "ACTIVE")
-        queryParameter("tag", "회원 태그", sample = "spring")
+        queryParameter("tag", "회원 태그", sample = listOf("spring", "java"))
       }
       requestHeader {
         header(HttpHeaders.AUTHORIZATION, "Bearer 인증 토큰", sample = "Bearer test-token")
@@ -92,9 +89,6 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
     }
   }
 
-  @Disabled(
-      "DocumentationRequestBuilder가 merge-patch Content-Type과 null request sample을 표현하지 못합니다."
-  )
   @Test
   fun patchMember() {
     documentation("patch-member") {
@@ -104,14 +98,21 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
       requestLine("patch", "/api/members/{memberId}") {
         pathVariable("memberId", "회원 식별자", sample = 1L)
       }
+      requestHeader {
+        header(
+            HttpHeaders.CONTENT_TYPE,
+            "JSON Merge Patch Content-Type",
+            sample = "application/merge-patch+json",
+        )
+      }
       requestBody {
         field("name", "변경할 회원 이름", sample = "Jane Smith")
-        ignoredField("nickname", "명시적으로 제거할 별명", sample = "nickname")
+        field<String>("nickname", "명시적으로 제거할 별명", sample = null, optional = true)
       }
       responseBody {
         field("id", "회원 식별자", sample = 1L)
         field("name", "회원 이름", sample = "Jane Smith")
-        ignoredField("nickname", "회원 별명", sample = "nickname")
+        field<String>("nickname", "회원 별명", sample = null, optional = true)
       }
     }
   }
@@ -155,7 +156,7 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
     }
   }
 
-  @Disabled("DocumentationRequestBuilder가 form-urlencoded body parameter를 생성하지 못합니다.")
+  @Disabled("내부 API 정책상 form-urlencoded 요청을 지원하지 않습니다.")
   @Test
   fun createSession() {
     documentation("create-session") {
@@ -180,7 +181,7 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
     }
   }
 
-  @Disabled("DocumentationRequestBuilder가 multipart part와 파일 sample을 생성하지 못합니다.")
+  @Disabled("내부 API 정책상 multipart 요청을 지원하지 않습니다.")
   @Test
   fun uploadAvatar() {
     documentation("upload-avatar") {
