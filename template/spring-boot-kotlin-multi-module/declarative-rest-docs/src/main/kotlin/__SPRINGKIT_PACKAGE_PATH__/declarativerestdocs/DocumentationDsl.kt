@@ -204,15 +204,14 @@ class BodyDsl internal constructor() {
   inline fun <reified T : Any> field(
       key: String,
       description: String,
-      sample: T?,
+      sample: T,
       optional: Boolean = false,
   ) {
-    require(sample != null || optional) { "null sample은 optional field에서만 사용할 수 있습니다." }
     addField(
         Field(
             key = key,
             description = description,
-            sample = sampleOf<T>(sample),
+            sample = sampleOf(sample),
             optional = optional,
         )
     )
