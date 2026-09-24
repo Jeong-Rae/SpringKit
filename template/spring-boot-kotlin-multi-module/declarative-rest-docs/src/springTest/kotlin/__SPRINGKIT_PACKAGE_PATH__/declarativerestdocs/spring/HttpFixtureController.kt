@@ -88,12 +88,10 @@ class HttpFixtureController {
   )
   fun patchMember(
       @PathVariable memberId: Long,
-      @RequestBody patch: Map<String, Any?>,
+      @RequestBody patch: Map<String, Any>,
   ): MemberPatchResponse {
     check(patch["name"] == "Jane Smith")
-    check(patch.containsKey("nickname"))
-    check(patch["nickname"] == null)
-    return MemberPatchResponse(id = memberId, name = "Jane Smith", nickname = null)
+    return MemberPatchResponse(id = memberId, name = "Jane Smith")
   }
 
   @DeleteMapping("/api/members/{memberId}")
@@ -191,7 +189,6 @@ data class MemberProfile(
 data class MemberPatchResponse(
     val id: Long,
     val name: String,
-    val nickname: String?,
 )
 
 data class SessionResponse(
