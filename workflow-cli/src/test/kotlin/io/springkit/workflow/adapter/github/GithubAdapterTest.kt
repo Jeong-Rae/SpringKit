@@ -581,18 +581,18 @@ class GithubAdapterTest :
               )
         }
 
-        test("로컬 comment ID를 thread ID로 사용하면, GraphQL mutation 없이 지원 불가를 반환합니다") {
+        test("사람이 작성한 일반 코멘트를 agent가 해결하면, GitHub API 호출 없이 거부합니다") {
           val runner = RecordingCommandRunner()
           val localThread =
               ReviewThread(
-                  id = "comment-1",
+                  id = "github-issue-comment-IC_remote",
                   level = ReviewLevel.C,
                   comments =
                       listOf(
                           ReviewComment(
-                              "comment-1",
-                              Actor("agent-1", ActorKind.AGENT),
-                              "[Agent] 확인했습니다",
+                              "IC_remote",
+                              Actor("human-1", ActorKind.HUMAN),
+                              "[C] 확인했습니다",
                           )
                       ),
               )
@@ -608,14 +608,112 @@ class GithubAdapterTest :
                       ResolveReviewThreadRequest(
                           pullRequestId = "17",
                           reviewRevisionId = "rv-1",
-                          threadId = "comment-1",
+                          threadId = "github-issue-comment-IC_remote",
                           actor = Actor("agent-1", ActorKind.AGENT),
                       )
                   )
 
           val failure = result.shouldBeTypeOf<PortResult.Failure>()
-          failure.error.code shouldBe "GITHUB_GENERAL_COMMENT_UNSUPPORTED"
+          failure.error.code shouldBe "HUMAN_REQUIRED"
           runner.commands shouldBe emptyList()
+        }
+
+        test("일반 pull request 코멘트에 답변하면, root thread에 답글을 묶어 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, issueCommentsPullRequest("[R] 확인이 필요합니다"), ""))
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          runner.enqueue(CommandResult(0, "{\"id\":502,\"node_id\":\"IC_reply\"}", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[R] 확인이 필요합니다",
+                      "[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val current = issueCommentPullRequest()
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .reply(
+                      ReplyReviewThreadRequest(
+                          pullRequestId = "17",
+                          reviewRevisionId = "rv-1",
+                          threadId = "github-issue-comment-IC_root",
+                          comment =
+                              ReviewComment("reply-1", Actor("agent-1", ActorKind.AGENT), "답변"),
+                      )
+                  )
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.ReplyReviewThreadResponse>()
+          response.reviewRevision.threads.single().comments.map { it.body } shouldBe
+              listOf("[R] 확인이 필요합니다", "[R] 답변")
+          runner.commands[2].tokens shouldContainExactly
+              listOf(
+                  "gh",
+                  "api",
+                  "--method",
+                  "POST",
+                  "repos/{owner}/{repo}/issues/17/comments",
+                  "-f",
+                  "body=[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->",
+              )
+        }
+
+        test("일반 pull request 코멘트를 해결하면, 숨은 marker로 해결 상태를 복원합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, issueCommentsPullRequest("[C] 확인했습니다"), ""))
+          runner.enqueue(CommandResult(0, "{}", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[C] 확인했습니다\n\n<!-- springkit:issue-comment-resolved -->"
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val current = issueCommentPullRequest()
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .resolve(
+                      ResolveReviewThreadRequest(
+                          pullRequestId = "17",
+                          reviewRevisionId = "rv-1",
+                          threadId = "github-issue-comment-IC_root",
+                          actor = Actor("agent-1", ActorKind.AGENT),
+                      )
+                  )
+
+          val thread =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.ResolveReviewThreadResponse>()
+                  .reviewRevision
+                  .threads
+                  .single()
+          thread.state.name shouldBe "RESOLVED"
+          thread.comments.single().body shouldBe "[C] 확인했습니다"
+          runner.commands[1].tokens shouldContainExactly
+              listOf(
+                  "gh",
+                  "api",
+                  "graphql",
+                  "-f",
+                  "query=mutation(\u0024issueCommentId:ID!,\u0024body:String!){updateIssueComment(input:{id:\u0024issueCommentId,body:\u0024body}){issueComment{id}}}",
+                  "-f",
+                  "issueCommentId=IC_root",
+                  "-f",
+                  "body=[C] 확인했습니다\n\n<!-- springkit:issue-comment-resolved -->",
+              )
         }
 
         test("provider review thread node ID를 전달하면, resolve mutation에 같은 ID를 사용합니다") {
@@ -888,6 +986,46 @@ private fun remoteThreadPullRequest(): PullRequest =
                         ),
                 )
         )
+
+private fun issueCommentPullRequest(): PullRequest =
+    pullRequest()
+        .copy(
+            reviewRevision =
+                ReviewRevision(
+                    "rv-1",
+                    1,
+                    "설명",
+                    threads =
+                        listOf(
+                            ReviewThread(
+                                id = "github-issue-comment-IC_root",
+                                level = ReviewLevel.R,
+                                comments =
+                                    listOf(
+                                        ReviewComment(
+                                            "IC_root",
+                                            Actor("agent-1", ActorKind.AGENT),
+                                            "[R] 확인이 필요합니다",
+                                        )
+                                    ),
+                            )
+                        ),
+                ),
+        )
+
+private fun issueCommentsPullRequest(rootBody: String, replyBody: String? = null): String {
+  fun encode(value: String): String =
+      value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+  val comments =
+      listOfNotNull(
+              """{"id":"IC_root","node_id":"IC_root","body":"${encode(rootBody)}","author":{"login":"agent-1"},"createdAt":"2026-09-22T00:00:00Z"}""",
+              replyBody?.let {
+                """{"id":"IC_reply","node_id":"IC_reply","databaseId":502,"body":"${encode(it)}","author":{"login":"agent-1"},"createdAt":"2026-09-22T00:01:00Z"}"""
+              },
+          )
+          .joinToString(",")
+  return """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1","comments":[$comments]}"""
+}
 
 private fun reviewThreadsResponse(
     threadId: String,

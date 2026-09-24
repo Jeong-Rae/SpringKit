@@ -476,6 +476,74 @@ class GithubReviewAdapter(
           request.pullRequestId,
       )
     }
+    if (isGithubIssueCommentThreadId(currentThread.id)) {
+      val provider =
+          fetch(request.pullRequestId, includeReviewThreads = true)
+              ?: return failure(
+                  "GITHUB_REPLY_FAILED",
+                  "답변할 GitHub 일반 코멘트를 조회할 수 없습니다.",
+                  request.threadId,
+              )
+      val rootComment =
+          provider.comments.firstOrNull { comment ->
+            issueCommentThreadId(comment) == currentThread.id && !comment.isWorkflowReply()
+          }
+              ?: return failure(
+                  "GITHUB_ISSUE_COMMENT_NOT_FOUND",
+                  "답변할 GitHub 일반 코멘트를 찾을 수 없습니다.",
+                  request.threadId,
+              )
+      val rootCommentId = issueCommentRootReference(rootComment)
+      val markedComment =
+          request.comment.copy(
+              body =
+                  request.comment.body
+                      .withReviewLevel(currentThread.level)
+                      .withIssueCommentRoot(rootCommentId),
+          )
+      if (
+          execute(
+              listOf(
+                  "gh",
+                  "api",
+                  "--method",
+                  "POST",
+                  "repos/{owner}/{repo}/issues/${request.pullRequestId}/comments",
+                  "-f",
+                  "body=${markedComment.body}",
+              ),
+              request.pullRequestId,
+          ) == null
+      ) {
+        return failure("GITHUB_REPLY_FAILED", "GitHub 일반 코멘트에 답변할 수 없습니다.", request.threadId)
+      }
+      val updatedProvider =
+          fetch(request.pullRequestId, includeReviewThreads = true)
+              ?: return failure(
+                  "GITHUB_REPLY_FAILED",
+                  "답변된 GitHub 일반 코멘트를 조회할 수 없습니다.",
+                  request.threadId,
+              )
+      val pullRequest = resolve(updatedProvider)
+      val remoteThread =
+          pullRequest.reviewRevision.threads.firstOrNull { it.id == currentThread.id }
+              ?: return failure(
+                  "GITHUB_REPLY_FAILED",
+                  "답변된 GitHub 일반 코멘트를 조회할 수 없습니다.",
+                  request.threadId,
+              )
+      if (remoteThread.comments.none { it.body == markedComment.body.withoutWorkflowMarkers() }) {
+        return failure(
+            "GITHUB_REPLY_FAILED",
+            "GitHub 일반 코멘트에 추가된 답변을 조회할 수 없습니다.",
+            request.threadId,
+        )
+      }
+      val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads)
+      return PortResult.Success(
+          ReplyReviewThreadResponse(revision, receipt("reply", request.threadId)),
+      )
+    }
     if (!isGithubReviewThreadId(currentThread.id)) {
       return failure(
           "GITHUB_GENERAL_COMMENT_UNSUPPORTED",
@@ -550,6 +618,97 @@ class GithubReviewAdapter(
           "STALE_REVISION",
           "요청한 review revision이 현재 상태와 다릅니다.",
           request.pullRequestId,
+      )
+    }
+    if (isGithubIssueCommentThreadId(currentThread.id)) {
+      if (currentThread.requiresHumanResolution && !request.actor.isHuman) {
+        return failure(
+            "HUMAN_REQUIRED",
+            "사람이 작성한 review thread는 사람만 해결할 수 있습니다.",
+            request.threadId,
+        )
+      }
+      val provider =
+          fetch(request.pullRequestId)
+              ?: return failure(
+                  "GITHUB_RESOLVE_FAILED",
+                  "해결할 GitHub 일반 코멘트를 조회할 수 없습니다.",
+                  request.threadId,
+              )
+      val rootComment =
+          provider.comments.firstOrNull { comment ->
+            issueCommentThreadId(comment) == currentThread.id && !comment.isWorkflowReply()
+          }
+              ?: return failure(
+                  "GITHUB_ISSUE_COMMENT_NOT_FOUND",
+                  "해결할 GitHub 일반 코멘트를 찾을 수 없습니다.",
+                  request.threadId,
+              )
+      val updatedBody = rootComment.body.withResolvedIssueCommentMarker()
+      val graphQlId =
+          rootComment.nodeId?.takeIf { it.isNotBlank() }
+              ?: rootComment.id.takeIf { it.isNotBlank() && !it.all(Char::isDigit) }
+      val command =
+          if (graphQlId != null) {
+            val query =
+                "mutation(${'$'}issueCommentId:ID!,${'$'}body:String!){updateIssueComment(input:{id:${'$'}issueCommentId,body:${'$'}body}){issueComment{id}}}"
+            listOf(
+                "gh",
+                "api",
+                "graphql",
+                "-f",
+                "query=$query",
+                "-f",
+                "issueCommentId=$graphQlId",
+                "-f",
+                "body=$updatedBody",
+            )
+          } else {
+            val databaseId =
+                rootComment.databaseId
+                    ?: return failure(
+                        "GITHUB_ISSUE_COMMENT_NOT_FOUND",
+                        "GitHub 일반 코멘트에 수정할 수 있는 식별자가 없습니다.",
+                        request.threadId,
+                    )
+            listOf(
+                "gh",
+                "api",
+                "--method",
+                "PATCH",
+                "repos/{owner}/{repo}/issues/comments/$databaseId",
+                "-f",
+                "body=$updatedBody",
+            )
+          }
+      if (
+          execute(
+              command,
+              request.pullRequestId,
+          ) == null
+      ) {
+        return failure("GITHUB_RESOLVE_FAILED", "GitHub 일반 코멘트를 해결할 수 없습니다.", request.threadId)
+      }
+      val updatedProvider =
+          fetch(request.pullRequestId, includeReviewThreads = true)
+              ?: return failure(
+                  "GITHUB_RESOLVE_FAILED",
+                  "해결된 GitHub 일반 코멘트를 조회할 수 없습니다.",
+                  request.threadId,
+              )
+      val pullRequest = resolve(updatedProvider)
+      val resolvedThread =
+          pullRequest.reviewRevision.threads.firstOrNull { it.id == request.threadId }
+      if (resolvedThread?.state != io.springkit.workflow.domain.ThreadState.RESOLVED) {
+        return failure(
+            "GITHUB_RESOLVE_FAILED",
+            "GitHub 일반 코멘트의 해결 상태를 복원할 수 없습니다.",
+            request.threadId,
+        )
+      }
+      val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads)
+      return PortResult.Success(
+          ResolveReviewThreadResponse(revision, receipt("resolve", request.threadId)),
       )
     }
     if (!isGithubReviewThreadId(currentThread.id)) {
@@ -999,15 +1158,29 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
 private fun GithubPullRequest.toDomainThreads(): List<ReviewThread> =
     comments.toIssueCommentThreads() + reviewThreads.toDomainThreads()
 
-private fun List<GithubComment>.toIssueCommentThreads(): List<ReviewThread> =
-    mapNotNull { providerComment ->
-      val comment = providerComment.toDomainComment() ?: return@mapNotNull null
-      ReviewThread(
-          id = issueCommentThreadId(providerComment),
-          level = comment.body.reviewLevel() ?: ReviewLevel.C,
-          comments = listOf(comment),
-      )
-    }
+private fun List<GithubComment>.toIssueCommentThreads(): List<ReviewThread> {
+  val roots = filterNot { it.isWorkflowReply() }
+  val repliesByRoot = filter { it.isWorkflowReply() }.groupByNotNull { it.issueCommentRootId() }
+  return roots.mapNotNull { providerComment ->
+    val rootComment = providerComment.toDomainComment() ?: return@mapNotNull null
+    val replies =
+        repliesByRoot[issueCommentRootReference(providerComment)].orEmpty().mapNotNull {
+          it.toDomainComment()
+        }
+    val comments = listOf(rootComment) + replies
+    ReviewThread(
+        id = issueCommentThreadId(providerComment),
+        level = rootComment.body.reviewLevel() ?: ReviewLevel.C,
+        comments = comments,
+        state =
+            if (providerComment.body.isResolvedIssueComment()) {
+              io.springkit.workflow.domain.ThreadState.RESOLVED
+            } else {
+              io.springkit.workflow.domain.ThreadState.OPEN
+            },
+    )
+  }
+}
 
 private fun List<GithubReviewThread>.toDomainThreads(): List<ReviewThread> =
     mapNotNull { providerThread ->
@@ -1047,7 +1220,7 @@ private fun GithubComment.toDomainComment(): io.springkit.workflow.domain.Review
   return io.springkit.workflow.domain.ReviewComment(
       id = commentId,
       author = io.springkit.workflow.domain.Actor(actorId, actorKind, author?.name),
-      body = body,
+      body = body.withoutWorkflowMarkers(),
       createdAtEpochMillis = createdAt,
       path = path,
       line = line,
@@ -1072,4 +1245,34 @@ private fun String.withReviewLevel(level: ReviewLevel): String {
 private fun issueCommentThreadId(comment: GithubComment): String =
     "github-issue-comment-${comment.nodeId?.takeIf { it.isNotBlank() } ?: comment.id}"
 
+private fun isGithubIssueCommentThreadId(id: String): Boolean =
+    id.startsWith("github-issue-comment-")
+
 private fun isGithubReviewThreadId(id: String): Boolean = id.startsWith("PRRT_")
+
+private fun GithubComment.isWorkflowReply(): Boolean = issueCommentRootId() != null
+
+private fun GithubComment.issueCommentRootId(): String? =
+    ISSUE_COMMENT_ROOT_MARKER.find(body)?.groupValues?.getOrNull(1)
+
+private fun issueCommentRootReference(comment: GithubComment): String =
+    comment.nodeId?.takeIf { it.isNotBlank() } ?: comment.id
+
+private fun String.withIssueCommentRoot(rootReference: String): String =
+    "$this\n\n<!-- springkit:issue-comment-root:$rootReference -->"
+
+private fun String.withResolvedIssueCommentMarker(): String =
+    if (isResolvedIssueComment()) this else "$this\n\n$ISSUE_COMMENT_RESOLVED_MARKER"
+
+private fun String.isResolvedIssueComment(): Boolean = ISSUE_COMMENT_RESOLVED_MARKER in this
+
+private fun String.withoutWorkflowMarkers(): String =
+    replace(ISSUE_COMMENT_ROOT_MARKER, "").replace(ISSUE_COMMENT_RESOLVED_MARKER, "").trim()
+
+private fun <T, K> Iterable<T>.groupByNotNull(keySelector: (T) -> K?): Map<K, List<T>> =
+    mapNotNull { value -> keySelector(value)?.let { it to value } }
+        .groupBy({ it.first }, { it.second })
+
+private val ISSUE_COMMENT_ROOT_MARKER = Regex("<!--\\s*springkit:issue-comment-root:(.*?)\\s*-->")
+
+private const val ISSUE_COMMENT_RESOLVED_MARKER = "<!-- springkit:issue-comment-resolved -->"
