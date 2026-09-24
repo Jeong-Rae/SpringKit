@@ -221,14 +221,13 @@ class BodyDsl internal constructor() {
   inline fun <reified T : Any> ignoredField(
       key: String,
       description: String,
-      sample: T?,
+      sample: T,
   ) {
     addField(
         Field(
             key = key,
             description = description,
-            sample = sampleOf<T>(sample),
-            optional = sample == null,
+            sample = sampleOf(sample),
             ignored = true,
         )
     )
