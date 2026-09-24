@@ -107,12 +107,10 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
       }
       requestBody {
         field("name", "변경할 회원 이름", sample = "Jane Smith")
-        field<String>("nickname", "명시적으로 제거할 별명", sample = null, optional = true)
       }
       responseBody {
         field("id", "회원 식별자", sample = 1L)
         field("name", "회원 이름", sample = "Jane Smith")
-        field<String>("nickname", "회원 별명", sample = null, optional = true)
       }
     }
   }
