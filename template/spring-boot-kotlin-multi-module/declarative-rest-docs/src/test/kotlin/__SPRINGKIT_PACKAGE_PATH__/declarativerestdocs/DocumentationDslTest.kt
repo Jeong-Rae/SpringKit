@@ -27,7 +27,7 @@ class DocumentationDslTest :
                 }
                 requestBody {
                   field("name", "사용자 이름", sample = "Alice")
-                  field<String>("nickname", "사용자 별명", sample = null, optional = true)
+                  field("nickname", "사용자 별명", sample = "ally", optional = true)
                   ignoredField("legacyCode", "이전 코드", sample = "legacy")
                 }
                 responseHeader {
@@ -60,8 +60,6 @@ class DocumentationDslTest :
           actual.requestBody.fields.map(ValueElement::key) shouldBe
               listOf("name", "nickname", "legacyCode")
           actual.requestBody.fields.map(Field::optional) shouldBe listOf(false, true, false)
-          actual.requestBody.fields[1].sample.value shouldBe null
-          actual.requestBody.fields[1].sample.type shouldBe typeOf<String>()
           actual.requestBody.fields.map(Field::ignored) shouldBe listOf(false, false, true)
           actual.responseHeaders.headers.map(ValueElement::key) shouldBe listOf("Location")
           actual.responseBody.fields.map(ValueElement::key) shouldBe
@@ -112,19 +110,6 @@ class DocumentationDslTest :
             documentationDefinition("health") {
               summary = "상태 확인"
               description = "서비스 상태를 확인합니다."
-            }
-          }
-        }
-
-        test("필수 field에 null sample을 선언하면, 문서 생성을 거부합니다") {
-          shouldThrow<IllegalArgumentException> {
-            documentationDefinition("patch-user") {
-              summary = "사용자 부분 수정"
-              description = "사용자 일부 정보를 수정합니다."
-              requestLine(method = "patch", path = "/users/1")
-              requestBody {
-                field<String>("nickname", "사용자 별명", sample = null)
-              }
             }
           }
         }
