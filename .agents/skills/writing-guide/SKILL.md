@@ -1,9 +1,12 @@
 ---
 name: writing-guide
-description: >
-  Apply consistent Korean writing conventions to responses and authored text,
-  including technical documents, commit messages, and pull request
-  descriptions. Use whenever writing, editing, or reviewing Korean prose.
+description: >-
+  These writing guidelines apply whenever producing any text-based content or responding in conversation.
+
+  This document defines the project-wide voice and tone to ensure consistency across all communication. Regardless of whether the content is intended for internal or external use, this document must always be reviewed and followed before writing.
+
+  Its methodology applies to all forms of written communication, including commits, pull requests, comments, technical documentation, emails, and agent chats.
+license: MIT
 metadata:
   internal: true
 ---
