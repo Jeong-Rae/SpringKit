@@ -79,6 +79,52 @@ class GithubMergeQueueAdapterTest :
       }
 
       context("GitHub Merge Queue 상태를 조회하면") {
+        test("완료 상태에 conclusion이 없으면 검증 성공으로 판단하지 않습니다") {
+          val runner =
+              FakeCommandRunner(
+                  CommandResult(
+                      0,
+                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","isInMergeQueue":true,"statusCheckRollup":[{"name":"build","status":"COMPLETED"}]}""",
+                      "",
+                  )
+              )
+
+          val entry =
+              GithubMergeQueueAdapter(Path.of("/repo"), runner)
+                  .get(GetMergeQueueRequest(pullRequestId = "17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetMergeQueueResponse>()
+                  .entries
+                  .single()
+
+          entry.validations.single().status.name shouldBe "PENDING"
+        }
+
+        test("CheckRun conclusion 없이 상태형 status context도 validation 상태로 변환합니다") {
+          val runner =
+              FakeCommandRunner(
+                  CommandResult(
+                      0,
+                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","isInMergeQueue":true,"statusCheckRollup":[{"context":"legacy-success","state":"SUCCESS"},{"context":"legacy-failure","state":"FAILURE"},{"context":"legacy-error","state":"ERROR"}]}""",
+                      "",
+                  )
+              )
+          val adapter = GithubMergeQueueAdapter(Path.of("/repo"), runner)
+
+          val entry =
+              adapter
+                  .get(GetMergeQueueRequest(pullRequestId = "17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetMergeQueueResponse>()
+                  .entries
+                  .single()
+
+          entry.state.name shouldBe "FAILED"
+          entry.validations.map { it.status.name } shouldBe listOf("PASSED", "FAILED", "FAILED")
+        }
+
         test("gh JSON을 입력하면, 상태와 검증 결과를 MergeQueueEntry로 변환합니다") {
           val runner =
               FakeCommandRunner(

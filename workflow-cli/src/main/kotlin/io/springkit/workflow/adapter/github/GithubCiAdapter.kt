@@ -150,9 +150,11 @@ private fun GithubStatusCheck.toCiRun(index: Int, revision: String?): CiRun {
         conclusionValue in setOf("SUCCESS", "NEUTRAL", "SKIPPED") -> CiStatus.PASSED
         conclusionValue.isNotBlank() &&
             conclusionValue !in setOf("SUCCESS", "NEUTRAL", "SKIPPED") -> CiStatus.FAILED
+        statusValue == "SUCCESS" -> CiStatus.PASSED
+        statusValue in setOf("FAILURE", "ERROR") -> CiStatus.FAILED
         statusValue in setOf("QUEUED", "REQUESTED", "WAITING", "PENDING") -> CiStatus.PENDING
         statusValue in setOf("IN_PROGRESS", "EXPECTED") -> CiStatus.RUNNING
-        statusValue == "COMPLETED" -> CiStatus.PASSED
+        statusValue == "COMPLETED" -> CiStatus.PENDING
         else -> CiStatus.PENDING
       }
   return CiRun(

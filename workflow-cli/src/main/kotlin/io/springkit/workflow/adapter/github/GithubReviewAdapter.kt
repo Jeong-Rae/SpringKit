@@ -576,7 +576,12 @@ class GithubReviewAdapter(
       )
     }
     val markedComment =
-        request.comment.copy(body = request.comment.body.withReviewLevel(currentThread.level))
+        request.comment.copy(
+            body =
+                request.comment.body
+                    .withReviewLevel(currentThread.level)
+                    .withReviewThreadReplyId(request.comment.id),
+        )
     val query =
         "mutation(${'$'}subjectId:ID!,${'$'}body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:${'$'}subjectId,body:${'$'}body}){comment{id}}}"
     if (
@@ -612,7 +617,7 @@ class GithubReviewAdapter(
                 "답변된 GitHub review thread를 조회할 수 없습니다.",
                 request.threadId,
             )
-    if (remoteThread.comments.none { it.body == markedComment.body }) {
+    if (remoteThread.comments.none { it.body == markedComment.body.withoutWorkflowMarkers() }) {
       return failure(
           "GITHUB_REPLY_FAILED",
           "GitHub review thread에 추가된 답변을 조회할 수 없습니다.",
@@ -622,6 +627,112 @@ class GithubReviewAdapter(
     val revision = nextReviewRevision(pullRequest, pullRequest.reviewRevision.threads)
     return PortResult.Success(
         ReplyReviewThreadResponse(revision, receipt("reply", request.threadId)),
+    )
+  }
+
+  override fun recoverReply(
+      request: ReplyReviewThreadRequest
+  ): PortResult<ReplyReviewThreadResponse?> {
+    val persisted = currentPullRequest(request.pullRequestId)
+    if (persisted == null || persisted.reviewRevision.id != request.reviewRevisionId) {
+      return PortResult.Success(null)
+    }
+    val baselineThread =
+        persisted.reviewRevision.threads.firstOrNull { it.id == request.threadId }
+            ?: return PortResult.Success(null)
+    if (!baselineThread.isOpen) return PortResult.Success(null)
+    val provider =
+        fetch(request.pullRequestId, includeReviewThreads = true)
+            ?: return failure(
+                "GITHUB_REPLY_FAILED",
+                "답글 재시도 상태를 GitHub에서 확인할 수 없습니다.",
+                request.threadId,
+            )
+    val candidates =
+        if (isGithubIssueCommentThreadId(request.threadId)) {
+          provider.comments.filter { it.issueCommentReplyId() == request.comment.id }
+        } else {
+          provider.reviewThreads
+              .flatMap { thread ->
+                thread.comments
+                    .filter { it.reviewThreadReplyId() == request.comment.id }
+                    .map { comment -> thread to comment }
+              }
+              .map { it.second }
+        }
+    if (candidates.isEmpty()) return PortResult.Success(null)
+    if (candidates.size != 1) {
+      return failure(
+          "GITHUB_REPLY_IDEMPOTENCY_CONFLICT",
+          "같은 답글 식별자가 GitHub에서 여러 번 사용되었습니다.",
+          request.comment.id,
+      )
+    }
+    val candidate = candidates.single()
+    val expectedBody =
+        if (isGithubIssueCommentThreadId(request.threadId)) {
+          val root =
+              provider.comments.firstOrNull {
+                issueCommentThreadId(it) == request.threadId && !it.isWorkflowReply()
+              } ?: return PortResult.Success(null)
+          request.comment.body
+              .withReviewLevel(baselineThread.level)
+              .withIssueCommentRoot(issueCommentRootReference(root))
+              .withIssueCommentReplyId(request.comment.id)
+        } else {
+          request.comment.body
+              .withReviewLevel(baselineThread.level)
+              .withReviewThreadReplyId(request.comment.id)
+        }
+    if (candidate.body != expectedBody) {
+      return failure(
+          "GITHUB_REPLY_IDEMPOTENCY_CONFLICT",
+          "같은 답글 식별자에 다른 본문이 이미 게시되었습니다.",
+          request.comment.id,
+      )
+    }
+    val providerThreadId =
+        if (isGithubIssueCommentThreadId(request.threadId)) {
+          issueCommentThreadId(
+              provider.comments.firstOrNull {
+                issueCommentThreadId(it) == request.threadId && !it.isWorkflowReply()
+              } ?: return PortResult.Success(null)
+          )
+        } else {
+          provider.reviewThreads.firstOrNull { thread -> candidate in thread.comments }?.id
+        }
+    if (providerThreadId != request.threadId) {
+      return failure(
+          "GITHUB_REPLY_IDEMPOTENCY_CONFLICT",
+          "같은 답글 식별자가 다른 GitHub 스레드에서 사용되었습니다.",
+          request.comment.id,
+      )
+    }
+    val remote = resolve(provider)
+    val remoteThread = remote.reviewRevision.threads.firstOrNull { it.id == request.threadId }
+    val candidateDomainId = candidate.id.ifBlank { candidate.nodeId.orEmpty() }
+    val baseThreads =
+        remote.reviewRevision.threads.map { thread ->
+          if (thread.id == request.threadId) {
+            thread.copy(comments = thread.comments.filterNot { it.id == candidateDomainId })
+          } else {
+            thread
+          }
+        }
+    val pureReplyDelta =
+        remoteThread != null &&
+            remoteThread.isOpen &&
+            remote.body == persisted.body &&
+            remote.base == persisted.base &&
+            remote.state == persisted.state &&
+            remote.changeRevision == persisted.changeRevision &&
+            remote.reviewRevision.body == persisted.reviewRevision.body &&
+            remote.reviewRevision.number == persisted.reviewRevision.number + 1 &&
+            remoteThread.comments.count { it.id == candidateDomainId } == 1 &&
+            baseThreads == persisted.reviewRevision.threads
+    if (!pureReplyDelta) return PortResult.Success(null)
+    return PortResult.Success(
+        ReplyReviewThreadResponse(remote.reviewRevision, receipt("reply", request.threadId)),
     )
   }
 
@@ -1322,6 +1433,12 @@ private fun String.withIssueCommentReplyId(commentId: String): String =
 private fun GithubComment.issueCommentReplyId(): String? =
     ISSUE_COMMENT_REPLY_MARKER.find(body)?.groupValues?.getOrNull(1)
 
+private fun String.withReviewThreadReplyId(commentId: String): String =
+    "$this\n\n<!-- springkit:review-thread-reply:$commentId -->"
+
+private fun GithubComment.reviewThreadReplyId(): String? =
+    REVIEW_THREAD_REPLY_MARKER.find(body)?.groupValues?.getOrNull(1)
+
 private fun String.withResolvedIssueCommentMarker(): String =
     if (isResolvedIssueComment()) this else "$this\n\n$ISSUE_COMMENT_RESOLVED_MARKER"
 
@@ -1330,6 +1447,7 @@ private fun String.isResolvedIssueComment(): Boolean = ISSUE_COMMENT_RESOLVED_MA
 private fun String.withoutWorkflowMarkers(): String =
     replace(ISSUE_COMMENT_ROOT_MARKER, "")
         .replace(ISSUE_COMMENT_REPLY_MARKER, "")
+        .replace(REVIEW_THREAD_REPLY_MARKER, "")
         .replace(ISSUE_COMMENT_RESOLVED_MARKER, "")
         .trim()
 
@@ -1340,6 +1458,8 @@ private fun <T, K> Iterable<T>.groupByNotNull(keySelector: (T) -> K?): Map<K, Li
 private val ISSUE_COMMENT_ROOT_MARKER = Regex("<!--\\s*springkit:issue-comment-root:(.*?)\\s*-->")
 
 private val ISSUE_COMMENT_REPLY_MARKER = Regex("<!--\\s*springkit:issue-comment-reply:(.*?)\\s*-->")
+
+private val REVIEW_THREAD_REPLY_MARKER = Regex("<!--\\s*springkit:review-thread-reply:(.*?)\\s*-->")
 
 private val HUMAN_AUTHOR_ASSOCIATIONS =
     setOf(

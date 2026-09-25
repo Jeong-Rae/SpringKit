@@ -674,6 +674,10 @@ interface ReviewPort {
 
   fun reply(request: ReplyReviewThreadRequest): PortResult<ReplyReviewThreadResponse>
 
+  /** 요청 답글만 원격에 추가된 상태인지 검증한 뒤 저장 가능한 revision을 반환합니다. */
+  fun recoverReply(request: ReplyReviewThreadRequest): PortResult<ReplyReviewThreadResponse?> =
+      PortResult.Success(null)
+
   fun resolve(request: ResolveReviewThreadRequest): PortResult<ResolveReviewThreadResponse>
 
   fun ready(request: ReadyReviewRequest): PortResult<ReadyReviewResponse>

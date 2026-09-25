@@ -298,6 +298,77 @@ class ReviewUseCasesTest :
               io.springkit.workflow.domain.FailureCode.STALE_REVISION
           port.commentCalls shouldBe 0
         }
+
+        test("같은 답글만 원격 revision에 추가됐으면, 재시도 결과를 Store에 복구합니다") {
+          val actor = Actor("agent-1", ActorKind.AGENT)
+          val thread =
+              ReviewThread(
+                  id = "thread-1",
+                  level = ReviewLevel.R,
+                  comments =
+                      listOf(ReviewComment("root-1", Actor("human-1", ActorKind.HUMAN), "요청")),
+              )
+          val before =
+              pullRequest()
+                  .copy(
+                      reviewRevision = revision("rv-1", "body").copy(threads = listOf(thread)),
+                  )
+          val repliedRevision =
+              revision("rv-2", "body")
+                  .copy(
+                      threads = listOf(thread.reply(ReviewComment("reply-1", actor, "[Agent] 답변"))),
+                  )
+          val remote = before.copy(reviewRevision = repliedRevision)
+          val store = OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/retry.json".toPath())
+          seed(store, before)
+          val port =
+              FakeReviewPort(
+                  remote,
+                  null,
+                  recoveredReply = ReplyReviewThreadResponse(repliedRevision, receipt("reply")),
+              )
+
+          val result =
+              ReviewUseCases(port, storePort = store)
+                  .reply(
+                      ReplyReviewThreadRequest(
+                          "pr-1",
+                          "rv-1",
+                          "thread-1",
+                          ReviewComment("reply-1", actor, "답변"),
+                      ),
+                  )
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<ReplyReviewThreadResponse>>()
+          storedPullRequest(store).reviewRevision shouldBe repliedRevision
+          port.recoverCalls shouldBe 1
+          port.replyCalls shouldBe 0
+        }
+
+        test("다른 원격 변경이 섞였으면, 답글 재시도 복구를 거부합니다") {
+          val actor = Actor("agent-1", ActorKind.AGENT)
+          val current = pullRequest().copy(reviewRevision = revision("rv-2", "body changed"))
+          val store =
+              OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/stale-retry.json".toPath())
+          seed(store, pullRequest())
+          val port = FakeReviewPort(current, null)
+
+          val result =
+              ReviewUseCases(port, storePort = store)
+                  .reply(
+                      ReplyReviewThreadRequest(
+                          "pr-1",
+                          "rv-1",
+                          "thread-1",
+                          ReviewComment("reply-1", actor, "답변"),
+                      ),
+                  )
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.STALE_REVISION
+          storedPullRequest(store).reviewRevision.id shouldBe "rv-1"
+          port.replyCalls shouldBe 0
+        }
       }
     })
 
@@ -407,10 +478,13 @@ private class RevisionReviewPort(
 private class FakeReviewPort(
     private var current: PullRequest,
     private val updateResponse: UpdateReviewResponse?,
+    private val recoveredReply: ReplyReviewThreadResponse? = null,
 ) : ReviewPort {
   var updateCalls: Int = 0
   var resolveCalls: Int = 0
   var lastComment: AddReviewCommentRequest? = null
+  var recoverCalls: Int = 0
+  var replyCalls: Int = 0
 
   override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> = unsupported()
 
@@ -435,8 +509,17 @@ private class FakeReviewPort(
     )
   }
 
-  override fun reply(request: ReplyReviewThreadRequest): PortResult<ReplyReviewThreadResponse> =
-      unsupported()
+  override fun reply(request: ReplyReviewThreadRequest): PortResult<ReplyReviewThreadResponse> {
+    replyCalls += 1
+    return unsupported()
+  }
+
+  override fun recoverReply(
+      request: ReplyReviewThreadRequest,
+  ): PortResult<ReplyReviewThreadResponse?> {
+    recoverCalls += 1
+    return PortResult.Success(recoveredReply)
+  }
 
   override fun resolve(
       request: ResolveReviewThreadRequest,

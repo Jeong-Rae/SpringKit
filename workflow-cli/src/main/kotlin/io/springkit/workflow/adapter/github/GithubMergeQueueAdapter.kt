@@ -496,9 +496,11 @@ private fun GithubMergeQueueCheck.toValidationStatus(): ValidationStatus {
   return when {
     conclusionValue in setOf("SUCCESS", "NEUTRAL", "SKIPPED") -> ValidationStatus.PASSED
     conclusionValue.isNotBlank() -> ValidationStatus.FAILED
+    statusValue == "SUCCESS" -> ValidationStatus.PASSED
+    statusValue in setOf("FAILURE", "ERROR") -> ValidationStatus.FAILED
     statusValue in setOf("QUEUED", "REQUESTED", "WAITING", "PENDING") -> ValidationStatus.PENDING
     statusValue in setOf("IN_PROGRESS", "EXPECTED") -> ValidationStatus.RUNNING
-    statusValue == "COMPLETED" -> ValidationStatus.PASSED
+    statusValue == "COMPLETED" -> ValidationStatus.PENDING
     else -> ValidationStatus.PENDING
   }
 }

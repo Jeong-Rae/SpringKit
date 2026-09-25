@@ -9,6 +9,7 @@ import io.springkit.workflow.domain.ReviewRevisionId
 import io.springkit.workflow.domain.ReviewThread
 import io.springkit.workflow.domain.ThreadId
 import io.springkit.workflow.domain.WorkflowResult
+import java.util.UUID
 
 /**
  * 리뷰 생명주기를 처리하는 애플리케이션 경계입니다.
@@ -118,28 +119,123 @@ class ReviewUseCases(
   }
 
   fun reply(request: ReplyReviewThreadRequest): WorkflowResult<ReplyReviewThreadResponse> =
-      withThread(request.pullRequestId, request.reviewRevisionId, request.threadId) {
-          current,
-          thread ->
-        if (!thread.isOpen) {
-          failure(FailureCode.STATE_CONFLICT, "a resolved review thread cannot receive a reply")
-        } else {
-          val markedRequest = request.copy(comment = request.comment.withAgentMark())
-          persistRevisionMutation(
-              current = current,
-              operation = "reply",
-              idempotencyKey =
-                  "${request.pullRequestId}:${request.reviewRevisionId}:${request.comment.id}",
-              action = { reviewPort.reply(markedRequest) },
-              reviewRevision = { it.reviewRevision },
-              valid = {
-                isValidRevisionChange(current, it.reviewRevision) &&
-                    it.reviewRevision.threads.any { item -> item.id == thread.id }
-              },
-              invalidMessage = "review provider returned an invalid reply revision",
-          )
+      when (val current = reviewPort.get(GetReviewRequest(request.pullRequestId))) {
+        is PortResult.Failure -> failureFrom(current)
+        is PortResult.Success -> {
+          val pullRequest = current.value.pullRequest
+          if (pullRequest.reviewRevision.id != request.reviewRevisionId) {
+            val markedRequest = request.copy(comment = request.comment.withAgentMark())
+            when (val recovered = reviewPort.recoverReply(markedRequest)) {
+              is PortResult.Failure -> failureFrom(recovered)
+              is PortResult.Success -> {
+                val response = recovered.value
+                if (response == null) {
+                  WorkflowResult.Failure(
+                      requireCurrentReview(pullRequest, request.reviewRevisionId)!!,
+                  )
+                } else {
+                  persistRecoveredReply(request, response)
+                }
+              }
+            }
+          } else {
+            val thread =
+                pullRequest.reviewRevision.threads.firstOrNull { it.id == request.threadId }
+            when {
+              thread == null ->
+                  failure(
+                      FailureCode.THREAD_NOT_FOUND,
+                      "review thread does not belong to the revision",
+                  )
+              !thread.isOpen ->
+                  failure(
+                      FailureCode.STATE_CONFLICT,
+                      "a resolved review thread cannot receive a reply",
+                  )
+              else -> {
+                val markedRequest = request.copy(comment = request.comment.withAgentMark())
+                persistRevisionMutation(
+                    current = pullRequest,
+                    operation = "reply",
+                    idempotencyKey =
+                        "${request.pullRequestId}:${request.reviewRevisionId}:${request.comment.id}",
+                    action = { reviewPort.reply(markedRequest) },
+                    reviewRevision = { it.reviewRevision },
+                    valid = {
+                      isValidRevisionChange(pullRequest, it.reviewRevision) &&
+                          it.reviewRevision.threads.any { item -> item.id == thread.id }
+                    },
+                    invalidMessage = "review provider returned an invalid reply revision",
+                )
+              }
+            }
+          }
         }
       }
+
+  /** 이미 게시된 원격 답글의 revision만 저장하며 Store 실패 시 원격 답글을 보상하지 않습니다. */
+  private fun persistRecoveredReply(
+      request: ReplyReviewThreadRequest,
+      response: ReplyReviewThreadResponse,
+  ): WorkflowResult<ReplyReviewThreadResponse> {
+    val store = storePort ?: return WorkflowResult.Success(response)
+    val idempotencyKey =
+        "${request.pullRequestId}:${request.reviewRevisionId}:${request.comment.id}"
+    val snapshot =
+        when (val result = store.snapshot(StoreSnapshotRequest(StoreScope.ALL))) {
+          is PortResult.Failure -> return result.toWorkflowFailure(FailureCode.STORE_FAILURE)
+          is PortResult.Success -> result.value.snapshot
+        }
+    val stored = snapshot.pullRequests.firstOrNull { it.id == request.pullRequestId }
+    if (stored == null) {
+      return failure(
+          FailureCode.REVIEW_NOT_FOUND,
+          "pull request was not found",
+          request.pullRequestId,
+      )
+    }
+    if (stored.reviewRevision.id != request.reviewRevisionId)
+        return staleReview(request.pullRequestId)
+    if (!isValidRevisionChange(stored, response.reviewRevision)) {
+      return invalidProvider(response.change, "review provider returned an invalid reply revision")
+    }
+    val transactionRequest =
+        StoreTransactionRequest(
+            transactionId = "review-reply-recovery-${UUID.randomUUID()}",
+            expectedRevision = snapshot.revision,
+            idempotencyKey = idempotencyKey,
+        )
+    return WorkflowTransaction(store, compensationGateway()).execute(transactionRequest) {
+        transactionSnapshot ->
+      val transactionStored =
+          transactionSnapshot.pullRequests.firstOrNull { it.id == request.pullRequestId }
+      when {
+        transactionStored == null ->
+            failurePort(
+                FailureCode.REVIEW_NOT_FOUND,
+                "pull request was not found",
+                request.pullRequestId,
+            )
+        transactionStored.reviewRevision.id != request.reviewRevisionId ->
+            failurePort(
+                FailureCode.STALE_REVISION,
+                "review revision is stale",
+                request.pullRequestId,
+            )
+        else ->
+            PortResult.Success(
+                TransactionMutation(
+                    data = response,
+                    snapshot =
+                        transactionSnapshot.replacePullRequest(
+                            transactionStored.copy(reviewRevision = response.reviewRevision)
+                        ),
+                    changes = emptyList(),
+                )
+            )
+      }
+    }
+  }
 
   fun resolve(request: ResolveReviewThreadRequest): WorkflowResult<ResolveReviewThreadResponse> =
       withThread(request.pullRequestId, request.reviewRevisionId, request.threadId) {

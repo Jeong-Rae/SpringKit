@@ -551,7 +551,7 @@ class GithubAdapterTest :
                       threadId = "PRRT_remote",
                       commentId = "PRRC_remote",
                       databaseId = 301,
-                      body = "[C] 답변",
+                      body = "[C] 답변\n\n<!-- springkit:review-thread-reply:reply-1 -->",
                       path = "src/Main.kt",
                       line = 12,
                   ),
@@ -582,8 +582,97 @@ class GithubAdapterTest :
                   "-f",
                   "subjectId=PRRT_remote",
                   "-f",
-                  "body=[C] 답변",
+                  "body=[C] 답변\n\n<!-- springkit:review-thread-reply:reply-1 -->",
               )
+        }
+
+        test("같은 ID와 본문의 원격 답글만 있으면, 기존 revision을 복구할 수 있습니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[R] 확인이 필요합니다",
+                      "[Agent] [R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->\n\n<!-- springkit:issue-comment-reply:reply-1 -->",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val current = issueCommentPullRequest()
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .recoverReply(
+                      ReplyReviewThreadRequest(
+                          "17",
+                          "rv-1",
+                          "github-issue-comment-IC_root",
+                          ReviewComment("reply-1", Actor("agent-1", ActorKind.AGENT), "[Agent] 답변"),
+                      ),
+                  )
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.ReplyReviewThreadResponse>()
+          response.reviewRevision.number shouldBe 2
+          response.reviewRevision.threads.single().comments.map { it.body } shouldBe
+              listOf("[R] 확인이 필요합니다", "[Agent] [R] 답변")
+        }
+
+        test("답글 외에 다른 스레드가 바뀌면, 원격 revision 복구를 거부합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1","comments":[{"id":"IC_root","node_id":"IC_root","body":"[R] 확인이 필요합니다","author":{"login":"agent-1"},"authorAssociation":"BOT","createdAt":"2026-09-22T00:00:00Z"},{"id":"IC_reply","node_id":"IC_reply","body":"[Agent] [R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->\n\n<!-- springkit:issue-comment-reply:reply-1 -->","author":{"login":"agent-1"},"authorAssociation":"BOT","createdAt":"2026-09-22T00:01:00Z"},{"id":"IC_other","node_id":"IC_other","body":"[C] 새 스레드","author":{"login":"agent-1"},"authorAssociation":"BOT","createdAt":"2026-09-22T00:02:00Z"}]}""",
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val current = issueCommentPullRequest()
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .recoverReply(
+                      ReplyReviewThreadRequest(
+                          "17",
+                          "rv-1",
+                          "github-issue-comment-IC_root",
+                          ReviewComment("reply-1", Actor("agent-1", ActorKind.AGENT), "[Agent] 답변"),
+                      ),
+                  )
+
+          result.shouldBeTypeOf<PortResult.Success<*>>().value shouldBe null
+        }
+
+        test("같은 답글 ID에 다른 본문이 있으면, ID 충돌로 거부합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[R] 확인이 필요합니다",
+                      "[Agent] [R] 다른 답변\n\n<!-- springkit:issue-comment-root:IC_root -->\n\n<!-- springkit:issue-comment-reply:reply-1 -->",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val current = issueCommentPullRequest()
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .recoverReply(
+                      ReplyReviewThreadRequest(
+                          "17",
+                          "rv-1",
+                          "github-issue-comment-IC_root",
+                          ReviewComment("reply-1", Actor("agent-1", ActorKind.AGENT), "[Agent] 답변"),
+                      ),
+                  )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe
+              "GITHUB_REPLY_IDEMPOTENCY_CONFLICT"
         }
 
         test("사람이 작성한 일반 코멘트를 agent가 해결하면, GitHub API 호출 없이 거부합니다") {
@@ -1015,6 +1104,48 @@ class GithubAdapterTest :
               listOf("gh", "pr", "view", "17", "--json", "headRefOid,statusCheckRollup")
         }
 
+        test("COMPLETED 상태에 conclusion이 없으면, 성공으로 간주하지 않습니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"headRefOid":"abc123","statusCheckRollup":[{"name":"build","status":"COMPLETED"}]}""",
+                  "",
+              )
+          )
+
+          val response =
+              GithubCiAdapter(Path.of("/repo"), runner)
+                  .get(GetCiRequest("17", "abc123"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetCiResponse>()
+
+          response.runs.single().status.name shouldBe "PENDING"
+          response.status.name shouldBe "PENDING"
+        }
+
+        test("CheckRun conclusion 없이 상태형 status context를 성공과 실패로 변환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"headRefOid":"abc123","statusCheckRollup":[{"context":"legacy-success","state":"SUCCESS"},{"context":"legacy-failure","state":"FAILURE"},{"context":"legacy-error","state":"ERROR"}]}""",
+                  "",
+              )
+          )
+
+          val response =
+              GithubCiAdapter(Path.of("/repo"), runner)
+                  .get(GetCiRequest("17", "abc123"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetCiResponse>()
+
+          response.runs.map { it.status.name } shouldBe listOf("PASSED", "FAILED", "FAILED")
+          response.status.name shouldBe "FAILED"
+        }
+
         test("CI를 시작하면, statusCheckRollup 조회와 변경 영수증을 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
@@ -1102,6 +1233,7 @@ private fun issueCommentPullRequest(): PullRequest =
                                             "IC_root",
                                             Actor("agent-1", ActorKind.AGENT),
                                             "[R] 확인이 필요합니다",
+                                            createdAtEpochMillis = 1_790_035_200_000,
                                         )
                                     ),
                             )

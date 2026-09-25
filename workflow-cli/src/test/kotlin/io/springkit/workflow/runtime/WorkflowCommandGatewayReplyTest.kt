@@ -5,6 +5,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.springkit.workflow.adapter.cli.WorkflowCommandRequest
+import io.springkit.workflow.adapter.store.OkioWorkflowStoreAdapter
 import io.springkit.workflow.application.AddReviewCommentRequest
 import io.springkit.workflow.application.AddReviewCommentResponse
 import io.springkit.workflow.application.ApproveReviewRequest
@@ -29,8 +30,15 @@ import io.springkit.workflow.application.ReviewUseCases
 import io.springkit.workflow.application.StackSyncUseCases
 import io.springkit.workflow.application.StartCheckUseCases
 import io.springkit.workflow.application.StatusUseCase
+import io.springkit.workflow.application.StoreScope
+import io.springkit.workflow.application.StoreSnapshotRequest
+import io.springkit.workflow.application.StoreSnapshotResponse
+import io.springkit.workflow.application.StoreTransactionRequest
+import io.springkit.workflow.application.StoreWriteRequest
 import io.springkit.workflow.application.UpdateReviewRequest
 import io.springkit.workflow.application.UpdateReviewResponse
+import io.springkit.workflow.application.WorkflowStorePort
+import io.springkit.workflow.application.WorkflowStoreSnapshot
 import io.springkit.workflow.domain.Actor
 import io.springkit.workflow.domain.ActorKind
 import io.springkit.workflow.domain.ChangeRevision
@@ -40,13 +48,46 @@ import io.springkit.workflow.domain.ReviewComment
 import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.ReviewRevision
 import io.springkit.workflow.domain.ReviewThread
+import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.WorkspacePath
 import java.lang.reflect.Proxy
+import okio.Path.Companion.toPath
+import okio.fakefilesystem.FakeFileSystem
 
 class WorkflowCommandGatewayReplyTest :
     FunSpec({
       context("같은 review reply CLI 요청을 다시 실행하면") {
+        test("POST 후 조회가 실패해 Store가 롤백되어도, 재시도는 POST 없이 원격 답글을 복구합니다") {
+          val store =
+              OkioWorkflowStoreAdapter(FakeFileSystem(), "/workflow/reply-retry.json".toPath())
+          val fixture = replyGateway(retryAfterPostFailure = true, storePort = store)
+          val request = WorkflowCommandRequest.ReviewReply("rv-1", "thread-1", body = "답변입니다.")
+
+          fixture.gateway.execute(request).shouldBeInstanceOf<WorkflowResult.Failure>()
+          val beforeRetry =
+              (store.snapshot(StoreSnapshotRequest(StoreScope.ALL))
+                      as PortResult.Success<StoreSnapshotResponse>)
+                  .value
+                  .snapshot
+                  .pullRequests
+                  .single()
+          beforeRetry.reviewRevision.id shouldBe "rv-1"
+
+          fixture.gateway.execute(request).shouldBeInstanceOf<WorkflowResult.Success<*>>()
+
+          val afterRetry =
+              (store.snapshot(StoreSnapshotRequest(StoreScope.ALL))
+                      as PortResult.Success<StoreSnapshotResponse>)
+                  .value
+                  .snapshot
+                  .pullRequests
+                  .single()
+          afterRetry.reviewRevision.id shouldBe "rv-next"
+          fixture.replies shouldHaveSize 1
+          fixture.recoverCalls shouldHaveSize 1
+        }
+
         test(
             "같은 pull request, revision, thread, 작성자와 본문에 같은 comment ID를 사용하고 Store ID를 발급하지 않습니다"
         ) {
@@ -100,11 +141,14 @@ private data class ReplyGatewayFixture(
     val gateway: WorkflowCommandGateway,
     val replies: MutableList<ReplyReviewThreadRequest>,
     val storeIdRequests: MutableList<Unit>,
+    val recoverCalls: MutableList<Unit>,
 )
 
 private fun replyGateway(
     reviewRevisionId: String = "rv-1",
     actorId: String = "agent-1",
+    retryAfterPostFailure: Boolean = false,
+    storePort: WorkflowStorePort? = null,
 ): ReplyGatewayFixture {
   val author = Actor("reviewer", ActorKind.HUMAN)
   val initialComment = ReviewComment("comment-1", author, "확인해 주세요.")
@@ -120,14 +164,56 @@ private fun replyGateway(
           reviewRevision = reviewRevision,
           changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
       )
+  val nextRevision =
+      reviewRevision.copy(
+          id = "rv-next",
+          number = reviewRevision.number + 1,
+          threads =
+              listOf(
+                  thread.reply(
+                      ReviewComment(
+                          "stable-comment",
+                          Actor(actorId, ActorKind.AGENT),
+                          "[Agent] 답변입니다.",
+                      )
+                  )
+              ),
+      )
+  if (storePort != null) {
+    val transaction = StoreTransactionRequest("seed-reply", "0", "seed-reply")
+    storePort.begin(transaction)
+    storePort.write(
+        StoreWriteRequest(
+            transactionId = transaction.transactionId,
+            expectedRevision = "0",
+            snapshot =
+                WorkflowStoreSnapshot(
+                    "0",
+                    subTasks = listOf(SubTask("sk-15", "task-15", "review")),
+                    pullRequests = listOf(pullRequest),
+                ),
+        )
+    )
+    storePort.commit(transaction)
+  }
   val replies = mutableListOf<ReplyReviewThreadRequest>()
+  var getCalls = 0
+  val recoverCalls = mutableListOf<Unit>()
   val reviewPort =
       object : ReviewPort {
         override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> =
             unsupported()
 
-        override fun get(request: GetReviewRequest): PortResult<GetReviewResponse> =
-            PortResult.Success(GetReviewResponse(pullRequest))
+        override fun get(request: GetReviewRequest): PortResult<GetReviewResponse> {
+          getCalls += 1
+          return PortResult.Success(
+              GetReviewResponse(
+                  if (retryAfterPostFailure && getCalls > 1)
+                      pullRequest.copy(reviewRevision = nextRevision)
+                  else pullRequest
+              )
+          )
+        }
 
         override fun update(request: UpdateReviewRequest): PortResult<UpdateReviewResponse> =
             unsupported()
@@ -140,12 +226,29 @@ private fun replyGateway(
             request: ReplyReviewThreadRequest
         ): PortResult<ReplyReviewThreadResponse> {
           replies += request
+          if (retryAfterPostFailure) {
+            return PortResult.Failure(
+                io.springkit.workflow.application.PortError(
+                    "GITHUB_REPLY_FAILED",
+                    "POST succeeded but follow-up fetch failed",
+                )
+            )
+          }
           return PortResult.Success(
               ReplyReviewThreadResponse(
                   reviewRevision =
                       reviewRevision.copy(id = "rv-next", number = reviewRevision.number + 1),
                   change = ChangeReceipt("change-${replies.size}", "reply"),
               )
+          )
+        }
+
+        override fun recoverReply(
+            request: ReplyReviewThreadRequest
+        ): PortResult<ReplyReviewThreadResponse?> {
+          recoverCalls += Unit
+          return PortResult.Success(
+              ReplyReviewThreadResponse(nextRevision, ChangeReceipt("change-recovered", "reply"))
           )
         }
 
@@ -195,7 +298,7 @@ private fun replyGateway(
                   proxyPort(),
                   projectPrefix = "sk",
               ),
-          review = ReviewUseCases(reviewPort),
+          review = ReviewUseCases(reviewPort, storePort = storePort),
           reviewLifecycle =
               ReviewLifecycleUseCases(
                   proxyPort(),
@@ -215,7 +318,7 @@ private fun replyGateway(
             PortResult.Success("store-comment-id")
           },
       )
-  return ReplyGatewayFixture(gateway, replies, storeIdRequests)
+  return ReplyGatewayFixture(gateway, replies, storeIdRequests, recoverCalls)
 }
 
 private inline fun <reified T> proxyPort(): T =
