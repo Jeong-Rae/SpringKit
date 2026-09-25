@@ -42,8 +42,8 @@ class PostMergeCleanupUseCaseTest :
           git.operations shouldContain "remote:${parent.branch}"
           git.operations shouldContain "worktree:ws-${parent.id}"
           git.operations.last() shouldBe "fetch:origin/main"
-          git.remoteExpectedRevisions[parent.branch] shouldBe "parent-revision"
-          git.localExpectedRevisions[parent.branch] shouldBe "parent-revision"
+          git.remoteExpectedRevisions[parent.branch] shouldBe PARENT_SHA
+          git.localExpectedRevisions[parent.branch] shouldBe PARENT_SHA
         }
 
         test("요청하지 않은 다른 merged SubTask이면, branch와 worktree를 정리하지 않습니다") {
@@ -53,7 +53,7 @@ class PostMergeCleanupUseCaseTest :
               CleanupGit(
                   remoteBranches =
                       listOf(
-                          RemoteBranch("origin", parent.branch, "parent-revision"),
+                          RemoteBranch("origin", parent.branch, PARENT_SHA),
                           RemoteBranch("origin", other.branch, "other-revision"),
                       )
               )
@@ -117,7 +117,8 @@ class PostMergeCleanupUseCaseTest :
           val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
           val git =
               CleanupGit(
-                  parentRevision = "parent-diff",
+                  parentRevision = PARENT_SHA,
+                  parentFingerprint = PARENT_FINGERPRINT,
                   remoteBranches = emptyList(),
               )
           val store =
@@ -125,7 +126,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-diff")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
 
@@ -140,7 +141,48 @@ class PostMergeCleanupUseCaseTest :
           response.removedWorkspaces shouldBe listOf("ws-${parent.id}")
           response.removedLocalBranches shouldBe listOf(parent.branch)
           git.operations.any { it.startsWith("remote:") } shouldBe false
-          git.localExpectedRevisions[parent.branch] shouldBe "parent-diff"
+          git.localExpectedRevisions[parent.branch] shouldBe PARENT_SHA
+        }
+
+        test("원격 삭제 뒤 저장된 Git SHA checkpoint로 worktree와 local branch를 재시도합니다") {
+          val parent =
+              subTask("sk-parent", SubTaskState.MERGED)
+                  .copy(
+                      cleanupState = SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
+                      cleanupRevision = PARENT_SHA,
+                  )
+          val git = CleanupGit(remoteBranches = emptyList())
+          val store = CleanupStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(parent)))
+
+          val response =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          response.state shouldBe PostMergeCleanupState.COMPLETED
+          git.operations.any { it.startsWith("remote:") } shouldBe false
+          git.localExpectedRevisions[parent.branch] shouldBe PARENT_SHA
+          store.current.subTasks.single().cleanupRevision shouldBe PARENT_SHA
+        }
+
+        test("SHA checkpoint가 있고 원격과 worktree가 모두 사라졌으면 local branch 재시도를 계속합니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED).copy(cleanupRevision = PARENT_SHA)
+          val git = CleanupGit(remoteBranches = emptyList(), worktreeMissingInitially = true)
+          val store = CleanupStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(parent)))
+
+          val response =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          response.state shouldBe PostMergeCleanupState.COMPLETED
+          response.removedWorkspaces shouldBe emptyList()
+          response.removedLocalBranches shouldBe listOf(parent.branch)
+          git.operations.any { it.startsWith("remote:") } shouldBe false
+          git.operations.any { it.startsWith("worktree:") } shouldBe false
+          git.localExpectedRevisions[parent.branch] shouldBe PARENT_SHA
         }
 
         test("원격 Branch가 없고 기대 revision을 증명할 수 없으면, 로컬 정리를 차단합니다") {
@@ -160,6 +202,70 @@ class PostMergeCleanupUseCaseTest :
           git.operations.any { it.startsWith("local:") } shouldBe false
         }
 
+        test("원격 삭제 전 SHA checkpoint 저장이 실패하면 삭제 작업을 진행하지 않습니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git = CleanupGit()
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests =
+                          listOf(
+                              pullRequest(
+                                  "pr-parent",
+                                  "patch-fingerprint",
+                                  providerRevision = PARENT_SHA,
+                              )
+                          ),
+                  ),
+                  failWriteRevision = true,
+              )
+
+          val response =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          response.state shouldBe PostMergeCleanupState.BLOCKED
+          response.blocks.map { it.phase } shouldContain "store"
+          git.operations.any { it.startsWith("remote:") } shouldBe false
+          git.operations.any { it.startsWith("worktree:") } shouldBe false
+          git.operations.any { it.startsWith("local:") } shouldBe false
+        }
+
+        test("원격 revision이 provider SHA와 다르면 원격 Branch를 삭제하지 않습니다") {
+          val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
+          val git =
+              CleanupGit(remoteBranches = listOf(RemoteBranch("origin", parent.branch, REMOTE_SHA)))
+          val store =
+              CleanupStore(
+                  WorkflowStoreSnapshot(
+                      "store-1",
+                      subTasks = listOf(parent),
+                      pullRequests =
+                          listOf(
+                              pullRequest(
+                                  "pr-parent",
+                                  "patch-fingerprint",
+                                  providerRevision = PROVIDER_SHA,
+                              )
+                          ),
+                  )
+              )
+
+          val response =
+              PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
+                  .execute(PostMergeCleanupRequest(parent.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<PostMergeCleanupResponse>>()
+                  .data
+
+          response.state shouldBe PostMergeCleanupState.BLOCKED
+          response.blocks.map { it.code } shouldContain "PROVIDER_REVISION_MISMATCH"
+          git.operations.any { it.startsWith("remote:") } shouldBe false
+        }
+
         test("local branch 정리가 실패하면, 성공한 원격과 worktree 정리 단계를 저장하고 재시도합니다") {
           val parent = subTask("sk-parent", SubTaskState.MERGED, pullRequestId = "pr-parent")
           val git = CleanupGit(failLocalOnce = true)
@@ -168,7 +274,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
           val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
@@ -205,7 +311,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   ),
                   failWriteState = SubTaskCleanupState.WORKTREE_REMOVED,
               )
@@ -239,7 +345,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   ),
                   failWriteState = SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
               )
@@ -270,7 +376,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   ),
                   failWriteState = SubTaskCleanupState.COMPLETED,
               )
@@ -304,7 +410,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
           val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
@@ -341,7 +447,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
           val useCase = PostMergeCleanupUseCase(git, NoopCleanupReview(), store)
@@ -368,7 +474,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
 
@@ -392,7 +498,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
           val git =
@@ -417,7 +523,7 @@ class PostMergeCleanupUseCaseTest :
                   WorkflowStoreSnapshot(
                       "store-1",
                       subTasks = listOf(parent),
-                      pullRequests = listOf(pullRequest("pr-parent", "parent-revision")),
+                      pullRequests = listOf(pullRequest("pr-parent", PARENT_FINGERPRINT)),
                   )
               )
           val git =
@@ -445,6 +551,11 @@ class PostMergeCleanupUseCaseTest :
       }
     })
 
+private const val PARENT_SHA = "0123456789abcdef0123456789abcdef01234567"
+private const val PROVIDER_SHA = "1123456789abcdef0123456789abcdef01234567"
+private const val REMOTE_SHA = "2123456789abcdef0123456789abcdef01234567"
+private const val PARENT_FINGERPRINT = "parent-diff-fingerprint"
+
 private fun subTask(
     id: String,
     state: SubTaskState = SubTaskState.DEVELOPMENT,
@@ -461,7 +572,7 @@ private fun subTask(
         pullRequestId = pullRequestId,
     )
 
-private fun pullRequest(id: String, diffIdentity: String) =
+private fun pullRequest(id: String, diffIdentity: String, providerRevision: String? = null) =
     PullRequest(
         id = id,
         subTaskId = "sk-parent",
@@ -470,12 +581,19 @@ private fun pullRequest(id: String, diffIdentity: String) =
         base = "main",
         state = PullRequestState.MERGED,
         reviewRevision = ReviewRevision("review-$id", 1, "body"),
-        changeRevision = ChangeRevision("change-$id", 1, Diff(diffIdentity)),
+        changeRevision =
+            ChangeRevision(
+                "change-$id",
+                1,
+                Diff(diffIdentity),
+                providerRevision = providerRevision,
+            ),
     )
 
 private class CleanupStore(
     var current: WorkflowStoreSnapshot,
     private var failWriteState: SubTaskCleanupState? = null,
+    private var failWriteRevision: Boolean = false,
 ) : WorkflowStorePort {
   override fun snapshot(request: StoreSnapshotRequest) =
       PortResult.Success(StoreSnapshotResponse(current))
@@ -486,6 +604,10 @@ private class CleanupStore(
       )
 
   override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> {
+    if (failWriteRevision && request.snapshot.subTasks.singleOrNull()?.cleanupRevision != null) {
+      failWriteRevision = false
+      return PortResult.Failure(PortError("STORE_DOWN", "store checkpoint write failed"))
+    }
     val newState = request.snapshot.subTasks.singleOrNull()?.cleanupState
     if (failWriteState != null && newState == failWriteState) {
       failWriteState = null
@@ -511,19 +633,23 @@ private class CleanupStore(
 
 private class CleanupGit(
     private val parentDirty: Boolean = false,
-    private val parentRevision: String = "parent-revision",
-    remoteBranches: List<RemoteBranch> =
-        listOf(RemoteBranch("origin", "sk-parent", "parent-revision")),
+    private val parentRevision: String = PARENT_SHA,
+    private val parentFingerprint: String = "ws-sk-parent-fingerprint",
+    remoteBranches: List<RemoteBranch> = listOf(RemoteBranch("origin", "sk-parent", PARENT_SHA)),
     private var failLocalOnce: Boolean = false,
     private var failInspectAfterWorktreeRemoval: Boolean = false,
     private var failRefreshOnce: Boolean = false,
+    private val worktreeMissingInitially: Boolean = false,
     private val afterRefresh: (() -> Unit)? = null,
 ) : GitPort {
   val operations = mutableListOf<String>()
   val remoteExpectedRevisions = mutableMapOf<String, String?>()
   val localExpectedRevisions = mutableMapOf<String, String?>()
   private var remoteBranches = remoteBranches.toMutableList()
-  private val removedWorktrees = mutableSetOf<String>()
+  private val removedWorktrees =
+      mutableSetOf<String>().apply {
+        if (worktreeMissingInitially) add("ws-sk-parent")
+      }
 
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> {
     operations += "fetch:${request.remote}/${request.branch}"
@@ -536,7 +662,10 @@ private class CleanupGit(
   }
 
   override fun inspect(request: GitInspectRequest): PortResult<GitInspectResponse> {
-    if (failInspectAfterWorktreeRemoval && request.workspaceId in removedWorktrees) {
+    if (
+        request.workspaceId in removedWorktrees &&
+            (failInspectAfterWorktreeRemoval || worktreeMissingInitially)
+    ) {
       return PortResult.Failure(PortError("WORKSPACE_NOT_FOUND", "workspace is missing"))
     }
     return PortResult.Success(
@@ -545,7 +674,9 @@ private class CleanupGit(
                 revision =
                     if (request.workspaceId == "ws-sk-parent") parentRevision
                     else "${request.workspaceId}-revision",
-                fingerprint = "${request.workspaceId}-fingerprint",
+                fingerprint =
+                    if (request.workspaceId == "ws-sk-parent") parentFingerprint
+                    else "${request.workspaceId}-fingerprint",
                 dirty = parentDirty && request.workspaceId == "ws-sk-parent",
             )
         )

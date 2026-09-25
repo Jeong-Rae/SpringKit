@@ -152,7 +152,7 @@ class PostMergeCleanupUseCase(
         if (cleanupState == SubTaskCleanupState.COMPLETED) {
           return completedResponse(request.mergedSubTaskId, restacked)
         }
-        var expectedRevision: String? = null
+        var expectedRevision = cleanupRevision(currentSnapshot, candidate)
         if (cleanupState < SubTaskCleanupState.REMOTE_BRANCH_REMOVED) {
           when (val remoteResult = gitPort.listRemoteBranches(ListRemoteBranchesRequest())) {
             is PortResult.Failure ->
@@ -161,7 +161,42 @@ class PostMergeCleanupUseCase(
               val remoteBranch =
                   remoteResult.value.branches.singleOrNull { it.branch == candidate.branch }
               if (remoteBranch == null) {
-                expectedRevision = expectedLocalRevision(currentSnapshot, candidate)
+                val inspection =
+                    inspectLocalArtifact(
+                        currentSnapshot,
+                        candidate,
+                        blocks,
+                        allowMissing = expectedRevision != null,
+                    )
+                if (expectedRevision == null && inspection != null) {
+                  val expectedFingerprint = expectedLocalFingerprint(currentSnapshot, candidate)
+                  if (
+                      expectedFingerprint == null ||
+                          inspection.status.fingerprint != expectedFingerprint
+                  ) {
+                    blocks +=
+                        PostMergeCleanupBlock(
+                            phase = "worktree",
+                            target = inspection.workspaceId,
+                            code = "LOCAL_FINGERPRINT_MISMATCH",
+                            message = "Worktree fingerprint가 저장된 diff identity와 달라 정리하지 않았습니다.",
+                        )
+                  } else {
+                    expectedRevision = inspection.status.revision
+                  }
+                } else if (
+                    expectedRevision != null &&
+                        inspection != null &&
+                        inspection.status.revision != expectedRevision
+                ) {
+                  blocks +=
+                      PostMergeCleanupBlock(
+                          phase = "worktree",
+                          target = inspection.workspaceId,
+                          code = "UNPUSHED_COMMIT",
+                          message = "Worktree HEAD가 저장된 기대 revision과 달라 정리하지 않았습니다.",
+                      )
+                }
                 if (expectedRevision == null) {
                   blocks +=
                       PostMergeCleanupBlock(
@@ -170,15 +205,20 @@ class PostMergeCleanupUseCase(
                           code = "EXPECTED_REVISION_UNAVAILABLE",
                           message = "원격 Branch가 없고 로컬 정리를 검증할 기대 revision을 확인할 수 없습니다.",
                       )
-                } else {
+                } else if (blocks.none { it.phase == "worktree" }) {
                   currentSnapshot =
-                      persistCleanupState(
-                          currentSnapshot,
-                          candidate,
-                          SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
-                          blocks,
-                      ) ?: currentSnapshot
-                  cleanupState = cleanupState(currentSnapshot, candidate)
+                      persistCleanupRevision(currentSnapshot, candidate, expectedRevision, blocks)
+                          ?: currentSnapshot
+                  if (blocks.isEmpty()) {
+                    currentSnapshot =
+                        persistCleanupState(
+                            currentSnapshot,
+                            candidate,
+                            SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
+                            blocks,
+                        ) ?: currentSnapshot
+                    cleanupState = cleanupState(currentSnapshot, candidate)
+                  }
                 }
               } else if (remoteBranch.revision.isNullOrBlank()) {
                 blocks +=
@@ -190,6 +230,21 @@ class PostMergeCleanupUseCase(
                     )
               } else {
                 expectedRevision = remoteBranch.revision
+                val providerRevision = providerRevision(currentSnapshot, candidate)
+                val checkpointRevision =
+                    currentSnapshot.subTasks.firstOrNull { it.id == candidate.id }?.cleanupRevision
+                if (
+                    (providerRevision != null && providerRevision != expectedRevision) ||
+                        (checkpointRevision != null && checkpointRevision != expectedRevision)
+                ) {
+                  blocks +=
+                      PostMergeCleanupBlock(
+                          phase = "remote-branch",
+                          target = candidate.branch,
+                          code = "PROVIDER_REVISION_MISMATCH",
+                          message = "PR provider revision과 원격 Branch revision이 달라 정리하지 않았습니다.",
+                      )
+                }
                 val inspection = inspectLocalArtifact(currentSnapshot, candidate, blocks)
                 if (inspection != null && inspection.status.revision != expectedRevision) {
                   blocks +=
@@ -200,7 +255,16 @@ class PostMergeCleanupUseCase(
                           message = "Worktree HEAD가 원격 Branch revision과 달라 정리하지 않았습니다.",
                       )
                 }
-                if (blocks.none { it.phase == "worktree" }) {
+                if (blocks.none { it.phase == "worktree" || it.phase == "remote-branch" }) {
+                  currentSnapshot =
+                      persistCleanupRevision(currentSnapshot, candidate, expectedRevision, blocks)
+                          ?: currentSnapshot
+                }
+                if (
+                    blocks.none {
+                      it.phase == "store" || it.phase == "worktree" || it.phase == "remote-branch"
+                    }
+                ) {
                   when (
                       val removed =
                           gitPort.removeRemoteBranch(
@@ -231,11 +295,24 @@ class PostMergeCleanupUseCase(
           }
         }
         if (blocks.isEmpty() && cleanupState == SubTaskCleanupState.REMOTE_BRANCH_REMOVED) {
-          if (expectedRevision == null)
-              expectedRevision = expectedLocalRevision(currentSnapshot, candidate)
           val inspection =
               inspectLocalArtifact(currentSnapshot, candidate, blocks, allowMissing = true)
-          if (inspection != null && inspection.status.revision != expectedRevision) {
+          if (expectedRevision == null && inspection != null) {
+            val expectedFingerprint = expectedLocalFingerprint(currentSnapshot, candidate)
+            if (
+                expectedFingerprint == null || inspection.status.fingerprint != expectedFingerprint
+            ) {
+              blocks +=
+                  PostMergeCleanupBlock(
+                      phase = "worktree",
+                      target = inspection.workspaceId,
+                      code = "LOCAL_FINGERPRINT_MISMATCH",
+                      message = "Worktree fingerprint가 저장된 diff identity와 달라 정리하지 않았습니다.",
+                  )
+            } else {
+              expectedRevision = inspection.status.revision
+            }
+          } else if (inspection != null && inspection.status.revision != expectedRevision) {
             blocks +=
                 PostMergeCleanupBlock(
                     phase = "worktree",
@@ -243,6 +320,20 @@ class PostMergeCleanupUseCase(
                     code = "UNPUSHED_COMMIT",
                     message = "Worktree HEAD가 저장된 기대 revision과 달라 정리하지 않았습니다.",
                 )
+          }
+          if (expectedRevision == null && blocks.none { it.phase == "worktree" }) {
+            blocks +=
+                PostMergeCleanupBlock(
+                    phase = "worktree",
+                    target = candidate.branch,
+                    code = "EXPECTED_REVISION_UNAVAILABLE",
+                    message = "Worktree가 없고 정리 재시도에 사용할 Git revision이 저장되어 있지 않습니다.",
+                )
+          }
+          if (expectedRevision != null && blocks.none { it.phase == "worktree" }) {
+            currentSnapshot =
+                persistCleanupRevision(currentSnapshot, candidate, expectedRevision, blocks)
+                    ?: currentSnapshot
           }
           if (blocks.none { it.phase == "worktree" }) {
             if (inspection != null) {
@@ -270,7 +361,7 @@ class PostMergeCleanupUseCase(
           }
         }
         if (blocks.isEmpty() && cleanupState == SubTaskCleanupState.WORKTREE_REMOVED) {
-          val localRevision = expectedRevision ?: expectedLocalRevision(currentSnapshot, candidate)
+          val localRevision = expectedRevision
           if (localRevision == null) {
             blocks +=
                 PostMergeCleanupBlock(
@@ -476,6 +567,67 @@ class PostMergeCleanupUseCase(
     }
   }
 
+  private fun persistCleanupRevision(
+      snapshot: WorkflowStoreSnapshot,
+      subTask: SubTask,
+      revision: String,
+      blocks: MutableList<PostMergeCleanupBlock>,
+  ): WorkflowStoreSnapshot? {
+    val storedSubTask = snapshot.subTasks.firstOrNull { it.id == subTask.id } ?: subTask
+    val existingRevision = storedSubTask.cleanupRevision
+    if (existingRevision == revision) return snapshot
+    if (existingRevision != null) {
+      blocks +=
+          PostMergeCleanupBlock(
+              phase = "store",
+              target = subTask.id,
+              code = "CLEANUP_REVISION_CONFLICT",
+              message = "정리 checkpoint의 Git revision이 기존 저장값과 다릅니다.",
+          )
+      return null
+    }
+    val updatedSubTasks =
+        snapshot.subTasks.map {
+          if (it.id != subTask.id) it else it.copy(cleanupRevision = revision)
+        }
+    val updated = snapshot.copy(subTasks = updatedSubTasks)
+    val transaction =
+        StoreTransactionRequest(
+            transactionId = "tx-cleanup-${subTask.id}-${snapshot.revision}-REVISION",
+            expectedRevision = snapshot.revision,
+            idempotencyKey = "cleanup:${subTask.id}:${snapshot.revision}:REVISION",
+        )
+    when (val begun = storePort.begin(transaction)) {
+      is PortResult.Failure -> {
+        blocks += begun.toCleanupBlock("store", subTask.id)
+        return null
+      }
+      is PortResult.Success -> Unit
+    }
+    val writtenRevision =
+        when (
+            val write =
+                storePort.write(
+                    StoreWriteRequest(transaction.transactionId, snapshot.revision, updated)
+                )
+        ) {
+          is PortResult.Failure -> {
+            storePort.rollback(transaction)
+            blocks += write.toCleanupBlock("store", subTask.id)
+            return null
+          }
+          is PortResult.Success -> write.value.revision
+        }
+    when (val committed = storePort.commit(transaction)) {
+      is PortResult.Failure -> {
+        storePort.rollback(transaction)
+        blocks += committed.toCleanupBlock("store", subTask.id)
+        return null
+      }
+      is PortResult.Success -> return updated.copy(revision = writtenRevision)
+    }
+  }
+
   private fun completedResponse(
       subTaskId: SubTaskId,
       restacked: List<SubTaskId>,
@@ -546,7 +698,27 @@ private fun PortResult.Failure.toCleanupBlock(
 ): PostMergeCleanupBlock =
     PostMergeCleanupBlock(phase, error.target ?: fallbackTarget, error.code, error.message)
 
-private fun expectedLocalRevision(
+private fun cleanupRevision(
+    snapshot: WorkflowStoreSnapshot,
+    subTask: SubTask,
+): String? =
+    snapshot.subTasks.firstOrNull { it.id == subTask.id }?.cleanupRevision
+        ?: providerRevision(snapshot, subTask)
+
+private fun providerRevision(
+    snapshot: WorkflowStoreSnapshot,
+    subTask: SubTask,
+): String? =
+    subTask.pullRequestId
+        ?.let { pullRequestId ->
+          snapshot.pullRequests
+              .firstOrNull { it.id == pullRequestId }
+              ?.changeRevision
+              ?.providerRevision
+        }
+        ?.takeIf { it.isNotBlank() }
+
+private fun expectedLocalFingerprint(
     snapshot: WorkflowStoreSnapshot,
     subTask: SubTask,
 ): String? =

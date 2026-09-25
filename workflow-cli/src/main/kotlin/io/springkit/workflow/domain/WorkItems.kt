@@ -118,12 +118,17 @@ data class SubTask(
     val featureFlagId: FeatureFlagId? = null,
     /** Merge 이후 정리 과정에서 마지막으로 저장한 상태입니다. */
     val cleanupState: SubTaskCleanupState = SubTaskCleanupState.ACTIVE,
+    /** Merge 이후 정리 재시도에서 사용할 검증된 Git commit SHA입니다. */
+    val cleanupRevision: String? = null,
 ) {
   init {
     require(id.isNotBlank()) { "subtask id must not be blank" }
     require(taskId.isNotBlank()) { "subtask task id must not be blank" }
     require(title.isNotBlank()) { "subtask title must not be blank" }
     require(branch == id) { "subtask branch must equal subtask id" }
+    require(cleanupRevision == null || cleanupRevision.isNotBlank()) {
+      "cleanup revision must not be blank"
+    }
     require(exposure != Exposure.FEATURE_FLAG || !featureFlagId.isNullOrBlank()) {
       "feature-flag exposure requires a feature flag id"
     }

@@ -919,6 +919,8 @@ SubTask가 `main`에 통합되면 Workflow는 다음 순서로 상태를 정리�
 
 게시되지 않은 변경이 있거나 후속 Stack 동기화가 끝나지 않으면 Worktree를 자동으로 제거하지 않습니다.
 
+원격 Branch를 제거하기 전에 해당 Branch의 Git commit SHA를 Workflow Store에 저장합니다. 정리를 재시도할 때는 저장한 SHA로 Worktree HEAD와 로컬 Branch를 검증합니다. `diff.identity`는 로컬 코드의 fingerprint이므로 Git commit SHA 대신 사용하지 않습니다. 원격 Branch가 이미 없고 저장한 SHA도 없다면, Worktree의 fingerprint를 저장된 `diff.identity`와 대조한 뒤 Worktree HEAD를 SHA로 저장합니다. 검증할 수 없으면 로컬 정리를 차단합니다.
+
 Cleanup 실패는 성공한 원격 merge를 취소하지 않습니다. 통합 완료와 로컬 정리는 별개의 상태입니다. Cleanup이 끝나지 않아도 다른 독립 SubTask를 시작할 수 있습니다.
 
 ## 배포 후보와 production
