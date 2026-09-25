@@ -1,0 +1,7 @@
+interface:
+  display_name: "Orbis"
+  short_description: "Orchestrate commit-closure coding through native Codex workers"
+  default_prompt: "Use $orbis to orchestrate this coding change through bounded workers."
+
+policy:
+  allow_implicit_invocation: false

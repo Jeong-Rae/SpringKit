@@ -119,7 +119,7 @@ State the responsibility represented by the assignment. Keep it distinct from th
 Point the worker to:
 
 ```text
-.agents/skills/luna-coding-workers/references/worker-report.md
+.agents/skills/orbis/references/worker-report.md
 ```
 
-The worker must also follow `.agents/skills/luna-coding-workers/references/worker-negotiation.md` before writing.
+The worker must also follow `.agents/skills/orbis/references/worker-negotiation.md` before writing.
