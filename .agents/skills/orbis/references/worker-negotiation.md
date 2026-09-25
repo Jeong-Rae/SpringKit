@@ -1,70 +1,39 @@
-# Worker Negotiation Contract
+# Worker Negotiation
 
-A worker must negotiate its assignment before modifying files.
+Negotiate the assignment before modifying files.
 
-## Prepare Before Negotiation
+Read [Worker Negotiation Schema](worker-negotiation.schema.md) for the exact response shape.
 
-Before responding, the worker must:
+## Preparation
+
+Before responding:
 
 - read the complete worker request;
-- read all required material in PREPARATION;
+- read every required item in PREPARATION;
 - read applicable repository instructions;
 - inspect enough relevant code and tests to understand the surrounding flow;
 - confirm the stated ownership boundary.
 
-This phase is read-only.
+Keep this phase read-only.
 
-## Negotiation Response
+## Status Semantics
 
-Return this shape:
+`READY` means the assignment, context, contracts, and ownership are sufficient. READY does not authorize writing. Wait for `PROCEED`.
 
-```text
-WORKER_NEGOTIATION
+`NEED_CONTEXT` means the correct behavior cannot be determined from the available information.
 
-STATUS
-<READY | NEED_CONTEXT | OUT_OF_SCOPE | BLOCKED>
-
-UNDERSTANDING
-<What the worker believes the assignment requires.>
-
-EXPECTED CHANGES
-<Likely implementation areas and observable effects.>
-
-CONTRACTS
-<Interfaces and invariants that must remain true.>
-
-RISKS
-<Known implementation risks, or None.>
-
-QUESTIONS
-<Questions that require orchestrator resolution, or None.>
-```
-
-## Status Meaning
-
-`READY` means the worker believes the assignment, context, and ownership are sufficient. READY is not permission to write. The worker waits for `PROCEED`.
-
-`NEED_CONTEXT` means the worker cannot determine the correct behavior from the available information.
-
-`OUT_OF_SCOPE` means the worker can identify work required for the objective, but that work exceeds the assigned responsibility or ownership.
+`OUT_OF_SCOPE` means required work is understood but exceeds the approved assignment or ownership.
 
 `BLOCKED` means the assignment is understood and in scope, but an execution condition prevents progress.
 
 ## Orchestrator Response
 
-The orchestrator reviews the negotiation response and may:
+The orchestrator may send `PROCEED`, correct an assumption, answer a question, add preparation context, revise ownership, or reassign responsibility.
 
-- send `PROCEED`;
-- correct an assumption;
-- answer a question;
-- add preparation context;
-- revise ownership;
-- reassign the responsibility.
-
-After any material correction to assignment, preparation, ownership, or contract, the worker must return a refreshed negotiation response before writing.
+After a material change to assignment, preparation, ownership, or contracts, return a refreshed negotiation message before writing.
 
 ## Autonomous Execution
 
-After `PROCEED`, the worker may inspect, implement, test, and self-review without asking for routine implementation decisions.
+After `PROCEED`, inspect, implement, test, and self-review autonomously within the approved assignment and ownership.
 
-The worker must remain inside the approved assignment and ownership. If a new fact makes completion require a boundary change, do not silently expand scope. Stop at a safe point and use the terminal report status that describes the condition.
+If completion requires a boundary change, stop at a safe point and return the terminal report status that represents the condition.

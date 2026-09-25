@@ -68,31 +68,42 @@ split it from the current orchestration unit.
 Do not equate a worker boundary with a commit boundary. One logical commit may
 contain several sequential or parallel worker assignments.
 
+## References
+
+For delegation and acceptance decisions, read:
+
+- [Delegation Policy](references/delegation-policy.md)
+- [Acceptance Policy](references/acceptance-policy.md)
+
+For worker interaction semantics and exact message shapes, read:
+
+- [Worker Request](references/worker-request.md)
+- [Worker Request Schema](references/worker-request.schema.md)
+- [Worker Negotiation](references/worker-negotiation.md)
+- [Worker Negotiation Schema](references/worker-negotiation.schema.md)
+- [Worker Report](references/worker-report.md)
+- [Worker Report Schema](references/worker-report.schema.md)
+
 ## Workflow
 
 1. Read the user request and applicable repository instructions.
 2. Define the objective and the logical-commit boundary.
-3. Read [delegation-policy.md](references/delegation-policy.md) and decompose the
-   change into cohesive responsibilities with explicit dependencies.
-4. Before dispatching a worker, read
-   [worker-request.md](references/worker-request.md),
-   [worker-negotiation.md](references/worker-negotiation.md), and
-   [worker-report.md](references/worker-report.md).
-5. Compose the worker request and call `spawn_agent(...)` using the Worker
-   Runtime contract.
-6. Require the worker to perform preparation and negotiation before writing.
-7. Review the negotiation response. Correct assumptions, answer questions,
-   revise ownership, or reassign the task when necessary.
-8. Call `followup_task(..., message="PROCEED")` only when the assignment and
+3. Read the delegation policy and decompose the change into cohesive
+   responsibilities with explicit dependencies.
+4. Read the worker request protocol and schema, compose the request, and call
+   `spawn_agent(...)` using the Worker Runtime contract.
+5. Require the worker to perform preparation and return a message conforming to
+   the worker negotiation schema before writing.
+6. Review the negotiation semantics and response. Correct assumptions, answer
+   questions, revise ownership, or reassign the task when necessary.
+7. Call `followup_task(..., message="PROCEED")` only when the assignment and
    boundaries are acceptable.
-9. Let the worker implement, test, self-review, and report autonomously inside
-   the approved assignment.
-10. Receive the terminal worker report. Read
-    [acceptance-policy.md](references/acceptance-policy.md) and inspect the
-    actual repository state.
-11. Accept the result, send a follow-up, expand the same commit closure, split
+8. Let the worker implement, test, self-review, and return a terminal response
+   conforming to the worker report schema.
+9. Read the acceptance policy and inspect the actual repository state.
+10. Accept the result, send a follow-up, expand the same commit closure, split
     an independent change, or reassign responsibility.
-12. Finish only when the objective is satisfied and the logical commit is
+11. Finish only when the objective is satisfied and the logical commit is
     closed.
 
 ## Control Rules
