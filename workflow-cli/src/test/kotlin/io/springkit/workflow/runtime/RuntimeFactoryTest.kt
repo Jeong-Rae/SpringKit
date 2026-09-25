@@ -378,7 +378,20 @@ class RuntimeFactoryTest :
                   )
               ),
           )
-          Files.writeString(bodyPath, "PR 본문")
+          Files.writeString(
+              bodyPath,
+              listOf(
+                      "해결하려는 문제",
+                      "왜 지금 해결해야 하는가",
+                      "어떻게 해결했는가",
+                      "한계와 트레이드오프",
+                      "기존 기능에 미치는 영향",
+                      "Edge Case와 실패 시나리오",
+                      "검토한 대안과 선택 이유",
+                      "리뷰 포인트",
+                  )
+                  .joinToString("\n\n") { heading -> "## $heading\n설명" },
+          )
           val commandRunner = RuntimeCommandRunner(root)
           val gateway =
               createDefaultRuntime(
@@ -526,6 +539,7 @@ class RuntimeFactoryTest :
 
 private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRunner {
   private var reviewCommentCreated = false
+  private var pullRequestBody = "PR 본문"
 
   override fun run(command: List<String>, workingDirectory: Path): CommandResult =
       when {
@@ -541,8 +555,13 @@ private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRu
             CommandResult(0, "hash-1\n", "")
         command.firstOrNull() == "gh" &&
             command.getOrNull(1) == "pr" &&
-            command.getOrNull(2) == "create" ->
-            CommandResult(0, "https://github.com/example/repository/pull/1\n", "")
+            command.getOrNull(2) == "create" -> {
+          val bodyIndex = command.indexOf("--body")
+          if (bodyIndex >= 0) {
+            pullRequestBody = command.getOrNull(bodyIndex + 1) ?: pullRequestBody
+          }
+          CommandResult(0, "https://github.com/example/repository/pull/1\n", "")
+        }
         command.firstOrNull() == "gh" &&
             command.getOrNull(1) == "pr" &&
             command.getOrNull(2) == "view" ->
@@ -566,6 +585,7 @@ private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRu
       }
 
   private fun pullRequestJson(): String {
+    val bodyJson = kotlinx.serialization.json.JsonPrimitive(pullRequestBody).toString()
     val comments =
         if (reviewCommentCreated) {
           """[{"id":"comment-1","databaseId":123,"node_id":"node-comment-1","body":"[Agent] [R] 런타임에서 확인했습니다.","author":{"login":"agent-1"}}]"""
@@ -573,7 +593,7 @@ private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRu
           "[]"
         }
     return """
-    {"number":1,"title":"[sk-101] 변경","body":"PR 본문","state":"OPEN","isDraft":true,"baseRefName":"main","headRefName":"sk-101","headRefOid":"head-1","comments":$comments,"reviews":[],"statusCheckRollup":[]}
+    {"number":1,"title":"[sk-101] 변경","body":$bodyJson,"state":"OPEN","isDraft":true,"baseRefName":"main","headRefName":"sk-101","headRefOid":"head-1","comments":$comments,"reviews":[],"statusCheckRollup":[]}
     """
         .trimIndent()
   }

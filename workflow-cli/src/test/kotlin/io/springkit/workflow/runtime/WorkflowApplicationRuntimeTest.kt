@@ -74,6 +74,7 @@ class WorkflowApplicationRuntimeTest :
                   id = "change-1",
                   number = 1,
                   diff = Diff(identity = "diff-1"),
+                  providerRevision = MERGE_QUEUE_HEAD_SHA,
               )
           val pullRequest =
               PullRequest(
@@ -92,6 +93,7 @@ class WorkflowApplicationRuntimeTest :
                   subTaskId = subTaskId,
                   pullRequestId = pullRequest.id,
                   changeRevisionId = changeRevision.id,
+                  providerRevision = MERGE_QUEUE_HEAD_SHA,
                   state = MergeQueueState.PASSED,
               )
           Files.writeString(
@@ -584,6 +586,8 @@ private class RuntimeProviderCommandRunner(private val repositoryRoot: Path) : C
   }
 }
 
+private const val MERGE_QUEUE_HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+
 private object RuntimeCommandRunnerForComposition : CommandRunner {
   override fun run(command: List<String>, workingDirectory: Path): CommandResult =
       if (command == listOf("git", "rev-parse", "--show-toplevel")) {
@@ -626,12 +630,12 @@ private class MergeQueueEventCommandRunner(private val root: Path) : CommandRunn
             0,
             if (pullRequestViewCalls >= 3) {
               """
-              {"number":17,"state":"MERGED","headRefName":"sk-101","headRefOid":"diff-1","mergeCommit":{"oid":"main-1"}}
+              {"number":17,"state":"MERGED","headRefName":"sk-101","headRefOid":"$MERGE_QUEUE_HEAD_SHA","mergeCommit":{"oid":"main-1"}}
               """
                   .trimIndent()
             } else {
               """
-              {"number":17,"state":"OPEN","mergeStateStatus":"CLEAN","headRefName":"sk-101","headRefOid":"diff-1","statusCheckRollup":[],"isInMergeQueue":false}
+              {"number":17,"state":"OPEN","mergeStateStatus":"CLEAN","headRefName":"sk-101","headRefOid":"$MERGE_QUEUE_HEAD_SHA","statusCheckRollup":[],"isInMergeQueue":false}
               """
                   .trimIndent()
             },
