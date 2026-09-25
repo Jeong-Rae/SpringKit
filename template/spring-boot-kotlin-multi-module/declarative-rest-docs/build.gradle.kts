@@ -94,7 +94,7 @@ val springTest =
       classpath = springTestSourceSet.runtimeClasspath
       outputs.dir(springFixtureSnippets)
       systemProperty(
-          "springkit.spring-fixture.snippets",
+          "springkit.restdocs.snippets",
           springFixtureSnippets.get().asFile.absolutePath,
       )
       dependsOn(cleanSpringFixtureSnippets)
