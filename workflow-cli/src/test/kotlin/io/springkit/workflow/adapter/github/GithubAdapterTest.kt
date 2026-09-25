@@ -205,6 +205,7 @@ class GithubAdapterTest :
                       body = "[R] 외부에서 확인이 필요합니다",
                       path = "src/Main.kt",
                       line = 8,
+                      authorAssociation = "COLLABORATOR",
                   ),
                   "",
               )
@@ -223,6 +224,10 @@ class GithubAdapterTest :
           pullRequest.changeRevision.diff.identity shouldBe "abc123"
           pullRequest.reviewRevision.threads.single().id shouldBe "PRRT_external"
           pullRequest.reviewRevision.threads.single().comments.single().id shouldBe "PRRC_external"
+          runner.commands[1]
+              .tokens
+              .first { it.startsWith("query=") }
+              .contains("authorAssociation") shouldBe true
         }
 
         test("persisted diff identity와 GitHub head OID가 다르면, 새 change revision을 반환합니다") {
@@ -628,7 +633,7 @@ class GithubAdapterTest :
                   0,
                   issueCommentsPullRequest(
                       "[R] 확인이 필요합니다",
-                      "[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->",
+                      "[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->\n\n<!-- springkit:issue-comment-reply:reply-1 -->",
                   ),
                   "",
               )
@@ -662,8 +667,99 @@ class GithubAdapterTest :
                   "POST",
                   "repos/{owner}/{repo}/issues/17/comments",
                   "-f",
-                  "body=[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->",
+                  "body=[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->\n\n<!-- springkit:issue-comment-reply:reply-1 -->",
               )
+        }
+
+        test("답글 게시 뒤 재조회가 실패하고 같은 답글을 재시도하면, 기존 답글을 재사용합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, issueCommentsPullRequest("[R] 확인이 필요합니다"), ""))
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          runner.enqueue(CommandResult(0, "{\"id\":502,\"node_id\":\"IC_reply\"}", ""))
+          runner.enqueue(CommandResult(1, "", "temporary fetch failure"))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[R] 확인이 필요합니다",
+                      "[R] 답변\n\n<!-- springkit:issue-comment-root:IC_root -->\n\n<!-- springkit:issue-comment-reply:reply-1 -->",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val current = issueCommentPullRequest()
+          val adapter =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+          val request =
+              ReplyReviewThreadRequest(
+                  pullRequestId = "17",
+                  reviewRevisionId = "rv-1",
+                  threadId = "github-issue-comment-IC_root",
+                  comment = ReviewComment("reply-1", Actor("agent-1", ActorKind.AGENT), "답변"),
+              )
+
+          adapter.reply(request).shouldBeTypeOf<PortResult.Failure>()
+          val retry = adapter.reply(request)
+
+          val response =
+              retry
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.ReplyReviewThreadResponse>()
+          response.reviewRevision.threads.single().comments.map { it.body } shouldBe
+              listOf("[R] 확인이 필요합니다", "[R] 답변")
+          runner.commands.count {
+            it.tokens.firstOrNull() == "gh" &&
+                it.tokens.getOrNull(1) == "api" &&
+                it.tokens.getOrNull(3) == "POST"
+          } shouldBe 1
+        }
+
+        test("설정된 사람 작성자가 본문에 Agent 접두사를 넣어도, agent 해결을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[Agent] [R] 사람이 남긴 확인 요청",
+                      authorLogin = "Human-1",
+                      authorAssociation = "UNKNOWN",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          var persistedPullRequest: PullRequest? = null
+          val adapter =
+              GithubReviewAdapter(
+                  Path.of("/repo"),
+                  runner,
+                  currentPullRequest = { persistedPullRequest },
+                  humanActorIds = setOf("human-1"),
+              )
+
+          val pullRequest =
+              adapter
+                  .get(GetReviewRequest("17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+          persistedPullRequest = pullRequest
+
+          val result =
+              adapter.resolve(
+                  ResolveReviewThreadRequest(
+                      pullRequestId = "17",
+                      reviewRevisionId = pullRequest.reviewRevision.id,
+                      threadId = "github-issue-comment-IC_root",
+                      actor = Actor("agent-1", ActorKind.AGENT),
+                  )
+              )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "HUMAN_REQUIRED"
+          runner.commands.size shouldBe 2
         }
 
         test("일반 pull request 코멘트를 해결하면, 숨은 marker로 해결 상태를 복원합니다") {
@@ -1013,14 +1109,19 @@ private fun issueCommentPullRequest(): PullRequest =
                 ),
         )
 
-private fun issueCommentsPullRequest(rootBody: String, replyBody: String? = null): String {
+private fun issueCommentsPullRequest(
+    rootBody: String,
+    replyBody: String? = null,
+    authorLogin: String = "agent-1",
+    authorAssociation: String = "BOT",
+): String {
   fun encode(value: String): String =
       value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
   val comments =
       listOfNotNull(
-              """{"id":"IC_root","node_id":"IC_root","body":"${encode(rootBody)}","author":{"login":"agent-1"},"createdAt":"2026-09-22T00:00:00Z"}""",
+              """{"id":"IC_root","node_id":"IC_root","body":"${encode(rootBody)}","author":{"login":"$authorLogin"},"authorAssociation":"$authorAssociation","createdAt":"2026-09-22T00:00:00Z"}""",
               replyBody?.let {
-                """{"id":"IC_reply","node_id":"IC_reply","databaseId":502,"body":"${encode(it)}","author":{"login":"agent-1"},"createdAt":"2026-09-22T00:01:00Z"}"""
+                """{"id":"IC_reply","node_id":"IC_reply","databaseId":502,"body":"${encode(it)}","author":{"login":"agent-1"},"authorAssociation":"BOT","createdAt":"2026-09-22T00:01:00Z"}"""
               },
           )
           .joinToString(",")
@@ -1034,10 +1135,11 @@ private fun reviewThreadsResponse(
     body: String,
     path: String,
     line: Int,
+    authorAssociation: String = "COLLABORATOR",
     resolved: Boolean = false,
 ): String =
     """
-    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"$threadId","isResolved":$resolved,"comments":{"nodes":[{"id":"$commentId","databaseId":$databaseId,"body":"$body","author":{"login":"reviewer-1","name":"Reviewer"},"createdAt":"2026-09-22T00:00:00Z","path":"$path","line":$line}]} }],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]
+    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"$threadId","isResolved":$resolved,"comments":{"nodes":[{"id":"$commentId","databaseId":$databaseId,"body":"$body","author":{"login":"reviewer-1","name":"Reviewer"},"authorAssociation":"$authorAssociation","createdAt":"2026-09-22T00:00:00Z","path":"$path","line":$line}]} }],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]
     """
         .trimIndent()
 

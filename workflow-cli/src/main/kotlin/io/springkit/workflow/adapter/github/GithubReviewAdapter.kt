@@ -75,6 +75,7 @@ data class GithubComment(
     @SerialName("node_id") val nodeId: String? = null,
     val body: String = "",
     val author: GithubUser? = null,
+    val authorAssociation: String? = null,
     val createdAt: String? = null,
     val path: String? = null,
     val line: Int? = null,
@@ -156,10 +157,14 @@ data class GithubReview(
 class GithubReviewAdapter(
     private val repositoryRoot: Path,
     private val commandRunner: CommandRunner = LocalCommandRunner(),
-    private val pullRequestResolver: GithubPullRequestResolver = DefaultGithubPullRequestResolver,
+    private val pullRequestResolver: GithubPullRequestResolver? = null,
     private val currentPullRequest: (String) -> PullRequest? = { null },
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
+    private val humanActorIds: Set<String> = configuredHumanActorIds(),
 ) : ReviewPort {
+  private val effectivePullRequestResolver: GithubPullRequestResolver =
+      pullRequestResolver ?: DefaultGithubPullRequestResolver(humanActorIds)
+
   override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> {
     val created =
         execute(
@@ -195,7 +200,7 @@ class GithubReviewAdapter(
         fetch(reference)
             ?: return failure("GITHUB_RESPONSE_INVALID", "생성된 pull request를 조회할 수 없습니다.", reference)
     val pullRequest =
-        pullRequestResolver.resolve(provider, null).let {
+        effectivePullRequestResolver.resolve(provider, null).let {
           it.copy(
               id = provider.number.toString(),
               subTaskId = request.subTaskId,
@@ -499,26 +504,45 @@ class GithubReviewAdapter(
               body =
                   request.comment.body
                       .withReviewLevel(currentThread.level)
-                      .withIssueCommentRoot(rootCommentId),
+                      .withIssueCommentRoot(rootCommentId)
+                      .withIssueCommentReplyId(request.comment.id),
           )
+      val previousReply =
+          provider.comments.firstOrNull { it.issueCommentReplyId() == request.comment.id }
+      if (previousReply != null && previousReply.issueCommentRootId() != rootCommentId) {
+        return failure(
+            "GITHUB_REPLY_IDEMPOTENCY_CONFLICT",
+            "같은 답글 식별자가 다른 GitHub 코멘트에서 사용되었습니다.",
+            request.comment.id,
+        )
+      }
+      if (previousReply != null && previousReply.body != markedComment.body) {
+        return failure(
+            "GITHUB_REPLY_IDEMPOTENCY_CONFLICT",
+            "같은 답글 식별자에 다른 본문이 이미 게시되었습니다.",
+            request.comment.id,
+        )
+      }
       if (
-          execute(
-              listOf(
-                  "gh",
-                  "api",
-                  "--method",
-                  "POST",
-                  "repos/{owner}/{repo}/issues/${request.pullRequestId}/comments",
-                  "-f",
-                  "body=${markedComment.body}",
-              ),
-              request.pullRequestId,
-          ) == null
+          previousReply == null &&
+              execute(
+                  listOf(
+                      "gh",
+                      "api",
+                      "--method",
+                      "POST",
+                      "repos/{owner}/{repo}/issues/${request.pullRequestId}/comments",
+                      "-f",
+                      "body=${markedComment.body}",
+                  ),
+                  request.pullRequestId,
+              ) == null
       ) {
         return failure("GITHUB_REPLY_FAILED", "GitHub 일반 코멘트에 답변할 수 없습니다.", request.threadId)
       }
       val updatedProvider =
-          fetch(request.pullRequestId, includeReviewThreads = true)
+          (if (previousReply != null) provider
+          else fetch(request.pullRequestId, includeReviewThreads = true))
               ?: return failure(
                   "GITHUB_REPLY_FAILED",
                   "답변된 GitHub 일반 코멘트를 조회할 수 없습니다.",
@@ -885,7 +909,16 @@ class GithubReviewAdapter(
                   id
                   isResolved
                   comments(first:100) {
-                    nodes { id databaseId body author { login name } createdAt path line }
+                    nodes {
+                      id
+                      databaseId
+                      body
+                      author { login name }
+                      authorAssociation
+                      createdAt
+                      path
+                      line
+                    }
                   }
                 }
                 pageInfo { hasNextPage endCursor }
@@ -1031,7 +1064,7 @@ class GithubReviewAdapter(
   private var lastFailure: PortResult.Failure? = null
 
   private fun resolve(provider: GithubPullRequest): PullRequest =
-      pullRequestResolver.resolve(provider, currentPullRequest(provider.number.toString()))
+      effectivePullRequestResolver.resolve(provider, currentPullRequest(provider.number.toString()))
 
   private fun <T> failure(code: String, message: String, target: String): PortResult<T> =
       PortResult.Failure(lastFailure?.error ?: PortError(code, message, target = target)).also {
@@ -1068,7 +1101,8 @@ class GithubReviewAdapter(
   }
 }
 
-private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
+private class DefaultGithubPullRequestResolver(private val humanActorIds: Set<String>) :
+    GithubPullRequestResolver {
   override fun resolve(provider: GithubPullRequest, previous: PullRequest?): PullRequest {
     if (previous != null) {
       val providerBody = provider.body.takeIf { it.isNotBlank() }
@@ -1079,8 +1113,8 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
               (previousProviderRevision?.let { it != providerRevision }
                   ?: (providerRevision != previous.changeRevision.diff.identity))
       val bodyChanged = providerBody != null && providerBody != previous.body
-      val providerThreads = provider.toDomainThreads()
-      val issueThreads = provider.comments.toIssueCommentThreads()
+      val providerThreads = provider.toDomainThreads(humanActorIds)
+      val issueThreads = provider.comments.toIssueCommentThreads(humanActorIds)
       val reviewThreads =
           when {
             provider.reviewThreadsLoaded -> providerThreads
@@ -1132,7 +1166,7 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
     val changeId = "github-change-$number"
     val reviewId = "github-review-$number"
     val diffIdentity = provider.headRefOid ?: "github-diff-$number"
-    val reviewThreads = provider.toDomainThreads()
+    val reviewThreads = provider.toDomainThreads(humanActorIds)
     return PullRequest(
         id = number,
         subTaskId = provider.headRefName.ifBlank { "github-$number" },
@@ -1155,17 +1189,19 @@ private object DefaultGithubPullRequestResolver : GithubPullRequestResolver {
       }
 }
 
-private fun GithubPullRequest.toDomainThreads(): List<ReviewThread> =
-    comments.toIssueCommentThreads() + reviewThreads.toDomainThreads()
+private fun GithubPullRequest.toDomainThreads(humanActorIds: Set<String>): List<ReviewThread> =
+    comments.toIssueCommentThreads(humanActorIds) + reviewThreads.toDomainThreads(humanActorIds)
 
-private fun List<GithubComment>.toIssueCommentThreads(): List<ReviewThread> {
+private fun List<GithubComment>.toIssueCommentThreads(
+    humanActorIds: Set<String>
+): List<ReviewThread> {
   val roots = filterNot { it.isWorkflowReply() }
   val repliesByRoot = filter { it.isWorkflowReply() }.groupByNotNull { it.issueCommentRootId() }
   return roots.mapNotNull { providerComment ->
-    val rootComment = providerComment.toDomainComment() ?: return@mapNotNull null
+    val rootComment = providerComment.toDomainComment(humanActorIds) ?: return@mapNotNull null
     val replies =
         repliesByRoot[issueCommentRootReference(providerComment)].orEmpty().mapNotNull {
-          it.toDomainComment()
+          it.toDomainComment(humanActorIds)
         }
     val comments = listOf(rootComment) + replies
     ReviewThread(
@@ -1182,37 +1218,35 @@ private fun List<GithubComment>.toIssueCommentThreads(): List<ReviewThread> {
   }
 }
 
-private fun List<GithubReviewThread>.toDomainThreads(): List<ReviewThread> =
-    mapNotNull { providerThread ->
-      val comments = providerThread.comments.mapNotNull { it.toDomainComment() }
-      if (providerThread.id.isBlank() || comments.isEmpty()) {
-        return@mapNotNull null
-      }
-      ReviewThread(
-          id = providerThread.id,
-          level = comments.firstNotNullOfOrNull { it.body.reviewLevel() } ?: ReviewLevel.C,
-          comments = comments,
-          state =
-              if (providerThread.isResolved) {
-                io.springkit.workflow.domain.ThreadState.RESOLVED
-              } else {
-                io.springkit.workflow.domain.ThreadState.OPEN
-              },
-      )
-    }
+private fun List<GithubReviewThread>.toDomainThreads(
+    humanActorIds: Set<String>
+): List<ReviewThread> = mapNotNull { providerThread ->
+  val comments = providerThread.comments.mapNotNull { it.toDomainComment(humanActorIds) }
+  if (providerThread.id.isBlank() || comments.isEmpty()) {
+    return@mapNotNull null
+  }
+  ReviewThread(
+      id = providerThread.id,
+      level = comments.firstNotNullOfOrNull { it.body.reviewLevel() } ?: ReviewLevel.C,
+      comments = comments,
+      state =
+          if (providerThread.isResolved) {
+            io.springkit.workflow.domain.ThreadState.RESOLVED
+          } else {
+            io.springkit.workflow.domain.ThreadState.OPEN
+          },
+  )
+}
 
-private fun GithubComment.toDomainComment(): io.springkit.workflow.domain.ReviewComment? {
+private fun GithubComment.toDomainComment(
+    humanActorIds: Set<String>
+): io.springkit.workflow.domain.ReviewComment? {
   val commentId = id.ifBlank { nodeId.orEmpty() }
   if (commentId.isBlank() || body.isBlank()) {
     return null
   }
   val actorId = author?.login?.ifBlank { null } ?: "github-comment-$commentId"
-  val actorKind =
-      if (body.trimStart().startsWith("[Agent]")) {
-        io.springkit.workflow.domain.ActorKind.AGENT
-      } else {
-        io.springkit.workflow.domain.ActorKind.HUMAN
-      }
+  val actorKind = classifyCommentAuthor(author, authorAssociation, humanActorIds)
   val createdAt =
       createdAt?.let { value ->
         runCatching { Instant.parse(value).toEpochMilli() }.getOrDefault(0)
@@ -1226,6 +1260,27 @@ private fun GithubComment.toDomainComment(): io.springkit.workflow.domain.Review
       line = line,
   )
 }
+
+/**
+ * GitHub 작성자 메타데이터와 사람 계정 허용 목록으로 주석 작성자를 분류합니다. 사람 연관 관계가 있거나 허용 목록에 든 계정은 HUMAN으로, 그 외 계정은 AGENT로
+ * 처리합니다. 본문 표시 문구는 분류에 사용하지 않습니다.
+ */
+private fun classifyCommentAuthor(
+    author: GithubUser?,
+    authorAssociation: String?,
+    humanActorIds: Set<String> = emptySet(),
+): io.springkit.workflow.domain.ActorKind =
+    when {
+      author?.login?.let { login -> humanActorIds.any { it.equals(login, ignoreCase = true) } } ==
+          true -> io.springkit.workflow.domain.ActorKind.HUMAN
+      authorAssociation.equals("BOT", ignoreCase = true) ->
+          io.springkit.workflow.domain.ActorKind.AGENT
+      author?.login?.endsWith("[bot]", ignoreCase = true) == true ->
+          io.springkit.workflow.domain.ActorKind.AGENT
+      authorAssociation?.uppercase()?.let(HUMAN_AUTHOR_ASSOCIATIONS::contains) == true ->
+          io.springkit.workflow.domain.ActorKind.HUMAN
+      else -> io.springkit.workflow.domain.ActorKind.AGENT
+    }
 
 private fun String.reviewLevel(): ReviewLevel? {
   val withoutAgent = replaceFirst(Regex("^\\s*\\[Agent]\\s*"), "")
@@ -1261,13 +1316,22 @@ private fun issueCommentRootReference(comment: GithubComment): String =
 private fun String.withIssueCommentRoot(rootReference: String): String =
     "$this\n\n<!-- springkit:issue-comment-root:$rootReference -->"
 
+private fun String.withIssueCommentReplyId(commentId: String): String =
+    "$this\n\n<!-- springkit:issue-comment-reply:$commentId -->"
+
+private fun GithubComment.issueCommentReplyId(): String? =
+    ISSUE_COMMENT_REPLY_MARKER.find(body)?.groupValues?.getOrNull(1)
+
 private fun String.withResolvedIssueCommentMarker(): String =
     if (isResolvedIssueComment()) this else "$this\n\n$ISSUE_COMMENT_RESOLVED_MARKER"
 
 private fun String.isResolvedIssueComment(): Boolean = ISSUE_COMMENT_RESOLVED_MARKER in this
 
 private fun String.withoutWorkflowMarkers(): String =
-    replace(ISSUE_COMMENT_ROOT_MARKER, "").replace(ISSUE_COMMENT_RESOLVED_MARKER, "").trim()
+    replace(ISSUE_COMMENT_ROOT_MARKER, "")
+        .replace(ISSUE_COMMENT_REPLY_MARKER, "")
+        .replace(ISSUE_COMMENT_RESOLVED_MARKER, "")
+        .trim()
 
 private fun <T, K> Iterable<T>.groupByNotNull(keySelector: (T) -> K?): Map<K, List<T>> =
     mapNotNull { value -> keySelector(value)?.let { it to value } }
@@ -1275,4 +1339,25 @@ private fun <T, K> Iterable<T>.groupByNotNull(keySelector: (T) -> K?): Map<K, Li
 
 private val ISSUE_COMMENT_ROOT_MARKER = Regex("<!--\\s*springkit:issue-comment-root:(.*?)\\s*-->")
 
+private val ISSUE_COMMENT_REPLY_MARKER = Regex("<!--\\s*springkit:issue-comment-reply:(.*?)\\s*-->")
+
+private val HUMAN_AUTHOR_ASSOCIATIONS =
+    setOf(
+        "OWNER",
+        "MEMBER",
+        "COLLABORATOR",
+        "CONTRIBUTOR",
+        "FIRST_TIMER",
+        "FIRST_TIME_CONTRIBUTOR",
+        "MANNEQUIN",
+        "NONE",
+    )
+
 private const val ISSUE_COMMENT_RESOLVED_MARKER = "<!-- springkit:issue-comment-resolved -->"
+
+private fun configuredHumanActorIds(): Set<String> =
+    (System.getenv("WORKFLOW_HUMAN_ACTORS") ?: System.getenv("WORKFLOW_HUMAN_ACTOR_IDS"))
+        ?.split(',')
+        ?.map(String::trim)
+        ?.filter(String::isNotBlank)
+        ?.toSet() ?: emptySet()
