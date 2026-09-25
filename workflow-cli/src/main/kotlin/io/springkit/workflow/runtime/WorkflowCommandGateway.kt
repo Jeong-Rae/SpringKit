@@ -39,6 +39,10 @@ import io.springkit.workflow.domain.ReviewLevel
 import io.springkit.workflow.domain.Risk
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.WorkspacePath
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.HexFormat
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -378,16 +382,22 @@ class WorkflowCommandGateway(
             context.currentWorkspacePath().flatMapResult { workspacePath ->
               body(workspacePath, request.body, request.bodyFile).flatMap { text ->
                 context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
-                  commentId(request.thread).flatMapResult { id ->
-                    review.reply(
-                        ReplyReviewThreadRequest(
-                            current.pullRequestId,
-                            request.revision,
-                            request.thread,
-                            ReviewComment(id, actor, text),
-                        )
-                    )
-                  }
+                  val id =
+                      deterministicReplyCommentId(
+                          current.pullRequestId,
+                          request.revision,
+                          request.thread,
+                          actor.id,
+                          text,
+                      )
+                  review.reply(
+                      ReplyReviewThreadRequest(
+                          current.pullRequestId,
+                          request.revision,
+                          request.thread,
+                          ReviewComment(id, actor, text),
+                      )
+                  )
                 }
               }
             }
@@ -404,6 +414,23 @@ class WorkflowCommandGateway(
               put("change", changeJson(data.change))
             }
           }
+
+  /** 같은 답글 요청을 다시 실행해도 같은 외부 comment ID를 사용합니다. */
+  private fun deterministicReplyCommentId(
+      pullRequestId: String,
+      reviewRevisionId: String,
+      threadId: String,
+      actorId: String,
+      body: String,
+  ): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    listOf(pullRequestId, reviewRevisionId, threadId, actorId, body).forEach { value ->
+      val bytes = value.toByteArray(StandardCharsets.UTF_8)
+      digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+      digest.update(bytes)
+    }
+    return "reply-" + HexFormat.of().formatHex(digest.digest())
+  }
 
   private fun reviewResolve(request: WorkflowCommandRequest.ReviewResolve) =
       context
