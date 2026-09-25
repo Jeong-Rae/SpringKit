@@ -83,28 +83,33 @@ class MergeQueueLifecycleUseCaseTest :
           mergeQueue.requests.size shouldBe 1
         }
 
-        test("저장된 provider revision이 없고 head가 diff identity와 같으면, revision을 보완하고 통합합니다") {
+        test("Store queue revision이 없어도 PR provider revision이 있으면 보완하고 통합합니다") {
+          val legacyQueue = queue().copy(providerRevision = null)
+          val store = LifecycleStore(snapshot().copy(mergeQueue = listOf(legacyQueue)))
+          val mergeQueue = LifecycleMergeQueuePort(queue().copy(providerRevision = "head-1"))
+
+          val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Success<MergeQueueLifecycleResponse>>()
+          store.writes.first().mergeQueue.single().providerRevision shouldBe "head-1"
+          mergeQueue.requests.size shouldBe 1
+        }
+
+        test("PR provider revision이 없으면 diff identity가 head처럼 보여도 통합하지 않습니다") {
           val legacyPullRequest =
               pullRequest()
                   .copy(
                       changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
                   )
-          val legacyQueue = queue().copy(providerRevision = null)
-          val store =
-              LifecycleStore(
-                  snapshot()
-                      .copy(
-                          pullRequests = listOf(legacyPullRequest),
-                          mergeQueue = listOf(legacyQueue),
-                      )
-              )
+          val store = LifecycleStore(snapshot().copy(pullRequests = listOf(legacyPullRequest)))
           val mergeQueue = LifecycleMergeQueuePort(queue().copy(providerRevision = "diff-1"))
 
           val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
 
-          result.shouldBeInstanceOf<WorkflowResult.Success<MergeQueueLifecycleResponse>>()
-          store.writes.first().mergeQueue.single().providerRevision shouldBe "diff-1"
-          mergeQueue.requests.size shouldBe 1
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.STALE_REVISION
+          mergeQueue.requests shouldBe emptyList()
+          store.written shouldBe null
         }
 
         test("provider head가 바뀌면, queue 시점 revision을 보존하고 squash merge를 막습니다") {
@@ -121,9 +126,20 @@ class MergeQueueLifecycleUseCaseTest :
               io.springkit.workflow.domain.FailureCode.STALE_REVISION
           retry.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
               io.springkit.workflow.domain.FailureCode.STALE_REVISION
-          store.writes.single().mergeQueue.single().state shouldBe MergeQueueState.PASSED
-          store.writes.single().mergeQueue.single().providerRevision shouldBe "head-1"
-          store.current.mergeQueue.single().providerRevision shouldBe "head-1"
+          store.writes shouldBe emptyList()
+          mergeQueue.requests shouldBe emptyList()
+        }
+
+        test("provider head revision이 없으면, Store를 갱신하지 않고 통합을 차단합니다") {
+          val store = LifecycleStore(snapshot())
+          val mergeQueue =
+              LifecycleMergeQueuePort(queue(MergeQueueState.PASSED).copy(providerRevision = null))
+
+          val result = useCase(store, mergeQueue).merge(MergeQueueLifecycleRequest("sk-101"))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.STALE_REVISION
+          store.writes shouldBe emptyList()
           mergeQueue.requests shouldBe emptyList()
         }
 

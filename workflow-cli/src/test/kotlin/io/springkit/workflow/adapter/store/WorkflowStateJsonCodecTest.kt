@@ -37,6 +37,7 @@ import io.springkit.workflow.domain.Risk
 import io.springkit.workflow.domain.StartRequestKey
 import io.springkit.workflow.domain.StartRequestRecord
 import io.springkit.workflow.domain.SubTask
+import io.springkit.workflow.domain.SubTaskCleanupState
 import io.springkit.workflow.domain.SubTaskState
 import io.springkit.workflow.domain.SyncConflict
 import io.springkit.workflow.domain.Task
@@ -72,6 +73,25 @@ class WorkflowStateJsonCodecTest :
 
           WorkflowStateJsonCodec.encodeToString(state) shouldBe
               WorkflowStateJsonCodec.encodeToString(state)
+        }
+      }
+
+      context("Merge 이후 정리 SHA checkpoint를 JSON으로 저장하면") {
+        test("다시 읽은 상태에 검증된 Git SHA가 보존됩니다") {
+          val base = fixture()
+          val subTask =
+              base.subTasks
+                  .getValue("sk-101")
+                  .copy(
+                      state = SubTaskState.MERGED,
+                      cleanupState = SubTaskCleanupState.REMOTE_BRANCH_REMOVED,
+                      cleanupRevision = "0123456789abcdef0123456789abcdef01234567",
+                  )
+          val state = base.copy(subTasks = base.subTasks + (subTask.id to subTask))
+
+          val decoded = WorkflowStateJsonCodec.decode(WorkflowStateJsonCodec.encodeToString(state))
+
+          decoded.subTasks.getValue(subTask.id).cleanupRevision shouldBe subTask.cleanupRevision
         }
       }
 

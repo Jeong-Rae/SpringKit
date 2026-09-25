@@ -221,7 +221,8 @@ class GithubAdapterTest :
           pullRequest.id shouldBe "17"
           pullRequest.subTaskId shouldBe "sk-27"
           pullRequest.state.name shouldBe "APPROVED"
-          pullRequest.changeRevision.diff.identity shouldBe "abc123"
+          pullRequest.changeRevision.diff.identity shouldBe "github-untracked-pr-17"
+          pullRequest.changeRevision.providerRevision shouldBe "abc123"
           pullRequest.reviewRevision.threads.single().id shouldBe "PRRT_external"
           pullRequest.reviewRevision.threads.single().comments.single().id shouldBe "PRRC_external"
           runner.commands[1]
@@ -230,7 +231,7 @@ class GithubAdapterTest :
               .contains("authorAssociation") shouldBe true
         }
 
-        test("persisted diff identity와 GitHub head OID가 다르면, 새 change revision을 반환합니다") {
+        test("저장된 provider SHA와 GitHub head OID가 다르면, 새 change revision을 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(
               CommandResult(
@@ -256,9 +257,37 @@ class GithubAdapterTest :
                   .pullRequest
           current.changeRevision.number shouldBe 2
           current.changeRevision.id shouldBe "github-change-17-2"
-          current.changeRevision.diff.identity shouldBe "diff-1"
+          current.changeRevision.diff.identity shouldBe "local-fingerprint"
           current.changeRevision.providerRevision shouldBe "diff-2"
           current.ci.name shouldBe "PENDING"
+        }
+
+        test("provider SHA가 저장되지 않았으면 diff identity가 같아도 코드 변경을 보수적으로 판단합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"diff-1"}""",
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          val legacy =
+              pullRequest()
+                  .copy(
+                      changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
+                  )
+
+          val current =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { legacy })
+                  .get(GetReviewRequest("17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+
+          current.changeRevision.number shouldBe 2
+          current.changeRevision.providerRevision shouldBe "diff-1"
         }
 
         test("GitHub review thread가 바뀌면, 새 review revision을 반환합니다") {
@@ -1183,7 +1212,8 @@ private fun pullRequest(): PullRequest =
         base = "main",
         state = PullRequestState.REVIEW,
         reviewRevision = ReviewRevision("rv-1", 1, "설명"),
-        changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
+        changeRevision =
+            ChangeRevision("cr-1", 1, Diff("local-fingerprint"), providerRevision = "diff-1"),
     )
 
 private fun remoteThreadPullRequest(): PullRequest =

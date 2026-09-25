@@ -213,8 +213,14 @@ class MergeQueueLifecycleUseCase(
       )
     }
     val currentProviderRevision = providerQueue.providerRevision
-    val expectedProviderRevision =
-        pullRequest.changeRevision.providerRevision ?: pullRequest.changeRevision.diff.identity
+    val expectedProviderRevision = pullRequest.changeRevision.providerRevision
+    if (expectedProviderRevision == null) {
+      return failurePort(
+          FailureCode.STALE_REVISION,
+          "pull request provider revision is missing",
+          subTask.id,
+      )
+    }
     if (
         currentProviderRevision == null ||
             currentProviderRevision != expectedProviderRevision ||
@@ -373,6 +379,14 @@ class MergeQueueLifecycleUseCase(
                 "pull request was not found",
                 pullRequestId,
             )
+    val expectedProviderRevision = pullRequest.changeRevision.providerRevision
+    if (expectedProviderRevision == null) {
+      return failure(
+          FailureCode.STALE_REVISION,
+          "pull request provider revision is missing",
+          pullRequest.id,
+      )
+    }
     val queue =
         snapshot.mergeQueue.firstOrNull {
           if (request.mergeQueueEntryId != null) it.id == request.mergeQueueEntryId
@@ -407,8 +421,13 @@ class MergeQueueLifecycleUseCase(
     if (providerQueue.changeRevisionId != expectedChangeRevisionId) {
       return failure(FailureCode.STALE_REVISION, "change revision is stale", subTask.id)
     }
-    val expectedProviderRevision =
-        pullRequest.changeRevision.providerRevision ?: pullRequest.changeRevision.diff.identity
+    if (providerQueue.providerRevision != expectedProviderRevision) {
+      return failure(
+          FailureCode.STALE_REVISION,
+          "merge queue provider revision is missing or stale",
+          subTask.id,
+      )
+    }
     val refreshedEntry =
         providerQueue.copy(
             id = queue.id,

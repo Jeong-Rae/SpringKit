@@ -299,6 +299,8 @@ Review는 다음 두 revision을 구분합니다.
 
 `change_revision`의 `diff.identity`는 로컬 코드의 fingerprint입니다. `provider_revision`은 GitHub head SHA처럼 외부 provider가 코드 상태를 식별하는 revision입니다. CLI는 CI 조회와 코드 위치 Review 요청에 `provider_revision`을 사용하며, 이를 `diff.identity`와 같은 값으로 취급하지 않습니다. 같은 `provider_revision`을 다시 동기화할 때는 `change_revision`과 기존 승인을 유지합니다.
 
+Workflow Store에 등록되지 않은 외부 PR은 로컬 fingerprint를 알 수 없으므로 조회 결과의 `diff.identity`에 `github-untracked-pr-<번호>` 식별자를 사용합니다. 이 값은 코드 fingerprint가 아니며 승인이나 동기화에 사용하지 않습니다. GitHub head SHA는 `provider_revision`에만 보관합니다.
+
 PR 본문이나 thread만 바뀌면 `review_revision`만 변경할 수 있습니다. 실제 diff가 바뀌면 두 revision을 모두 변경하고 기존 코드 승인을 무효화합니다. 기계적인 restack 뒤 diff가 같으면 `change_revision`과 승인을 유지할 수 있습니다.
 
 ## `workflow start`

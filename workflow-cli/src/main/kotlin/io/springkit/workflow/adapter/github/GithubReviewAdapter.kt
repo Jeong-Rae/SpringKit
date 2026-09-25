@@ -1219,10 +1219,7 @@ private class DefaultGithubPullRequestResolver(private val humanActorIds: Set<St
       val providerBody = provider.body.takeIf { it.isNotBlank() }
       val providerRevision = provider.headRefOid?.takeIf { it.isNotBlank() }
       val previousProviderRevision = previous.changeRevision.providerRevision
-      val codeChanged =
-          providerRevision != null &&
-              (previousProviderRevision?.let { it != providerRevision }
-                  ?: (providerRevision != previous.changeRevision.diff.identity))
+      val codeChanged = providerRevision != null && previousProviderRevision != providerRevision
       val bodyChanged = providerBody != null && providerBody != previous.body
       val providerThreads = provider.toDomainThreads(humanActorIds)
       val issueThreads = provider.comments.toIssueCommentThreads(humanActorIds)
@@ -1276,7 +1273,7 @@ private class DefaultGithubPullRequestResolver(private val humanActorIds: Set<St
     val title = provider.title.ifBlank { "GitHub pull request $number" }
     val changeId = "github-change-$number"
     val reviewId = "github-review-$number"
-    val diffIdentity = provider.headRefOid ?: "github-diff-$number"
+    val diffIdentity = "github-untracked-pr-$number"
     val reviewThreads = provider.toDomainThreads(humanActorIds)
     return PullRequest(
         id = number,
@@ -1286,7 +1283,13 @@ private class DefaultGithubPullRequestResolver(private val humanActorIds: Set<St
         base = provider.baseRefName.ifBlank { "main" },
         state = providerState(provider),
         reviewRevision = ReviewRevision(reviewId, 1, body, threads = reviewThreads),
-        changeRevision = ChangeRevision(changeId, 1, Diff(diffIdentity)),
+        changeRevision =
+            ChangeRevision(
+                changeId,
+                1,
+                Diff(diffIdentity),
+                providerRevision = provider.headRefOid?.takeIf { it.isNotBlank() },
+            ),
     )
   }
 

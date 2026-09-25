@@ -228,7 +228,7 @@ class StatusUseCaseTest :
       }
 
       context("CI 상태를 조회하는 상황에서") {
-        test("Review의 CI 상태를 조회하면, 변경 revision의 diff identity를 CI 공급자에 전달합니다") {
+        test("Review의 provider revision이 없으면, diff identity를 쓰지 않고 CI를 미완료로 둡니다") {
           val ciPort = RecordingCiPort()
           val result =
               StatusUseCase(
@@ -237,7 +237,7 @@ class StatusUseCaseTest :
                               reviewSnapshot(
                                   SubTaskState.REVIEW,
                                   PullRequestState.REVIEW,
-                                  CiStatus.PENDING,
+                                  CiStatus.PASSED,
                               )
                           ),
                       ciPort = ciPort,
@@ -248,8 +248,8 @@ class StatusUseCaseTest :
               .shouldBeInstanceOf<WorkflowResult.Success<StatusResponse>>()
               .data
               .review
-              ?.ci shouldBe CiStatus.PASSED
-          ciPort.revision shouldBe "diff-1"
+              ?.ci shouldBe CiStatus.PENDING
+          ciPort.revision shouldBe null
         }
 
         test("provider revision이 있으면, CI 공급자에 provider revision을 전달합니다") {
