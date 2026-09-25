@@ -15,6 +15,7 @@ import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
+import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
 import io.springkit.workflow.domain.ReviewOpened
@@ -40,7 +41,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = "문제와 해결 방법",
+                          body = validReviewBody(),
                           risk = Risk.NORMAL,
                           exposure = Exposure.UNCHANGED,
                       )
@@ -72,7 +73,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = "문제와 해결 방법",
+                          body = validReviewBody(),
                           risk = Risk.NORMAL,
                           exposure = Exposure.UNCHANGED,
                       )
@@ -94,7 +95,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = "문제와 해결 방법",
+                          body = validReviewBody(),
                           risk = Risk.HIGH,
                           exposure = Exposure.FEATURE_FLAG,
                           featureFlagId = "flag-v2",
@@ -116,7 +117,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = "문제와 해결 방법",
+                          body = validReviewBody(),
                           risk = Risk.NORMAL,
                           exposure = Exposure.UNCHANGED,
                       )
@@ -127,6 +128,94 @@ class ReviewLifecycleUseCasesTest :
           response.pullRequest.aiReview shouldBe AiReviewStatus.PENDING
           fixture.ai.starts shouldBe 0
           fixture.store.current.pullRequests.single().aiReview shouldBe AiReviewStatus.PENDING
+        }
+      }
+
+      context("PR 본문 템플릿을 검증하는 상황에서") {
+        test("필수 제목이 없으면, 포트를 호출하지 않고 본문 오류를 SubTask 대상으로 반환합니다") {
+          val fixture = ReviewLifecycleFixture()
+
+          val result =
+              fixture
+                  .useCases()
+                  .open(
+                      OpenReviewLifecycleRequest(
+                          workspaceId = "ws-101",
+                          subTaskId = "sk-101",
+                          body = "# 해결하려는 문제\n내용",
+                          risk = Risk.NORMAL,
+                          exposure = Exposure.UNCHANGED,
+                      )
+                  )
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
+          failure.code shouldBe FailureCode.INVALID_ARGUMENT
+          failure.message shouldBe "PR 본문에 '왜 지금 해결해야 하는가' 제목이 없습니다."
+          failure.blockedBy.single().target shouldBe "sk-101"
+          fixture.git.inspectCalls shouldBe 0
+          fixture.publish.requests shouldBe emptyList()
+          fixture.review.getCalls shouldBe 0
+          fixture.review.openRequests shouldBe emptyList()
+          fixture.store.snapshotCalls shouldBe 0
+          fixture.store.beginCalls shouldBe 0
+        }
+
+        test("필수 제목의 순서가 잘못되면, 포트를 호출하지 않고 제목 순서 오류를 반환합니다") {
+          val fixture = ReviewLifecycleFixture()
+          val body =
+              validReviewBody()
+                  .replace("## 해결하려는 문제", "## 임시 제목")
+                  .replace("## 왜 지금 해결해야 하는가", "## 해결하려는 문제")
+                  .replace("## 임시 제목", "## 왜 지금 해결해야 하는가")
+
+          val result =
+              fixture
+                  .useCases()
+                  .open(
+                      OpenReviewLifecycleRequest(
+                          workspaceId = "ws-101",
+                          subTaskId = "sk-101",
+                          body = body,
+                          risk = Risk.NORMAL,
+                          exposure = Exposure.UNCHANGED,
+                      )
+                  )
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
+          failure.code shouldBe FailureCode.INVALID_ARGUMENT
+          failure.message shouldBe
+              "PR 본문 제목 순서가 잘못되었습니다. '해결하려는 문제' 다음에 '왜 지금 해결해야 하는가' 제목이 있어야 합니다."
+          failure.blockedBy.single().target shouldBe "sk-101"
+          fixture.git.inspectCalls shouldBe 0
+          fixture.review.openRequests shouldBe emptyList()
+          fixture.store.snapshotCalls shouldBe 0
+        }
+
+        test("본문 갱신의 제목이 누락되면, Review 조회 전에 PR 대상으로 오류를 반환합니다") {
+          val fixture = ReviewLifecycleFixture(withPullRequest = true)
+
+          val result =
+              fixture
+                  .useCases()
+                  .update(
+                      UpdateReviewLifecycleRequest(
+                          workspaceId = "ws-101",
+                          subTaskId = "sk-101",
+                          pullRequestId = "pr-101",
+                          expectedReviewRevisionId = "rv-1",
+                          body = "갱신된 본문",
+                      )
+                  )
+
+          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
+          failure.code shouldBe FailureCode.INVALID_ARGUMENT
+          failure.message shouldBe "PR 본문에 '해결하려는 문제' 제목이 없습니다."
+          failure.blockedBy.single().target shouldBe "pr-101"
+          fixture.git.inspectCalls shouldBe 0
+          fixture.review.getCalls shouldBe 0
+          fixture.review.updateCalls shouldBe 0
+          fixture.store.snapshotCalls shouldBe 0
+          fixture.store.beginCalls shouldBe 0
         }
       }
 
@@ -143,7 +232,7 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           pullRequestId = "pr-101",
                           expectedReviewRevisionId = "rv-1",
-                          body = "갱신된 본문",
+                          body = validReviewBody(),
                       )
                   )
 
@@ -212,7 +301,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = "문제와 해결 방법",
+                          body = validReviewBody(),
                           risk = Risk.NORMAL,
                           exposure = Exposure.UNCHANGED,
                       )
@@ -266,6 +355,19 @@ private class ReviewLifecycleFixture(
 private fun testWorkspace(): Workspace =
     Workspace("ws-101", "sk-101", WorkspacePath("workspace/sk-101"), "sk-101")
 
+private fun validReviewBody(): String =
+    listOf(
+            "해결하려는 문제",
+            "왜 지금 해결해야 하는가",
+            "어떻게 해결했는가",
+            "한계와 트레이드오프",
+            "기존 기능에 미치는 영향",
+            "Edge Case와 실패 시나리오",
+            "검토한 대안과 선택 이유",
+            "리뷰 포인트",
+        )
+        .joinToString("\n\n") { heading -> "## $heading\n설명" }
+
 private fun snapshot(withPullRequest: Boolean): WorkflowStoreSnapshot =
     WorkflowStoreSnapshot(
         revision = "0",
@@ -318,10 +420,10 @@ private fun pullRequest(): PullRequest =
         id = "pr-101",
         subTaskId = "sk-101",
         title = "[sk-101] 변경 설명",
-        body = "기존 본문",
+        body = validReviewBody(),
         base = "main",
         state = PullRequestState.DRAFT,
-        reviewRevision = reviewRevision("rv-1", "기존 본문"),
+        reviewRevision = reviewRevision("rv-1", validReviewBody()),
         changeRevision = ChangeRevision("cr-1", 1, Diff("fingerprint-1")),
         approval =
             Approval("approval-1", Actor("human-1", ActorKind.HUMAN), "cr-1", "fingerprint-1"),
@@ -346,8 +448,12 @@ private class LifecycleFakeWorkspacePort : WorkspacePort {
 
 private class LifecycleFakeGitPort(private val fingerprint: String, private val revision: String) :
     GitPort {
+  var inspectCalls = 0
+
   override fun inspect(request: GitInspectRequest): PortResult<GitInspectResponse> =
-      PortResult.Success(GitInspectResponse(GitStatus(revision, fingerprint, dirty = true)))
+      PortResult.Success(GitInspectResponse(GitStatus(revision, fingerprint, dirty = true))).also {
+        inspectCalls += 1
+      }
 
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> =
       unsupported()
@@ -383,6 +489,8 @@ private class LifecycleFakeGitPublishPort : GitPublishPort {
 
 private class LifecycleFakeReviewPort : ReviewPort {
   val openRequests = mutableListOf<OpenReviewRequest>()
+  var getCalls = 0
+  var updateCalls = 0
   private var current = pullRequest()
 
   override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> {
@@ -405,9 +513,10 @@ private class LifecycleFakeReviewPort : ReviewPort {
   }
 
   override fun get(request: GetReviewRequest): PortResult<GetReviewResponse> =
-      PortResult.Success(GetReviewResponse(current))
+      PortResult.Success(GetReviewResponse(current)).also { getCalls += 1 }
 
   override fun update(request: UpdateReviewRequest): PortResult<UpdateReviewResponse> {
+    updateCalls += 1
     current =
         current.copy(
             body = request.body ?: current.body,
@@ -479,19 +588,23 @@ private class LifecycleFakeFeatureFlagPort(private val safeDefault: Boolean) : F
 private class LifecycleFakeStore(initial: WorkflowStoreSnapshot) : WorkflowStorePort {
   var current = initial
   var rollbackCalls = 0
+  var snapshotCalls = 0
+  var beginCalls = 0
   private var pending: WorkflowStoreSnapshot? = null
 
   override fun snapshot(request: StoreSnapshotRequest): PortResult<StoreSnapshotResponse> =
-      PortResult.Success(StoreSnapshotResponse(current))
+      PortResult.Success(StoreSnapshotResponse(current)).also { snapshotCalls += 1 }
 
-  override fun begin(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> =
-      PortResult.Success(
-          StoreTransactionResponse(
-              request.transactionId,
-              StoreTransactionState.OPEN,
-              current.revision,
-          )
-      )
+  override fun begin(request: StoreTransactionRequest): PortResult<StoreTransactionResponse> {
+    beginCalls += 1
+    return PortResult.Success(
+        StoreTransactionResponse(
+            request.transactionId,
+            StoreTransactionState.OPEN,
+            current.revision,
+        )
+    )
+  }
 
   override fun write(request: StoreWriteRequest): PortResult<StoreWriteResponse> {
     pending = request.snapshot.copy(revision = (current.revision.toLong() + 1).toString())

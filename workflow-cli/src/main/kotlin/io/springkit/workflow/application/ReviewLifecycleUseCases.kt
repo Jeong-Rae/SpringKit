@@ -18,6 +18,7 @@ import io.springkit.workflow.domain.FeatureFlagId
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
+import io.springkit.workflow.domain.ReviewBodyTemplate
 import io.springkit.workflow.domain.ReviewChanged
 import io.springkit.workflow.domain.ReviewOpened
 import io.springkit.workflow.domain.ReviewRevision
@@ -109,6 +110,9 @@ class ReviewLifecycleUseCases(
 ) {
   /** 현재 Worktree를 검증하고 Draft PR과 초기 게이트를 게시합니다. */
   fun open(request: OpenReviewLifecycleRequest): WorkflowResult<OpenReviewLifecycleResponse> {
+    ReviewBodyTemplate.validate(request.body)?.let { message ->
+      return failure(FailureCode.INVALID_ARGUMENT, message, request.subTaskId)
+    }
     val context = loadContext(request.workspaceId, request.subTaskId)
     if (context is ContextFailure) return context.failure
     context as ContextSuccess
@@ -309,6 +313,11 @@ class ReviewLifecycleUseCases(
 
   /** 현재 Worktree의 코드 또는 PR 본문을 같은 Review에 다시 게시합니다. */
   fun update(request: UpdateReviewLifecycleRequest): WorkflowResult<UpdateReviewLifecycleResponse> {
+    request.body?.let { body ->
+      ReviewBodyTemplate.validate(body)?.let { message ->
+        return failure(FailureCode.INVALID_ARGUMENT, message, request.pullRequestId)
+      }
+    }
     val context = loadContext(request.workspaceId, request.subTaskId)
     if (context is ContextFailure) return context.failure
     context as ContextSuccess
