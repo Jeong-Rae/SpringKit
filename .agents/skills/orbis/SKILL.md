@@ -2,10 +2,10 @@
 name: orbis
 description: >-
   하나의 커밋 클로저 안에서 오케스트레이터와 범위가 정해진 Worker를 조율해
-  코딩 작업을 자동화한다. 코딩 요청을 Worker 책임으로 나누고 실행 전에 범위와
-  계약을 확인한 뒤 native Codex subagent에 구현을 위임한다. 오케스트레이터가
-  실제 저장소 상태를 검증하고 커밋 클로저가 완결될 때까지 후속 작업을
-  조정할 때 사용한다.
+  코딩 작업을 자동화한다. 코딩 요청을 Worker 책임으로 나누고 실행 전에 필요한
+  질문과 답변으로 범위와 계약을 확인한 뒤 native Codex subagent에 구현을
+  위임한다. 오케스트레이터가 실제 저장소 상태를 검증하고 커밋 클로저가
+  완결될 때까지 후속 작업을 조정할 때 사용한다.
 ---
 
 # Orbis
@@ -30,7 +30,7 @@ spawn_agent(
 
 모든 Worker는 `gpt-6-luna`와 `xhigh` reasoning을 사용하며 오케스트레이터의 대화 기록을 상속하지 않습니다.
 
-오케스트레이터가 교섭 결과를 승인하면 같은 Worker에 `PROCEED`를 보냅니다.
+Worker가 질문을 모두 해소하고 `READY`를 반환하면 오케스트레이터가 같은 Worker에 `PROCEED`를 보냅니다.
 
 ```text
 followup_task(
@@ -69,8 +69,8 @@ Worker 메시지의 의미와 형식은 다음 문서를 따릅니다.
 
 - [Worker 요청](references/worker-request.md)
 - [Worker 요청 스키마](references/worker-request.schema.md)
-- [Worker 교섭](references/worker-negotiation.md)
-- [Worker 교섭 스키마](references/worker-negotiation.schema.md)
+- [Worker 질의](references/worker-question.md)
+- [Worker 질의 스키마](references/worker-question.schema.md)
 - [Worker 보고](references/worker-report.md)
 - [Worker 보고 스키마](references/worker-report.schema.md)
 
@@ -82,13 +82,14 @@ Worker 메시지의 의미와 형식은 다음 문서를 따릅니다.
 2. 목표와 논리적 커밋 경계를 정합니다.
 3. 위임 정책을 읽고 변경을 책임 단위로 나눈 뒤 의존 관계를 정합니다.
 4. Worker 요청 문서와 스키마로 요청을 작성하고 Worker 실행 계약에 따라 `spawn_agent(...)`를 호출합니다.
-5. Worker는 파일을 수정하기 전에 준비를 마치고 Worker 교섭 스키마에 맞춰 응답합니다.
-6. 교섭 결과를 검토합니다. 잘못된 가정을 고치고, 필요한 정보를 제공하고, 소유권을 조정하거나 책임을 다시 배정합니다.
-7. 책임과 경계가 확정되면 `followup_task(..., message="PROCEED")`를 호출합니다.
-8. Worker는 승인된 책임 안에서 구현, 테스트, 자체 검토를 마치고 Worker 보고 스키마에 맞춰 종료 응답을 반환합니다.
-9. 수용 정책을 읽고 실제 저장소 상태를 확인합니다.
-10. 결과를 수용하거나, 같은 책임의 후속 작업을 요청하거나, 같은 커밋 클로저를 확장하거나, 독립 변경을 분리하거나, 책임을 다시 배정합니다.
-11. 목표를 충족하고 커밋 클로저를 완결한 뒤 작업을 끝냅니다.
+5. Worker는 저장소와 준비 자료를 읽고 스스로 확정하기 어려운 사항이 있으면 Worker 질의 스키마에 맞춰 질문합니다.
+6. 오케스트레이터는 질문에 답하고 잘못된 이해를 고치며 필요한 정보와 판단을 제공합니다.
+7. Worker는 질문이 남아 있으면 다시 `QUESTION`을 반환하고, 모두 해소되면 `READY`를 반환합니다.
+8. Worker가 `READY`를 반환하면 `followup_task(..., message="PROCEED")`를 호출합니다.
+9. Worker는 승인된 책임 안에서 구현, 테스트, 자체 검토를 마치고 Worker 보고 스키마에 맞춰 종료 응답을 반환합니다.
+10. 수용 정책을 읽고 실제 저장소 상태를 확인합니다.
+11. 결과를 수용하거나, 같은 책임의 후속 작업을 요청하거나, 같은 커밋 클로저를 확장하거나, 독립 변경을 분리하거나, 책임을 다시 배정합니다.
+12. 목표를 충족하고 커밋 클로저를 완결한 뒤 작업을 끝냅니다.
 
 ## 제어 규칙
 

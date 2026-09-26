@@ -30,7 +30,7 @@ WORKING BRANCH
 
 PREPARATION
 
-Read before negotiation:
+Read before questions:
 - <authoritative repository path>
 
 Known facts:
@@ -57,8 +57,8 @@ ROLE
 REPORT CONTRACT
 
 Follow:
+- .agents/skills/orbis/references/worker-question.md
+- .agents/skills/orbis/references/worker-question.schema.md
 - .agents/skills/orbis/references/worker-report.md
 - .agents/skills/orbis/references/worker-report.schema.md
-- .agents/skills/orbis/references/worker-negotiation.md
-- .agents/skills/orbis/references/worker-negotiation.schema.md
 ```

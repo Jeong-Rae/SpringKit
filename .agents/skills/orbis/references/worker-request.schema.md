@@ -30,8 +30,8 @@ WORKING BRANCH
 
 PREPARATION
 
-Read before negotiation:
-- <교섭 전에 읽을 저장소 기준 자료>
+Read before questions:
+- <질문 전에 읽을 저장소 기준 자료>
 
 Known facts:
 - <이미 확인하거나 확정한 사실>
@@ -57,8 +57,8 @@ ROLE
 REPORT CONTRACT
 
 Follow:
+- .agents/skills/orbis/references/worker-question.md
+- .agents/skills/orbis/references/worker-question.schema.md
 - .agents/skills/orbis/references/worker-report.md
 - .agents/skills/orbis/references/worker-report.schema.md
-- .agents/skills/orbis/references/worker-negotiation.md
-- .agents/skills/orbis/references/worker-negotiation.schema.md
 ```

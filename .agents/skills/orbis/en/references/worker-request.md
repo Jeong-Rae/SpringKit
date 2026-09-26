@@ -12,7 +12,7 @@ State the behavior change that the whole logical commit must achieve. Several wo
 
 ### TASK ID
 
-Give the assignment a stable identifier that the orchestrator can correlate with negotiation, follow-up, and final report messages.
+Give the assignment a stable identifier that correlates worker questions, follow-up work, and the final report.
 
 ### ASSIGNMENT
 
@@ -28,7 +28,7 @@ State the current branch. The worker may inspect the branch but must follow the 
 
 ### PREPARATION
 
-List authoritative repository material and established facts the worker must understand before negotiation.
+List authoritative repository material and established facts the worker must read before asking questions.
 
 Prefer direct repository references. Use known facts only for decisions already established by the orchestrator.
 
@@ -42,4 +42,4 @@ State the semantic responsibility represented by the assignment. Keep it distinc
 
 ### REPORT CONTRACT
 
-Point the worker to the worker report protocol and schema.
+Point the worker to the worker question and final-report protocols and schemas.
