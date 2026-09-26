@@ -340,6 +340,13 @@ class GithubReviewAdapter(
                       "코드 줄 코멘트에 필요한 현재 변경 revision이 없습니다.",
                       request.pullRequestId,
                   )
+          val providerRevision =
+              current.changeRevision.providerRevision
+                  ?: return failure(
+                      "GITHUB_REVIEW_REVISION_UNAVAILABLE",
+                      "코드 줄 코멘트에 필요한 GitHub head SHA가 없습니다.",
+                      request.pullRequestId,
+                  )
           listOf(
               "gh",
               "api",
@@ -349,7 +356,7 @@ class GithubReviewAdapter(
               "-f",
               "body=$body",
               "-f",
-              "commit_id=${current.changeRevision.providerRevision ?: current.changeRevision.diff.identity}",
+              "commit_id=$providerRevision",
               "-f",
               "path=${request.comment.path}",
               "-F",

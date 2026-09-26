@@ -560,6 +560,33 @@ class GithubAdapterTest :
               .shouldBeTypeOf<AddReviewCommentResponse>()
               .threadId shouldBe "PRRT_remote"
         }
+
+        test("provider SHA가 없으면 코드 줄 코멘트를 GitHub에 게시하지 않습니다") {
+          val runner = RecordingCommandRunner()
+          val current =
+              pullRequest()
+                  .copy(
+                      changeRevision = ChangeRevision("cr-1", 1, Diff("local-fingerprint")),
+                  )
+          val comment =
+              ReviewComment(
+                  "comment-1",
+                  Actor("agent-1", ActorKind.AGENT),
+                  "[Agent] 수정이 필요합니다",
+                  path = "src/Main.kt",
+                  line = 12,
+              )
+
+          val result =
+              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
+                  .comment(
+                      AddReviewCommentRequest("17", "rv-1", comment.author, ReviewLevel.R, comment)
+                  )
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe
+              "GITHUB_REVIEW_REVISION_UNAVAILABLE"
+          runner.commands shouldBe emptyList()
+        }
       }
 
       context("GitHub review thread를 답변하거나 해결하면") {
