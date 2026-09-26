@@ -3,6 +3,8 @@ package io.springkit.workflow.adapter.git
 import io.springkit.workflow.application.AbortRestackRequest
 import io.springkit.workflow.application.AbortRestackResponse
 import io.springkit.workflow.application.ChangeReceipt
+import io.springkit.workflow.application.CheckRemotePushRequest
+import io.springkit.workflow.application.CheckRemotePushResponse
 import io.springkit.workflow.application.ContinueRestackRequest
 import io.springkit.workflow.application.ContinueRestackResponse
 import io.springkit.workflow.application.CreateBranchRequest
@@ -117,6 +119,71 @@ class LocalGitAdapter(
             )
         )
     )
+  }
+
+  override fun checkRemotePush(
+      request: CheckRemotePushRequest
+  ): PortResult<CheckRemotePushResponse> {
+    validateRemote(request.remote)?.let {
+      return it
+    }
+    validateBranch(request.branch)?.let {
+      return it
+    }
+    val path = resolveWorkspace(request.workspaceId) ?: return workspaceFailure(request.workspaceId)
+    /** 원격 ref는 변경하지 않으며, 로컬 pre-push hook은 실행하지 않습니다. */
+    val result =
+        run(
+            listOf(
+                "git",
+                "push",
+                "--dry-run",
+                "--porcelain",
+                "--no-verify",
+                request.remote,
+                "HEAD:refs/heads/${request.branch}",
+            ),
+            path,
+        )
+    return when (result) {
+      is Execution.Success -> {
+        val matches =
+            result.result.stdout
+                .lineSequence()
+                .mapNotNull { line ->
+                  val statusAndFields = pushPorcelainFields(line) ?: return@mapNotNull null
+                  val (status, fields) = statusAndFields
+                  val refspec = fields.substringBefore('\t').substringBefore(' ')
+                  val target = refspec.substringAfter(':', missingDelimiterValue = "")
+                  if (target != "refs/heads/${request.branch}") return@mapNotNull null
+                  status
+                }
+                .toList()
+        val publishable = matches.size == 1 && matches.single() in setOf(' ', '*', '+', '=')
+        PortResult.Success(
+            CheckRemotePushResponse(
+                publishable = publishable,
+                message =
+                    if (publishable) null else "git push --dry-run 결과에 대상 Branch의 게시 가능 상태가 없습니다.",
+            )
+        )
+      }
+      is Execution.Failure ->
+          PortResult.Success(
+              CheckRemotePushResponse(publishable = false, message = result.result.error.message)
+          )
+    }
+  }
+
+  private fun pushPorcelainFields(line: String): Pair<Char, String>? {
+    val statusCharacters = setOf(' ', '!', '*', '+', '-', '=')
+    return when {
+      line.length >= 3 && line[0] in statusCharacters && line[1].isWhitespace() ->
+          line[0] to line.substring(2).trimStart(' ', '\t')
+      line.length >= 4 && line[0] == ' ' && line[1] in statusCharacters && line[2].isWhitespace() ->
+          line[1] to line.substring(3).trimStart(' ', '\t')
+      else -> null
+    }
   }
 
   override fun createBranch(request: CreateBranchRequest): PortResult<CreateBranchResponse> {

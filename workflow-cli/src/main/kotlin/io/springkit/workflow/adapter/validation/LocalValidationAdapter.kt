@@ -16,6 +16,7 @@ import io.springkit.workflow.domain.CheckSummary
 import io.springkit.workflow.domain.Validation
 import io.springkit.workflow.domain.ValidationStatus
 import io.springkit.workflow.domain.WorkspaceId
+import java.nio.file.Files
 import java.nio.file.Path
 
 /** 로컬 Gradle 명령에 검증 실행을 위임하는 어댑터입니다. */
@@ -44,7 +45,8 @@ class LocalValidationAdapter(
         )
       }
 
-      val execution = runCatching { commandRunner.run(command, workspacePath) }
+      val commandWorkspace = commandWorkingDirectory(command, workspacePath)
+      val execution = runCatching { commandRunner.run(command, commandWorkspace) }
       validations +=
           execution.fold(
               onSuccess = { required.toValidation(it, request.revision) },
@@ -86,6 +88,13 @@ class LocalValidationAdapter(
         null
       }
 
+  private fun commandWorkingDirectory(command: List<String>, workspacePath: Path): Path {
+    if (command.firstOrNull() != "./gradlew") return workspacePath
+    if (Files.isRegularFile(workspacePath.resolve("gradlew"))) return workspacePath
+    val moduleWrapper = workspacePath.resolve("workflow-cli").resolve("gradlew")
+    return if (Files.isRegularFile(moduleWrapper)) moduleWrapper.parent else workspacePath
+  }
+
   private fun workspacePathFailure(request: RunValidationRequest): PortResult.Failure =
       PortResult.Failure(
           PortError(
@@ -125,6 +134,7 @@ class LocalValidationAdapter(
   companion object {
     val DEFAULT_COMMANDS: Map<String, List<String>> =
         mapOf(
+            "static" to listOf("./gradlew", "spotlessCheck"),
             "test" to listOf("./gradlew", "test"),
             "build" to listOf("./gradlew", "build"),
         )

@@ -62,6 +62,7 @@ data class CheckResponse(
     val validations: List<Validation>,
     val summary: CheckSummary,
     val publishable: Boolean,
+    val publishabilityMessage: String? = null,
 )
 
 typealias StartCommand = StartRequest
@@ -666,6 +667,12 @@ class CheckUseCase(
                 ValidationStatus.PENDING,
                 revision = initialStatus.revision,
             ),
+            Validation(
+                "static",
+                "static",
+                ValidationStatus.PENDING,
+                revision = initialStatus.revision,
+            ),
         )
     val run =
         when (
@@ -686,6 +693,22 @@ class CheckUseCase(
     if (!summary.appliesTo(initialStatus.fingerprint, initialStatus.revision)) {
       return stale("validation result does not apply to the inspected content", workspace.id)
     }
+    val missingRequiredChecks = required.filterNot { validation ->
+      summary.checks.any { check ->
+        check.id == validation.id &&
+            check.fingerprint == initialStatus.fingerprint &&
+            check.revision == initialStatus.revision
+      }
+    }
+    if (missingRequiredChecks.isNotEmpty()) {
+      return WorkflowResult.Failure(
+          io.springkit.workflow.domain.FailureData(
+              FailureCode.INVARIANT_VIOLATION,
+              "validation result omitted required checks or returned checks for different content: " +
+                  missingRequiredChecks.joinToString(", ") { it.name },
+          ),
+      )
+    }
     val finalStatus =
         when (val result = gitPort.inspect(GitInspectRequest(workspace.id))) {
           is PortResult.Success -> result.value.status
@@ -697,8 +720,28 @@ class CheckUseCase(
     ) {
       return stale("worktree changed while validation was running", workspace.id)
     }
-    val publishable =
+    val contentValidated =
         summary.passed && summary.appliesTo(finalStatus.fingerprint, finalStatus.revision)
+    var publishabilityMessage: String? = null
+    val remotePublishable =
+        if (contentValidated) {
+          when (
+              val result =
+                  gitPort.checkRemotePush(CheckRemotePushRequest(workspace.id, subTask.branch))
+          ) {
+            is PortResult.Success -> {
+              publishabilityMessage = result.value.message
+              result.value.publishable
+            }
+            is PortResult.Failure -> {
+              publishabilityMessage = result.error.message
+              false
+            }
+          }
+        } else {
+          false
+        }
+    val publishable = contentValidated && remotePublishable
     val transaction =
         StoreTransactionRequest(
             transactionId = "tx-check-${workspace.id}-${finalStatus.fingerprint}",
@@ -737,6 +780,7 @@ class CheckUseCase(
             validations = run.validations,
             summary = summary,
             publishable = publishable,
+            publishabilityMessage = publishabilityMessage,
         ),
         next =
             if (publishable)

@@ -14,15 +14,17 @@ import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.domain.CheckResult
 import io.springkit.workflow.domain.Validation
 import io.springkit.workflow.domain.ValidationStatus
+import java.nio.file.Files
 import java.nio.file.Path
 
 class LocalValidationAdapterTest :
     FunSpec({
       context("필수 검증을 실행하면") {
-        test("test와 build를 입력 순서대로 실행하면, 각 결과와 CheckSummary를 반환합니다") {
+        test("test, build, static 검증을 입력 순서대로 실행하면, 각 결과와 CheckSummary를 반환합니다") {
           val runner = RecordingCommandRunner()
           runner.enqueue(CommandResult(0, "test passed", ""))
           runner.enqueue(CommandResult(0, "build passed", ""))
+          runner.enqueue(CommandResult(0, "spotless check passed", ""))
           val workspace = Path.of("/workspace/sk-101")
           val adapter = LocalValidationAdapter({ workspaceId -> workspace }, commandRunner = runner)
           val request = request()
@@ -32,13 +34,14 @@ class LocalValidationAdapterTest :
               result.shouldBeTypeOf<io.springkit.workflow.application.RunValidationResponse>()
 
           response.validations.map { it.status } shouldBe
-              listOf(ValidationStatus.PASSED, ValidationStatus.PASSED)
+              listOf(ValidationStatus.PASSED, ValidationStatus.PASSED, ValidationStatus.PASSED)
           response.summary?.checks?.map { it.status } shouldBe
-              listOf(ValidationStatus.PASSED, ValidationStatus.PASSED)
+              listOf(ValidationStatus.PASSED, ValidationStatus.PASSED, ValidationStatus.PASSED)
           runner.invocations shouldContainExactly
               listOf(
                   Invocation(listOf("./gradlew", "test"), workspace),
                   Invocation(listOf("./gradlew", "build"), workspace),
+                  Invocation(listOf("./gradlew", "spotlessCheck"), workspace),
               )
         }
 
@@ -58,6 +61,53 @@ class LocalValidationAdapterTest :
 
           runner.invocations shouldBe
               listOf(Invocation(listOf("./gradlew", "test", "--tests", "A B"), workspace))
+        }
+
+        test("repository root에 wrapper가 없으면 workflow-cli wrapper 경로를 사용합니다") {
+          val workspace = Files.createTempDirectory("workflow-validation").toAbsolutePath()
+          val moduleDirectory = Files.createDirectories(workspace.resolve("workflow-cli"))
+          Files.createFile(moduleDirectory.resolve("gradlew"))
+          try {
+            val runner = RecordingCommandRunner()
+            runner.enqueue(CommandResult(0, "spotless check passed", ""))
+            val adapter = LocalValidationAdapter({ workspace }, commandRunner = runner)
+
+            adapter.run(request(required = listOf(validation("static"))))
+
+            runner.invocations shouldBe
+                listOf(
+                    Invocation(
+                        listOf("./gradlew", "spotlessCheck"),
+                        moduleDirectory,
+                    )
+                )
+          } finally {
+            workspace.toFile().deleteRecursively()
+          }
+        }
+
+        test("repository root wrapper가 있으면 module wrapper보다 우선합니다") {
+          val workspace = Files.createTempDirectory("workflow-validation").toAbsolutePath()
+          Files.createFile(workspace.resolve("gradlew"))
+          Files.createDirectories(workspace.resolve("workflow-cli"))
+          Files.createFile(workspace.resolve("workflow-cli/gradlew"))
+          try {
+            val runner = RecordingCommandRunner()
+            runner.enqueue(CommandResult(0, "spotless check passed", ""))
+            val adapter = LocalValidationAdapter({ workspace }, commandRunner = runner)
+
+            adapter.run(request(required = listOf(validation("static"))))
+
+            runner.invocations shouldBe
+                listOf(
+                    Invocation(
+                        listOf("./gradlew", "spotlessCheck"),
+                        workspace,
+                    )
+                )
+          } finally {
+            workspace.toFile().deleteRecursively()
+          }
         }
       }
 
@@ -83,6 +133,7 @@ class LocalValidationAdapterTest :
           val runner = RecordingCommandRunner()
           runner.enqueueFailure()
           runner.enqueue(CommandResult(0, "build passed", ""))
+          runner.enqueue(CommandResult(0, "spotless check passed", ""))
           val workspace = Path.of("/workspace")
           val adapter = LocalValidationAdapter({ workspace }, commandRunner = runner)
 
@@ -94,12 +145,17 @@ class LocalValidationAdapterTest :
                   .shouldBeTypeOf<io.springkit.workflow.application.RunValidationResponse>()
 
           response.validations.map { it.status } shouldBe
-              listOf(ValidationStatus.FAILED, ValidationStatus.PASSED)
+              listOf(
+                  ValidationStatus.FAILED,
+                  ValidationStatus.PASSED,
+                  ValidationStatus.PASSED,
+              )
           response.validations.first().message shouldContain "검증 명령 실행 중 예외"
           runner.invocations shouldContainExactly
               listOf(
                   Invocation(listOf("./gradlew", "test"), workspace),
                   Invocation(listOf("./gradlew", "build"), workspace),
+                  Invocation(listOf("./gradlew", "spotlessCheck"), workspace),
               )
         }
       }
@@ -181,7 +237,10 @@ class LocalValidationAdapterTest :
       }
     })
 
-private fun request(required: List<Validation> = listOf(validation("test"), validation("build"))) =
+private fun request(
+    required: List<Validation> =
+        listOf(validation("test"), validation("build"), validation("static")),
+) =
     RunValidationRequest(
         workspaceId = "workspace-1",
         revision = "revision-1",

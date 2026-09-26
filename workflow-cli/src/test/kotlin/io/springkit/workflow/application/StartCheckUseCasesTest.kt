@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.springkit.workflow.domain.CheckResult
 import io.springkit.workflow.domain.CheckSummary
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.IdSequence
@@ -36,12 +37,86 @@ class StartCheckUseCasesTest :
           val result = useCase.execute(CheckRequest(workspaceId = workspace.id))
           val success = result.shouldBeInstanceOf<WorkflowResult.Success<CheckResponse>>()
 
-          validations.requiredNames shouldBe listOf("test", "build")
+          validations.requiredNames shouldBe listOf("test", "build", "static")
           validations.request?.revision shouldBe "commit-1"
           validations.request?.fingerprint shouldBe "fingerprint-1"
           success.data.publishable shouldBe true
           success.data.summary.fingerprint shouldBe "fingerprint-1"
           store.written?.checks?.get("sk-101") shouldBe success.data.summary
+        }
+
+        test("ValidationPort summary에서 static 검사가 빠지면, 불변식 오류로 거부합니다") {
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("/managed/sk-101"), "sk-101")
+          val subTask = SubTask("sk-101", "task-1", "change")
+          val incompleteSummary =
+              CheckSummary(
+                  fingerprint = "fingerprint-1",
+                  revision = "commit-1",
+                  checks =
+                      listOf("test", "build").map { id ->
+                        CheckResult(
+                            id = id,
+                            name = id,
+                            status = ValidationStatus.PASSED,
+                            fingerprint = "fingerprint-1",
+                            revision = "commit-1",
+                        )
+                      },
+              )
+          val store = FakeStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(subTask)))
+          val useCase =
+              CheckUseCase(
+                  FakeWorkspace(workspace),
+                  FakeGit(GitStatus("commit-1", "fingerprint-1", dirty = true)),
+                  store,
+                  RecordingValidationPort(summary = incompleteSummary),
+              )
+
+          val result = useCase.execute(CheckRequest(workspaceId = workspace.id))
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              io.springkit.workflow.domain.FailureCode.INVARIANT_VIOLATION
+          store.written shouldBe null
+        }
+
+        test("필수 static 검사가 FAILED이면, 결과를 저장하고 게시 불가로 반환합니다") {
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("/managed/sk-101"), "sk-101")
+          val subTask = SubTask("sk-101", "task-1", "change")
+          val failedSummary =
+              CheckSummary(
+                  fingerprint = "fingerprint-1",
+                  revision = "commit-1",
+                  checks =
+                      listOf("test", "build", "static").map { id ->
+                        val failed = id == "static"
+                        CheckResult(
+                            id = id,
+                            name = id,
+                            status =
+                                if (failed) ValidationStatus.FAILED else ValidationStatus.PASSED,
+                            fingerprint = "fingerprint-1",
+                            revision = "commit-1",
+                            message = if (failed) "formatting failed" else null,
+                        )
+                      },
+              )
+          val store = FakeStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(subTask)))
+          val useCase =
+              CheckUseCase(
+                  FakeWorkspace(workspace),
+                  FakeGit(GitStatus("commit-1", "fingerprint-1", dirty = true)),
+                  store,
+                  RecordingValidationPort(summary = failedSummary),
+              )
+
+          val response =
+              useCase
+                  .execute(CheckRequest(workspaceId = workspace.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<CheckResponse>>()
+                  .data
+
+          response.publishable shouldBe false
+          store.written?.checks?.get("sk-101") shouldBe failedSummary
         }
 
         test("다른 revision의 검증 결과가 반환되면, 오래된 검증 결과로 거절합니다") {
@@ -69,6 +144,104 @@ class StartCheckUseCasesTest :
 
           failure.data.code shouldBe io.springkit.workflow.domain.FailureCode.STALE_REVISION
           failure.data.next.map { it.action } shouldNotContain "open_review"
+        }
+      }
+
+      context("원격 게시 가능성을 확인할 때") {
+        test("필수 검증이 실패하면 원격 dry-run을 호출하지 않습니다") {
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("/managed/sk-101"), "sk-101")
+          val subTask = SubTask("sk-101", "task-1", "change")
+          val failedSummary =
+              CheckSummary(
+                  fingerprint = "fingerprint-1",
+                  revision = "commit-1",
+                  checks =
+                      listOf("test", "build", "static").map { id ->
+                        CheckResult(
+                            id = id,
+                            name = id,
+                            status = ValidationStatus.FAILED,
+                            fingerprint = "fingerprint-1",
+                            revision = "commit-1",
+                            message = "검증 실패",
+                        )
+                      },
+              )
+          val git = FakeGit(GitStatus("commit-1", "fingerprint-1", dirty = false))
+          val useCase =
+              CheckUseCase(
+                  FakeWorkspace(workspace),
+                  git,
+                  FakeStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(subTask))),
+                  RecordingValidationPort(summary = failedSummary),
+              )
+
+          val response =
+              useCase
+                  .execute(CheckRequest(workspaceId = workspace.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<CheckResponse>>()
+                  .data
+
+          response.publishable shouldBe false
+          git.publishCheckRequest shouldBe null
+        }
+
+        test("검증이 통과해도 push dry-run이 거부하면 게시 불가를 반환합니다") {
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("/managed/sk-101"), "sk-101")
+          val subTask = SubTask("sk-101", "task-1", "change")
+          val git =
+              FakeGit(
+                  GitStatus("commit-1", "fingerprint-1", dirty = false),
+                  PortResult.Success(
+                      CheckRemotePushResponse(
+                          publishable = false,
+                          message = "remote rejected update",
+                      )
+                  ),
+              )
+          val useCase =
+              CheckUseCase(
+                  FakeWorkspace(workspace),
+                  git,
+                  FakeStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(subTask))),
+                  RecordingValidationPort(),
+              )
+
+          val response =
+              useCase
+                  .execute(CheckRequest(workspaceId = workspace.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<CheckResponse>>()
+                  .data
+
+          response.publishable shouldBe false
+          response.publishabilityMessage shouldBe "remote rejected update"
+          git.publishCheckRequest shouldBe CheckRemotePushRequest(workspace.id, subTask.branch)
+        }
+
+        test("dry-run을 실행할 수 없으면 게시 불가와 실패 원인을 반환합니다") {
+          val workspace = Workspace("ws-1", "sk-101", WorkspacePath("/managed/sk-101"), "sk-101")
+          val subTask = SubTask("sk-101", "task-1", "change")
+          val git =
+              FakeGit(
+                  GitStatus("commit-1", "fingerprint-1", dirty = false),
+                  PortResult.Failure(PortError("GIT_COMMAND_FAILED", "network unavailable")),
+              )
+          val useCase =
+              CheckUseCase(
+                  FakeWorkspace(workspace),
+                  git,
+                  FakeStore(WorkflowStoreSnapshot("store-1", subTasks = listOf(subTask))),
+                  RecordingValidationPort(),
+              )
+
+          val response =
+              useCase
+                  .execute(CheckRequest(workspaceId = workspace.id))
+                  .shouldBeInstanceOf<WorkflowResult.Success<CheckResponse>>()
+                  .data
+
+          response.publishable shouldBe false
+          response.publishabilityMessage shouldBe "network unavailable"
         }
       }
 
@@ -431,8 +604,21 @@ private class RecordingCompensationPort : CompensationPort {
   }
 }
 
-private class FakeGit(private val status: GitStatus) : GitPort {
+private class FakeGit(
+    private val status: GitStatus,
+    private val remotePushResult: PortResult<CheckRemotePushResponse> =
+        PortResult.Success(CheckRemotePushResponse(publishable = true)),
+) : GitPort {
+  var publishCheckRequest: CheckRemotePushRequest? = null
+
   override fun inspect(request: GitInspectRequest) = PortResult.Success(GitInspectResponse(status))
+
+  override fun checkRemotePush(
+      request: CheckRemotePushRequest
+  ): PortResult<CheckRemotePushResponse> {
+    publishCheckRequest = request
+    return remotePushResult
+  }
 
   override fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse> =
       error("not used")

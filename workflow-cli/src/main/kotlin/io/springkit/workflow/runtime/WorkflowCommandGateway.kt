@@ -159,6 +159,7 @@ class WorkflowCommandGateway(
                   ),
               )
               put("publishable", data.publishable)
+              data.publishabilityMessage?.let { put("publishability_message", it) }
             }
           }
 

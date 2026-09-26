@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeTypeOf
 import io.springkit.workflow.application.AbortRestackRequest
+import io.springkit.workflow.application.CheckRemotePushRequest
 import io.springkit.workflow.application.ContinueRestackRequest
 import io.springkit.workflow.application.CreateBranchRequest
 import io.springkit.workflow.application.CreateWorktreeRequest
@@ -126,6 +127,98 @@ class LocalGitAdapterTest :
                   .shouldBeTypeOf<io.springkit.workflow.application.GitInspectResponse>()
                   .status
                   .fingerprint
+        }
+      }
+
+      context("원격 게시 가능성을 확인하면") {
+        test("대상 ref의 dry-run 상태를 확인하고 원격 변경을 보내지 않습니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "=\tHEAD:refs/heads/sk-101\t[up to date]\n", ""))
+          val workspace = Path.of("/workspace/sk-101")
+          val adapter = adapter(runner) { workspace }
+
+          val result = adapter.checkRemotePush(CheckRemotePushRequest("ws-101", "sk-101"))
+
+          result
+              .shouldBeTypeOf<PortResult.Success<*>>()
+              .value
+              .shouldBeTypeOf<io.springkit.workflow.application.CheckRemotePushResponse>()
+              .publishable shouldBe true
+          runner.commands shouldBe
+              listOf(
+                  Invocation(
+                      listOf(
+                          "git",
+                          "push",
+                          "--dry-run",
+                          "--porcelain",
+                          "--no-verify",
+                          "origin",
+                          "HEAD:refs/heads/sk-101",
+                      ),
+                      workspace,
+                  )
+              )
+        }
+
+        test("porcelain이 대상 ref를 rejected로 표시하면 게시 불가를 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(0, "!\tHEAD:refs/heads/sk-101\t[rejected] non-fast-forward\n", "")
+          )
+          val adapter = adapter(runner) { Path.of("/workspace/sk-101") }
+
+          val response =
+              adapter
+                  .checkRemotePush(CheckRemotePushRequest("ws-101", "sk-101"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.CheckRemotePushResponse>()
+
+          response.publishable shouldBe false
+          response.message shouldNotBe null
+        }
+
+        test("원격 dry-run 명령이 실패하면 게시 불가와 원인을 반환합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(1, "", "permission denied"))
+          val adapter = adapter(runner) { Path.of("/workspace/sk-101") }
+
+          val response =
+              adapter
+                  .checkRemotePush(CheckRemotePushRequest("ws-101", "sk-101"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.CheckRemotePushResponse>()
+
+          response.publishable shouldBe false
+          response.message.orEmpty() shouldContain "permission denied"
+        }
+
+        test("다른 원격 ref만 응답하면 대상 Branch의 게시 가능성을 확인할 수 없습니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "=\tHEAD:refs/heads/sk-other\t[up to date]\n", ""))
+          val adapter = adapter(runner) { Path.of("/workspace/sk-101") }
+
+          val response =
+              adapter
+                  .checkRemotePush(CheckRemotePushRequest("ws-101", "sk-101"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.CheckRemotePushResponse>()
+
+          response.publishable shouldBe false
+          response.message shouldNotBe null
+        }
+
+        test("잘못된 branch 입력은 Git 명령 없이 거절합니다") {
+          val runner = RecordingCommandRunner()
+          val adapter = adapter(runner) { Path.of("/workspace/sk-101") }
+
+          val result = adapter.checkRemotePush(CheckRemotePushRequest("ws-101", "--delete"))
+
+          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "INVALID_ARGUMENT"
+          runner.commands shouldBe emptyList()
         }
       }
 

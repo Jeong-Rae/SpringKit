@@ -344,6 +344,22 @@ data class GitInspectRequest(val workspaceId: WorkspaceId)
 
 data class GitInspectResponse(val status: GitStatus)
 
+/** 지정된 Branch에 현재 Worktree를 게시할 수 있는지 읽기 전용으로 확인합니다. */
+data class CheckRemotePushRequest(
+    val workspaceId: WorkspaceId,
+    val branch: BranchName,
+    val remote: String = "origin",
+) {
+  init {
+    require(workspaceId.isNotBlank()) { "workspace id must not be blank" }
+    require(branch.isNotBlank()) { "branch must not be blank" }
+    require(remote.isNotBlank()) { "remote must not be blank" }
+  }
+}
+
+/** Git push dry-run 결과입니다. */
+data class CheckRemotePushResponse(val publishable: Boolean, val message: String? = null)
+
 data class CreateBranchRequest(
     val branch: BranchName,
     val baseBranch: BranchName,
@@ -455,6 +471,16 @@ interface GitPort {
   fun refreshMain(request: MainRevisionRequest): PortResult<MainRevisionResponse>
 
   fun inspect(request: GitInspectRequest): PortResult<GitInspectResponse>
+
+  /** 원격 Branch 변경 없이 push 가능 여부를 확인합니다. */
+  fun checkRemotePush(request: CheckRemotePushRequest): PortResult<CheckRemotePushResponse> =
+      PortResult.Failure(
+          PortError(
+              code = "GIT_PUBLISH_CHECK_UNSUPPORTED",
+              message = "원격 게시 가능성 확인을 지원하지 않습니다.",
+              target = request.branch,
+          )
+      )
 
   fun createBranch(request: CreateBranchRequest): PortResult<CreateBranchResponse>
 
