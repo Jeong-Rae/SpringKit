@@ -28,14 +28,15 @@ class WorkflowTransaction(
     val begun = store.begin(request)
     if (begun is PortResult.Failure) return begun.toWorkflowFailure(FailureCode.STORE_FAILURE)
 
-    val snapshotResult = store.snapshot(StoreSnapshotRequest())
-    if (snapshotResult is PortResult.Failure) {
-      store.rollback(request)
-      return snapshotResult.toWorkflowFailure(FailureCode.STORE_FAILURE)
-    }
-    snapshotResult as PortResult.Success
-
-    return when (val mutation = operation(snapshotResult.value.snapshot)) {
+    val snapshot =
+        when (val result = store.snapshot(StoreSnapshotRequest())) {
+          is PortResult.Failure -> {
+            store.rollback(request)
+            return result.toWorkflowFailure(FailureCode.STORE_FAILURE)
+          }
+          is PortResult.Success -> result.value.snapshot
+        }
+    return when (val mutation = operation(snapshot)) {
       is PortResult.Failure -> {
         mutation.change?.let { compensate(listOf(it), mutation.error.message) }
         store.rollback(request)
