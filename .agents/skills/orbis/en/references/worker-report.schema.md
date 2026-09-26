@@ -2,6 +2,14 @@
 
 End the assignment with this exact shape.
 
+## Response Length
+
+- Keep each free-text field to 2 lines by default and within 1-3 lines.
+- Do not repeat the same point or add background that does not change the result.
+- Write only the single status value under `STATUS`.
+- Do not apply the line limit to `FILES`; list every actual changed path.
+- If there are no issues, write only `None.` under `ISSUES`.
+
 ```text
 WORKER_FINAL_REPORT
 
@@ -11,28 +19,28 @@ STATUS
 TEST SUMMARY
 
 Purpose:
-<why the check was required>
+<1-3 lines. Why the check was required>
 
 Target:
-<test, file, class, module, or behavior>
+<1-3 lines. Test, file, class, module, or behavior checked>
 
 Method:
-<how the check was performed>
+<1-3 lines. How the check was performed>
 
 Result:
-<observed result>
+<1-3 lines. Observed result>
 
 
 ISSUES
 
 Issue:
-<unexpected finding>
+<1-3 lines. Unexpected finding>
 
 Response:
-<what the worker did>
+<1-3 lines. What the worker did>
 
 Impact:
-<review or follow-up required>
+<1-3 lines. Review or follow-up required>
 
 <Use None. when there are no issues.>
 
