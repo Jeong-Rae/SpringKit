@@ -15,7 +15,7 @@ TASK ID
 
 ASSIGNMENT
 
-<이 Worker가 맡는 범위가 명확한 구현 책임>
+<이 Worker가 맡는 구현 책임>
 
 
 WORKING DIRECTORY
@@ -31,10 +31,10 @@ WORKING BRANCH
 PREPARATION
 
 Read before negotiation:
-- <교섭 전에 읽을 저장소의 기준 자료>
+- <교섭 전에 읽을 저장소 기준 자료>
 
 Known facts:
-- <이미 확인했거나 확정한 사실>
+- <이미 확인하거나 확정한 사실>
 
 
 OWNERSHIP
@@ -46,12 +46,12 @@ Read-only dependencies:
 - <읽기 전용 경로 또는 영역>
 
 Do not modify:
-- <변경하면 안 되는 경로 또는 영역>
+- <변경하지 않는 경로 또는 영역>
 
 
 ROLE
 
-<전체 목표에서 이 Worker가 맡는 의미적 책임>
+<전체 목표에서 이 Worker가 맡는 역할>
 
 
 REPORT CONTRACT

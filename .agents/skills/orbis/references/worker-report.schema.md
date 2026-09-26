@@ -11,13 +11,13 @@ STATUS
 TEST SUMMARY
 
 Purpose:
-<이 검증이 필요한 이유>
+<검증 이유>
 
 Target:
 <검증한 테스트, 파일, 클래스, 모듈 또는 동작>
 
 Method:
-<검증한 방법>
+<검증 방법>
 
 Result:
 <관찰한 결과>
@@ -32,7 +32,7 @@ Response:
 <Worker가 취한 대응>
 
 Impact:
-<검토하거나 후속 처리해야 할 영향>
+<검토하거나 후속 처리할 영향>
 
 <발견 사항이 없으면 None.>
 
