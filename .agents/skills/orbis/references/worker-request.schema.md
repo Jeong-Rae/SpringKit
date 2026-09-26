@@ -1,57 +1,57 @@
-# Worker Request Schema
+# Worker 요청 스키마
 
-Use this exact section order when dispatching a worker.
+Worker를 생성할 때 다음 순서와 형식을 그대로 사용합니다.
 
 ```text
 OBJECTIVE
 
-<The purpose of the logical commit.>
+<논리적 커밋 전체가 달성해야 하는 목표>
 
 
 TASK ID
 
-<A stable identifier for this worker assignment.>
+<이 Worker 책임을 식별하는 안정적인 ID>
 
 
 ASSIGNMENT
 
-<The bounded implementation responsibility assigned to this worker.>
+<이 Worker가 맡는 범위가 명확한 구현 책임>
 
 
 WORKING DIRECTORY
 
-<The directory in which the worker operates.>
+<Worker가 작업할 디렉터리>
 
 
 WORKING BRANCH
 
-<The current shared local branch.>
+<현재 공유 로컬 브랜치>
 
 
 PREPARATION
 
 Read before negotiation:
-- <authoritative repository path>
+- <교섭 전에 읽을 저장소의 기준 자료>
 
 Known facts:
-- <settled fact or decision>
+- <이미 확인했거나 확정한 사실>
 
 
 OWNERSHIP
 
 Owned:
-- <writable path or area>
+- <수정할 수 있는 경로 또는 영역>
 
 Read-only dependencies:
-- <read-only path or area>
+- <읽기 전용 경로 또는 영역>
 
 Do not modify:
-- <excluded path or area>
+- <변경하면 안 되는 경로 또는 영역>
 
 
 ROLE
 
-<The semantic responsibility this worker owns within the objective.>
+<전체 목표에서 이 Worker가 맡는 의미적 책임>
 
 
 REPORT CONTRACT

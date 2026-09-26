@@ -1,43 +1,43 @@
-# Delegation Policy
+# 위임 정책
 
-Use this policy before creating worker assignments.
+Worker 책임을 만들기 전에 이 정책을 적용합니다.
 
-## Preserve One Logical Commit
+## 하나의 논리적 커밋을 유지합니다
 
-Keep the orchestrated change within one logical commit. Include every change required to make the objective complete, but exclude independent cleanup, refactoring, or follow-up changes.
+오케스트레이션 범위는 하나의 논리적 커밋 안에 유지합니다. 목표를 완결하는 데 필요한 변경은 모두 포함하고, 독립적인 정리, 리팩터링, 후속 작업은 제외합니다.
 
-When a required responsibility is discovered after workers begin, determine whether it belongs to the same logical commit:
+Worker 작업이 시작된 뒤 새로운 책임이 발견되면 현재 커밋 클로저에 속하는지 판단합니다.
 
-- Same logical commit: add or revise an assignment and continue toward commit closure.
-- Independent atomic change: split it from the current orchestration unit.
+- 같은 논리적 커밋에 필요함: 책임을 추가하거나 조정한 뒤 커밋 클로저를 계속 완성합니다.
+- 독립적인 원자적 변경임: 현재 오케스트레이션 단위에서 분리합니다.
 
-Do not use the initially predicted file list as the commit boundary.
+처음 예상한 파일 목록을 커밋 경계로 사용하지 않습니다.
 
-## Delegate by Responsibility
+## 책임을 기준으로 위임합니다
 
-Assign one cohesive implementation responsibility to each worker. Do not split work merely because several files are involved.
+각 Worker에는 하나의 응집된 구현 책임을 맡깁니다. 여러 파일이 관련되어 있다는 이유만으로 책임을 쪼개지 않습니다.
 
-A worker may own multiple implementation and test files when they express one responsibility and can be verified together. Separate responsibilities only when their contracts and verification can remain independent.
+하나의 책임을 표현하고 함께 검증할 수 있다면 Worker가 구현 파일과 테스트 파일을 여러 개 소유할 수 있습니다. 계약과 검증을 독립적으로 유지할 수 있는 경우에만 책임을 나눕니다.
 
-The orchestrator delegates implementation work. It retains responsibility for the objective, dependency graph, ownership boundaries, and closure decisions.
+오케스트레이터는 구현을 위임하면서도 목표, 의존 관계, 소유권 경계, 커밋 클로저 판단을 계속 소유합니다.
 
-## Define Ownership
+## 소유권을 명확히 정합니다
 
-For each assignment, identify:
+각 책임에는 다음 범위를 정합니다.
 
-- owned write areas;
-- read-only dependencies;
-- explicitly excluded areas.
+- 수정할 수 있는 영역
+- 읽기 전용 의존 영역
+- 명시적으로 제외한 영역
 
-One concurrently modified file must have exactly one worker owner.
+동시에 수정되는 파일에는 Worker 소유자를 하나만 둡니다.
 
-Workers must not change files outside their ownership merely because doing so would make the implementation easier. A required out-of-ownership change is an orchestration decision.
+Worker는 구현을 쉽게 만들 수 있다는 이유로 소유권 밖의 파일을 변경하지 않습니다. 소유권 밖 변경이 필요하면 오케스트레이터가 범위를 다시 판단합니다.
 
-## Order Dependencies
+## 의존 관계를 순서로 반영합니다
 
-Represent worker relationships as a dependency graph.
+Worker 사이의 관계를 의존 그래프로 표현합니다.
 
-Workers may run in the same stage only when all of these conditions hold:
+다음 조건을 모두 만족할 때만 같은 단계에서 병렬로 실행합니다.
 
 ```text
 write(A) ∩ write(B) = ∅
@@ -47,18 +47,18 @@ write(A) ∩ requiredInput(B) = ∅
 write(B) ∩ requiredInput(A) = ∅
 ```
 
-If a worker requires another worker's new output, run them in sequential stages.
+한 Worker가 다른 Worker의 새 출력을 입력으로 사용해야 하면 순차 단계로 실행합니다.
 
-## Stabilize Contracts Before Parallel Work
+## 병렬 작업 전에 계약을 확정합니다
 
-Parallel workers may depend on a shared interface only when the relevant contract is already stable for the current logical commit.
+여러 Worker가 같은 인터페이스에 의존한다면 현재 논리적 커밋에서 사용할 계약이 이미 안정되어 있어야 합니다.
 
-If the interface itself must be decided or changed, resolve that dependency first. Then dispatch downstream workers against the agreed contract.
+인터페이스 자체를 결정하거나 변경해야 한다면 그 작업을 먼저 끝냅니다. 이후 Worker는 합의된 계약을 기준으로 실행합니다.
 
-Do not ask sibling workers to coordinate their interface by exchanging unstructured reasoning.
+형제 Worker가 비정형적인 reasoning을 주고받으며 인터페이스를 정하게 하지 않습니다.
 
-## Assign Integration Explicitly
+## 통합 책임을 한 곳에 둡니다
 
-Give integration code and shared wiring one owner. That owner may be an existing worker when integration is part of its cohesive responsibility, or a later worker after upstream assignments reach a barrier.
+integration code와 공유 wiring에는 Worker 소유자를 하나만 둡니다. 해당 작업이 기존 책임에 자연스럽게 포함되면 그 Worker가 맡고, 그렇지 않으면 선행 작업이 끝난 뒤 별도 Worker에 위임합니다.
 
-The orchestrator does not write integration code itself.
+오케스트레이터는 integration code를 직접 작성하지 않습니다.

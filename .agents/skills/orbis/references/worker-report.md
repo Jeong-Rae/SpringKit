@@ -1,27 +1,27 @@
-# Worker Report
+# Worker 보고
 
-End every worker assignment with one terminal report.
+모든 Worker 책임은 종료 보고 한 건으로 마칩니다.
 
-Read [Worker Report Schema](worker-report.schema.md) for the exact response shape.
+정확한 응답 형식은 [Worker 보고 스키마](worker-report.schema.md)를 따릅니다.
 
-`WORKER_FINAL_REPORT` marks the response as terminal. It does not imply success.
+`WORKER_FINAL_REPORT`는 해당 응답이 종료 보고임을 나타낼 뿐 성공을 의미하지 않습니다.
 
-## Status Semantics
+## 상태 의미
 
-- `DONE`: assignment completed normally.
-- `DONE_WITH_CONCERNS`: assignment completed, but explicit orchestrator review is required.
-- `OUT_OF_SCOPE`: completion requires work outside approved assignment or ownership.
-- `BLOCKED`: in-scope work is understood, but execution cannot continue.
-- `NEED_CONTEXT`: the correct behavior cannot be determined from available context.
+- `DONE`: 승인된 책임을 정상적으로 완료했습니다.
+- `DONE_WITH_CONCERNS`: 책임은 완료했지만 오케스트레이터가 명시적으로 검토해야 할 문제가 있습니다.
+- `OUT_OF_SCOPE`: 완료하려면 승인된 책임이나 소유권 밖의 작업이 필요합니다.
+- `BLOCKED`: 범위 안의 작업을 이해했지만 실행을 계속할 수 없습니다.
+- `NEED_CONTEXT`: 현재 맥락만으로 올바른 동작을 결정할 수 없습니다.
 
-## Test Summary
+## 테스트 요약
 
-For every relevant verification, report its purpose, target, method, and observed result. State any relevant check that was not run and explain why.
+관련된 각 검증에 목적, 대상, 방법, 실제 결과를 적습니다. 실행해야 했지만 실행하지 못한 검증이 있으면 이유도 함께 적습니다.
 
-## Issues
+## 발견 사항
 
-Report unexpected findings and extra handling that were not already implied by the assignment. Write `None.` when there are no such findings.
+책임에 처음부터 포함되어 있지 않았던 사실이나 예상 밖의 문제, 그에 대한 대응을 적습니다. 해당 사항이 없으면 `None.`을 적습니다.
 
-## Files
+## 파일
 
-Report every file actually modified, added, or deleted. The orchestrator compares this list with declared ownership and the actual repository diff.
+실제로 수정, 추가, 삭제한 파일을 모두 적습니다. 오케스트레이터는 이 목록을 선언된 소유권과 실제 저장소 diff에 대조합니다.

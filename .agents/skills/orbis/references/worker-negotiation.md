@@ -1,39 +1,39 @@
-# Worker Negotiation
+# Worker 교섭
 
-Negotiate the assignment before modifying files.
+파일을 수정하기 전에 책임의 범위와 전제 조건을 오케스트레이터와 확인합니다.
 
-Read [Worker Negotiation Schema](worker-negotiation.schema.md) for the exact response shape.
+정확한 응답 형식은 [Worker 교섭 스키마](worker-negotiation.schema.md)를 따릅니다.
 
-## Preparation
+## 준비
 
-Before responding:
+응답하기 전에 다음 작업을 마칩니다.
 
-- read the complete worker request;
-- read every required item in PREPARATION;
-- read applicable repository instructions;
-- inspect enough relevant code and tests to understand the surrounding flow;
-- confirm the stated ownership boundary.
+- Worker 요청 전체를 읽습니다.
+- PREPARATION에 지정된 자료를 모두 읽습니다.
+- 적용되는 저장소 지침을 읽습니다.
+- 관련 코드와 테스트를 필요한 만큼 확인해 주변 동작을 이해합니다.
+- 선언된 소유권 경계를 확인합니다.
 
-Keep this phase read-only.
+이 단계에서는 파일을 수정하지 않습니다.
 
-## Status Semantics
+## 상태 의미
 
-`READY` means the assignment, context, contracts, and ownership are sufficient. READY does not authorize writing. Wait for `PROCEED`.
+`READY`는 책임, 필요한 맥락, 계약, 소유권을 충분히 이해했다는 뜻입니다. 쓰기 권한을 의미하지 않으므로 `PROCEED`를 받을 때까지 기다립니다.
 
-`NEED_CONTEXT` means the correct behavior cannot be determined from the available information.
+`NEED_CONTEXT`는 현재 정보만으로 올바른 동작을 결정할 수 없다는 뜻입니다.
 
-`OUT_OF_SCOPE` means required work is understood but exceeds the approved assignment or ownership.
+`OUT_OF_SCOPE`는 필요한 작업을 이해했지만 승인된 책임이나 소유권을 벗어난다는 뜻입니다.
 
-`BLOCKED` means the assignment is understood and in scope, but an execution condition prevents progress.
+`BLOCKED`는 책임을 이해했고 범위 안에도 있지만 실행 조건 때문에 진행할 수 없다는 뜻입니다.
 
-## Orchestrator Response
+## 오케스트레이터 응답
 
-The orchestrator may send `PROCEED`, correct an assumption, answer a question, add preparation context, revise ownership, or reassign responsibility.
+오케스트레이터는 `PROCEED`를 보내거나, 잘못된 가정을 바로잡거나, 질문에 답하거나, 준비 정보를 보강하거나, 소유권을 조정하거나, 책임을 다시 배정할 수 있습니다.
 
-After a material change to assignment, preparation, ownership, or contracts, return a refreshed negotiation message before writing.
+ASSIGNMENT, PREPARATION, OWNERSHIP, CONTRACTS 가운데 중요한 내용이 바뀌면 파일을 수정하기 전에 교섭 응답을 새로 반환합니다.
 
-## Autonomous Execution
+## 자율 실행
 
-After `PROCEED`, inspect, implement, test, and self-review autonomously within the approved assignment and ownership.
+`PROCEED`를 받은 뒤에는 승인된 책임과 소유권 안에서 필요한 확인, 구현, 테스트, 자체 검토를 자율적으로 수행합니다.
 
-If completion requires a boundary change, stop at a safe point and return the terminal report status that represents the condition.
+완료하려면 경계를 바꿔야 한다는 사실을 발견하면 안전한 지점에서 작업을 멈추고 현재 상황에 맞는 종료 보고 상태를 반환합니다.

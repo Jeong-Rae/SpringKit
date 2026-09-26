@@ -1,49 +1,49 @@
-# Acceptance Policy
+# 수용 정책
 
-Use this policy after receiving a terminal worker report.
+Worker의 종료 보고를 받은 뒤 이 정책을 적용합니다.
 
-A worker report is a claim. The repository state is the source of truth.
+Worker 보고는 주장입니다. 실제 저장소 상태를 기준 정보로 사용합니다.
 
-## Inspect
+## 확인 항목
 
-Compare:
+다음을 함께 비교합니다.
 
-- objective and assignment;
-- declared ownership;
-- worker status;
-- reported files;
-- actual repository diff;
-- test evidence;
-- shared contracts and invariants;
-- remaining logical-commit closure.
+- 목표와 책임
+- 선언한 소유권
+- Worker 상태
+- 보고한 파일
+- 실제 저장소 diff
+- 테스트 근거
+- 공유 계약과 불변 조건
+- 남아 있는 커밋 클로저
 
-Do not accept an assignment only because the worker reports `DONE`.
+Worker가 `DONE`을 보고했다는 이유만으로 결과를 수용하지 않습니다.
 
-## Ownership
+## 소유권
 
-Investigate every changed file that was not declared or reported. Do not normalize ownership drift after implementation.
+선언하거나 보고하지 않은 변경 파일이 있으면 원인을 확인합니다. 구현이 끝났다는 이유로 소유권 이탈을 사후 승인하지 않습니다.
 
-## Verification
+## 검증
 
-Confirm that the reported checks prove the behavior required by the assignment. Request narrower or additional verification when the evidence is insufficient.
+Worker가 보고한 검증이 해당 책임의 요구 동작을 실제로 증명하는지 확인합니다. 근거가 부족하면 범위를 좁힌 추가 검증이나 필요한 후속 검증을 요청합니다.
 
-## Commit Closure
+## 커밋 클로저
 
-Ask both questions:
+다음 두 질문을 확인합니다.
 
-1. Is every current change required for this logical commit?
-2. Is any additional change required before this logical commit is complete?
+1. 현재 변경이 모두 이 논리적 커밋에 필요한가?
+2. 이 논리적 커밋을 완결하려면 추가 변경이 필요한가?
 
-A missing responsibility inside the same logical commit expands the closure. An independent atomic change must be split from the current orchestration unit.
+같은 논리적 커밋에 필요한 책임이 빠져 있으면 커밋 클로저를 확장합니다. 독립적인 원자적 변경은 현재 오케스트레이션에서 분리합니다.
 
-## Decisions
+## 판단
 
-- `ACCEPT`: the assignment satisfies its contract and fits the logical commit.
-- `FOLLOW_UP`: the same worker must correct or complete work inside the same responsibility.
-- `EXPAND`: a new responsibility is required for the same commit closure.
-- `SPLIT`: a discovered change belongs to an independent logical commit.
-- `REASSIGN`: responsibility or ownership was assigned incorrectly.
+- `ACCEPT`: 책임의 계약을 충족하며 현재 논리적 커밋에 포함됩니다.
+- `FOLLOW_UP`: 같은 Worker가 같은 책임 안에서 수정하거나 보완해야 합니다.
+- `EXPAND`: 같은 커밋 클로저를 완결하기 위해 새로운 책임이 필요합니다.
+- `SPLIT`: 발견한 변경이 독립적인 논리적 커밋에 속합니다.
+- `REASSIGN`: 책임이나 소유권을 잘못 배정했습니다.
 
-Review `DONE_WITH_CONCERNS` issues explicitly before acceptance. Resolve `OUT_OF_SCOPE`, `BLOCKED`, and `NEED_CONTEXT` before further implementation.
+`DONE_WITH_CONCERNS`의 문제는 수용 전에 명시적으로 검토합니다. `OUT_OF_SCOPE`, `BLOCKED`, `NEED_CONTEXT`는 다음 구현을 진행하기 전에 해소합니다.
 
-The orchestrator decides acceptance and next actions but does not repair implementation code itself. Keep repository-level commit and publication outside workers.
+오케스트레이터는 수용 여부와 다음 작업을 판단하되 구현 코드를 직접 고치지 않습니다. 커밋과 게시 같은 저장소 수준 작업은 Worker 밖에서 처리합니다.

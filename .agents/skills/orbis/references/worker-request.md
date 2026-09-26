@@ -1,45 +1,45 @@
-# Worker Request
+# Worker 요청
 
-Compose one self-contained request for a worker that does not inherit the orchestrator conversation.
+오케스트레이터의 대화 기록을 상속하지 않는 Worker가 독립적으로 이해할 수 있도록 요청 한 건을 완결된 형태로 작성합니다.
 
-Read [Worker Request Schema](worker-request.schema.md) for the exact message shape.
+정확한 메시지 형식은 [Worker 요청 스키마](worker-request.schema.md)를 따릅니다.
 
-## Field Semantics
+## 필드 의미
 
 ### OBJECTIVE
 
-State the behavior change that the whole logical commit must achieve. Several workers may share the same objective.
+논리적 커밋 전체가 달성해야 하는 동작 변화를 적습니다. 여러 Worker가 같은 목표를 공유할 수 있습니다.
 
 ### TASK ID
 
-Give the assignment a stable identifier that the orchestrator can correlate with negotiation, follow-up, and final report messages.
+교섭, 후속 작업, 종료 보고를 같은 책임과 연결할 수 있도록 안정적인 식별자를 부여합니다.
 
 ### ASSIGNMENT
 
-Describe the concrete implementation responsibility owned by this worker. State the required outcome and important constraints without prescribing irrelevant implementation details.
+이 Worker가 맡는 구체적인 구현 책임을 적습니다. 필요한 결과와 중요한 제약을 명확히 하되, 결과에 영향을 주지 않는 구현 세부사항까지 미리 지정하지 않습니다.
 
 ### WORKING DIRECTORY
 
-State the worker's effective working directory.
+Worker가 작업할 디렉터리를 적습니다.
 
 ### WORKING BRANCH
 
-State the current branch. The worker may inspect the branch but must follow the Skill's Git mutation restrictions.
+현재 공유 브랜치를 적습니다. Worker는 브랜치를 조회할 수 있지만 Skill의 Git 변경 제한을 따라야 합니다.
 
 ### PREPARATION
 
-List authoritative repository material and established facts the worker must understand before negotiation.
+교섭 전에 읽어야 하는 저장소 자료와 이미 확정된 사실을 적습니다.
 
-Prefer direct repository references. Use known facts only for decisions already established by the orchestrator.
+저장소에서 직접 확인할 수 있는 내용은 경로를 제시합니다. Known facts에는 오케스트레이터가 이미 결정했거나 확인한 사실만 적습니다.
 
 ### OWNERSHIP
 
-Define authority explicitly with owned write areas, read-only dependencies, and excluded areas. Ownership is a boundary rather than a prediction of which files will change.
+수정할 수 있는 영역, 읽기 전용 의존 영역, 변경하면 안 되는 영역을 명확히 적습니다. 소유권은 실제로 어떤 파일이 바뀔지를 예측하는 목록이 아니라 변경 권한의 경계입니다.
 
 ### ROLE
 
-State the semantic responsibility represented by the assignment. Keep it distinct from the concrete task wording.
+이 책임이 전체 목표에서 맡는 의미적 역할을 적습니다. 구체적인 작업 지시와 역할 설명을 구분합니다.
 
 ### REPORT CONTRACT
 
-Point the worker to the worker report protocol and schema.
+Worker가 따라야 하는 교섭 및 종료 보고 문서와 스키마를 지정합니다.

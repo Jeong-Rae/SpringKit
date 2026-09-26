@@ -1,6 +1,6 @@
-# Worker Report Schema
+# Worker 보고 스키마
 
-End the assignment with this exact shape.
+책임을 마칠 때 다음 형식으로 응답합니다.
 
 ```text
 WORKER_FINAL_REPORT
@@ -11,40 +11,40 @@ STATUS
 TEST SUMMARY
 
 Purpose:
-<why the check was required>
+<이 검증이 필요한 이유>
 
 Target:
-<test, file, class, module, or behavior>
+<검증한 테스트, 파일, 클래스, 모듈 또는 동작>
 
 Method:
-<how the check was performed>
+<검증한 방법>
 
 Result:
-<observed result>
+<관찰한 결과>
 
 
 ISSUES
 
 Issue:
-<unexpected finding>
+<새로 발견한 문제 또는 사실>
 
 Response:
-<what the worker did>
+<Worker가 취한 대응>
 
 Impact:
-<review or follow-up required>
+<검토하거나 후속 처리해야 할 영향>
 
-<Use None. when there are no issues.>
+<발견 사항이 없으면 None.>
 
 
 FILES
 
 Modified:
-- <path or None>
+- <경로 또는 None>
 
 Added:
-- <path or None>
+- <경로 또는 None>
 
 Deleted:
-- <path or None>
+- <경로 또는 None>
 ```
