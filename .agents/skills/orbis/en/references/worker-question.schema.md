@@ -2,7 +2,7 @@
 
 Before modifying files, respond with this exact shape.
 
-Put the question first when one exists. Keep each free-text field to 2 lines by default and within 1-3 lines.
+Put the question first when one exists. Keep each free-text field to 1-3 lines when practical.
 
 ```text
 WORKER_QUESTION
@@ -22,4 +22,4 @@ QUESTION INTENT
 
 When `STATUS` is `QUESTION`, ask only one question. Ask another question in the next response after receiving the answer.
 
-When `STATUS` is `READY`, write `None.` under `QUESTION` and briefly state the final understanding and decision basis in the remaining fields.
+When `STATUS` is `READY`, write `None.` under `QUESTION` and `QUESTION INTENT`, and briefly state only the final understanding under `UNDERSTANDING`.

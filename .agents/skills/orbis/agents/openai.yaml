@@ -1,7 +1,7 @@
 interface:
   display_name: "Orbis"
-  short_description: "커밋 클로저 단위 코딩을 native Codex Worker로 조율"
-  default_prompt: "$orbis로 이 코딩 변경을 커밋 클로저 단위로 조율합니다."
+  short_description: "한 커밋 클로저 안에서 Codex Worker를 조율"
+  default_prompt: "$orbis로 이 코드 변경을 커밋 클로저 단위로 조율합니다."
 
 policy:
   allow_implicit_invocation: false

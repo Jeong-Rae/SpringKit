@@ -2,7 +2,7 @@
 
 파일을 수정하기 전에 다음 형식으로 응답합니다.
 
-질문이 있으면 `QUESTION`을 먼저 적습니다. 각 자유 서술 필드는 2줄을 기본으로 쓰며 1~3줄 안에서 끝냅니다.
+질문이 있으면 `QUESTION`을 먼저 적습니다. 각 자유 서술 필드는 가능하면 1~3줄 안에서 작성합니다.
 
 ```text
 WORKER_QUESTION
@@ -22,4 +22,4 @@ QUESTION INTENT
 
 `QUESTION`이면 질문을 하나만 적습니다. 답을 받은 뒤 추가 질문이 있으면 다음 응답에서 묻습니다.
 
-`READY`이면 `QUESTION`에 `None.`을 적고, `UNDERSTANDING`과 `QUESTION INTENT`에는 실행 전에 확인한 핵심 판단을 짧게 적습니다.
+`READY`이면 `QUESTION`과 `QUESTION INTENT`에 `None.`을 적고, `UNDERSTANDING`에 실행 전에 확인한 핵심 판단만 짧게 적습니다.

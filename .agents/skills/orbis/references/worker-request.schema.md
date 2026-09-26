@@ -2,7 +2,7 @@
 
 Worker를 생성할 때 다음 순서와 형식을 그대로 사용합니다.
 
-task 이름과 Worker ID는 오케스트레이터가 별도로 관리하며 이 메시지에 포함하지 않습니다.
+`task_name`과 Worker ID는 오케스트레이터가 별도로 관리하며 이 메시지에 포함하지 않습니다.
 
 ```text
 OBJECTIVE
