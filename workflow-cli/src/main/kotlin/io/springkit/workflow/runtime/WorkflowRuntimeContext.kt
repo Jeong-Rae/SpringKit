@@ -18,16 +18,19 @@ import java.nio.file.Path
 
 /** CLI 명령이 현재 실행 위치와 Review 상태를 해석할 때 사용하는 경계입니다. */
 interface WorkflowRuntimeContextResolver {
-  fun currentSubTaskId(): PortResult<SubTaskId>
-
-  fun currentWorkspaceId(): PortResult<WorkspaceId>
-
-  fun currentWorkspacePath(): PortResult<WorkspacePath>
+  fun currentWorkspaceContext(): PortResult<WorkflowWorkspaceContext>
 
   fun currentReview(): PortResult<WorkflowReviewContext>
 
   fun currentActor(requestId: String): PortResult<Actor>
 }
+
+/** 현재 관리 Workspace의 식별자와 경로입니다. */
+data class WorkflowWorkspaceContext(
+    val id: WorkspaceId,
+    val subTaskId: SubTaskId,
+    val path: WorkspacePath,
+)
 
 /** Review 명령을 Application 요청으로 변환하는 데 필요한 현재 상태입니다. */
 data class WorkflowReviewContext(
@@ -68,14 +71,10 @@ class StoreWorkflowRuntimeContext(
     private val gitPort: io.springkit.workflow.application.GitPort,
     private val identityPort: IdentityPort,
 ) : WorkflowRuntimeContextResolver {
-  override fun currentSubTaskId(): PortResult<SubTaskId> =
-      currentWorkspace().map { it.workspace.subTaskId }
-
-  override fun currentWorkspaceId(): PortResult<WorkspaceId> =
-      currentWorkspace().map { it.workspace.id }
-
-  override fun currentWorkspacePath(): PortResult<WorkspacePath> =
-      currentWorkspace().map { it.workspace.path }
+  override fun currentWorkspaceContext(): PortResult<WorkflowWorkspaceContext> =
+      currentWorkspace().map {
+        WorkflowWorkspaceContext(it.workspace.id, it.workspace.subTaskId, it.workspace.path)
+      }
 
   override fun currentReview(): PortResult<WorkflowReviewContext> {
     val workspace =

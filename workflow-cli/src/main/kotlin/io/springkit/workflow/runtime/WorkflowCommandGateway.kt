@@ -122,15 +122,10 @@ class WorkflowCommandGateway(
 
   private fun check() =
       context
-          .currentWorkspaceId()
-          .flatMapResult { workspaceId ->
-            context.currentSubTaskId().flatMapResult { subTaskId ->
-              context.currentWorkspacePath().flatMapResult { path ->
-                WorkflowResult.Success(startCheck.check(CheckRequest(workspaceId, subTaskId, path)))
-              }
-            }
+          .currentWorkspaceContext()
+          .flatMapResult { workspace ->
+            startCheck.check(CheckRequest(workspace.id, workspace.subTaskId, workspace.path))
           }
-          .flatten()
           .toJson { data ->
             buildJsonObject {
               put(
@@ -165,23 +160,19 @@ class WorkflowCommandGateway(
 
   private fun reviewOpen(request: WorkflowCommandRequest.ReviewOpen) =
       context
-          .currentWorkspaceId()
-          .flatMapResult { workspaceId ->
-            context.currentSubTaskId().flatMapResult { subTaskId ->
-              context.currentWorkspacePath().flatMapResult { workspacePath ->
-                readBody(workspacePath, request.bodyFile).flatMap { body ->
-                  reviewLifecycle.open(
-                      OpenReviewLifecycleRequest(
-                          workspaceId = workspaceId,
-                          subTaskId = subTaskId,
-                          body = body,
-                          risk = request.risk.toRisk(),
-                          exposure = request.exposure.toExposure(),
-                          featureFlagId = request.featureFlag,
-                      )
+          .currentWorkspaceContext()
+          .flatMapResult { workspace ->
+            readBody(workspace.path, request.bodyFile).flatMap { body ->
+              reviewLifecycle.open(
+                  OpenReviewLifecycleRequest(
+                      workspaceId = workspace.id,
+                      subTaskId = workspace.subTaskId,
+                      body = body,
+                      risk = request.risk.toRisk(),
+                      exposure = request.exposure.toExposure(),
+                      featureFlagId = request.featureFlag,
                   )
-                }
-              }
+              )
             }
           }
           .toJson { data ->
@@ -295,21 +286,17 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentWorkspaceId().flatMapResult { workspaceId ->
-              context.currentSubTaskId().flatMapResult { subTaskId ->
-                context.currentWorkspacePath().flatMapResult { workspacePath ->
-                  optionalBody(workspacePath, request.bodyFile).flatMap { body ->
-                    reviewLifecycle.update(
-                        UpdateReviewLifecycleRequest(
-                            workspaceId = workspaceId,
-                            subTaskId = subTaskId,
-                            pullRequestId = current.pullRequestId,
-                            expectedReviewRevisionId = request.revision,
-                            body = body,
-                        )
+            context.currentWorkspaceContext().flatMapResult { workspace ->
+              optionalBody(workspace.path, request.bodyFile).flatMap { body ->
+                reviewLifecycle.update(
+                    UpdateReviewLifecycleRequest(
+                        workspaceId = workspace.id,
+                        subTaskId = workspace.subTaskId,
+                        pullRequestId = current.pullRequestId,
+                        expectedReviewRevisionId = request.revision,
+                        body = body,
                     )
-                  }
-                }
+                )
               }
             }
           }
@@ -338,8 +325,8 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentWorkspacePath().flatMapResult { workspacePath ->
-              body(workspacePath, request.body, request.bodyFile).flatMap { text ->
+            context.currentWorkspaceContext().flatMapResult { workspace ->
+              body(workspace.path, request.body, request.bodyFile).flatMap { text ->
                 context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
                   commentId(request.revision).flatMapResult { id ->
                     review.comment(
@@ -380,8 +367,8 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentWorkspacePath().flatMapResult { workspacePath ->
-              body(workspacePath, request.body, request.bodyFile).flatMap { text ->
+            context.currentWorkspaceContext().flatMapResult { workspace ->
+              body(workspace.path, request.body, request.bodyFile).flatMap { text ->
                 context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
                   val id =
                       deterministicReplyCommentId(
@@ -463,20 +450,18 @@ class WorkflowCommandGateway(
 
   private fun stack(request: WorkflowCommandRequest.Stack) =
       context
-          .currentSubTaskId()
-          .map { id ->
-            stackSync.stack(StackRequest(id, request.requires, request.clear))
+          .currentWorkspaceContext()
+          .flatMapResult { workspace ->
+            stackSync.stack(StackRequest(workspace.subTaskId, request.requires, request.clear))
           }
-          .flatten()
           .toJson(::stackJson)
 
   private fun sync(request: WorkflowCommandRequest.Sync) =
       context
-          .currentSubTaskId()
-          .map { id ->
-            stackSync.sync(SyncRequest(id, request.continueSync, request.abort))
+          .currentWorkspaceContext()
+          .flatMapResult { workspace ->
+            stackSync.sync(SyncRequest(workspace.subTaskId, request.continueSync, request.abort))
           }
-          .flatten()
           .toJson(::syncJson)
 
   private fun status(request: WorkflowCommandRequest.Status) =
@@ -834,24 +819,12 @@ class WorkflowCommandGateway(
         is WorkflowResult.Failure -> this
       }
 
-  private fun <T> WorkflowResult<WorkflowResult<T>>.flatten(): WorkflowResult<T> =
-      when (this) {
-        is WorkflowResult.Success -> data
-        is WorkflowResult.Failure -> this
-      }
-
   private fun <T, R> WorkflowResult<T>.flatMap(
       transform: (T) -> WorkflowResult<R>
   ): WorkflowResult<R> =
       when (this) {
         is WorkflowResult.Success -> transform(data)
         is WorkflowResult.Failure -> this
-      }
-
-  private fun <T, R> PortResult<T>.map(transform: (T) -> R): PortResult<R> =
-      when (this) {
-        is PortResult.Success -> PortResult.Success(transform(value))
-        is PortResult.Failure -> this
       }
 
   private fun <T, R> PortResult<T>.flatMap(transform: (T) -> PortResult<R>): PortResult<R> =
@@ -865,20 +838,6 @@ class WorkflowCommandGateway(
   ): WorkflowResult<R> =
       when (this) {
         is PortResult.Success -> transform(value)
-        is PortResult.Failure ->
-            WorkflowResult.Failure(
-                FailureData(
-                    FailureCode.entries.firstOrNull { it.name == error.code }
-                        ?: FailureCode.EXTERNAL_FAILURE,
-                    error.message,
-                    blockedBy = listOf(BlockedBy(error.code, error.message, error.target)),
-                )
-            )
-      }
-
-  private fun <T> PortResult<WorkflowResult<T>>.flatten(): WorkflowResult<T> =
-      when (this) {
-        is PortResult.Success -> value
         is PortResult.Failure ->
             WorkflowResult.Failure(
                 FailureData(

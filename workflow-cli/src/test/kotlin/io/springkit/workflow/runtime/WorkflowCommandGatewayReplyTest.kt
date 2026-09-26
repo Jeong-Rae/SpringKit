@@ -264,11 +264,10 @@ private fun replyGateway(
       }
   val context =
       object : WorkflowRuntimeContextResolver {
-        override fun currentSubTaskId() = unsupported<PortResult<String>>()
-
-        override fun currentWorkspaceId() = unsupported<PortResult<String>>()
-
-        override fun currentWorkspacePath() = PortResult.Success(WorkspacePath("/workspace"))
+        override fun currentWorkspaceContext() =
+            PortResult.Success(
+                WorkflowWorkspaceContext("workspace-15", "sk-15", WorkspacePath("/workspace"))
+            )
 
         override fun currentReview() =
             PortResult.Success(
