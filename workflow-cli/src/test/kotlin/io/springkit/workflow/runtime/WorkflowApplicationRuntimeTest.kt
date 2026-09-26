@@ -619,6 +619,9 @@ private class MergeQueueEventCommandRunner(private val root: Path) : CommandRunn
     if (command == listOf("git", "rev-parse", "--show-toplevel")) {
       return CommandResult(0, root.toString() + "\n", "")
     }
+    if (command.take(4) == listOf("gh", "api", "--paginate", "--slurp")) {
+      return CommandResult(0, """[[{"type":"merge_queue"}]]""", "")
+    }
     if (command.firstOrNull() == "gh" && command.getOrNull(1) == "pr") {
       if (command.getOrNull(2) == "merge") {
         mergeCalls += 1
@@ -635,7 +638,7 @@ private class MergeQueueEventCommandRunner(private val root: Path) : CommandRunn
                   .trimIndent()
             } else {
               """
-              {"number":17,"state":"OPEN","mergeStateStatus":"CLEAN","headRefName":"sk-101","headRefOid":"$MERGE_QUEUE_HEAD_SHA","statusCheckRollup":[],"isInMergeQueue":false}
+              {"number":17,"state":"OPEN","mergeStateStatus":"CLEAN","baseRefName":"main","headRefName":"sk-101","headRefOid":"$MERGE_QUEUE_HEAD_SHA","statusCheckRollup":[]}
               """
                   .trimIndent()
             },

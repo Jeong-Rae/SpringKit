@@ -18,12 +18,17 @@ import java.nio.file.Path
 class GithubMergeQueueAdapterTest :
     FunSpec({
       context("GitHub pull request를 Merge Queue에 등록하면") {
-        test("squash와 auto 토큰으로 gh pr merge를 실행하면, 요청 메타데이터를 보존합니다") {
+        test("활성 queue rule을 확인한 뒤, slash branch를 인코딩해 squash auto merge를 요청합니다") {
           val runner =
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      """{"number":17,"state":"OPEN","baseRefName":"release/2026","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      "",
+                  ),
+                  CommandResult(
+                      0,
+                      """[[{"type":"required_status_checks"}],[{"type":"merge_queue"}]]""",
                       "",
                   ),
                   CommandResult(0, "queued", ""),
@@ -57,7 +62,17 @@ class GithubMergeQueueAdapterTest :
                           "view",
                           "17",
                           "--json",
-                          "number,state,isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,statusCheckRollup,isInMergeQueue,autoMergeRequest,mergedAt,mergeCommit",
+                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                      ),
+                      Path.of("/repo"),
+                  ),
+                  MergeQueueInvocation(
+                      listOf(
+                          "gh",
+                          "api",
+                          "--paginate",
+                          "--slurp",
+                          "repos/{owner}/{repo}/rules/branches/release%2F2026",
                       ),
                       Path.of("/repo"),
                   ),
@@ -76,6 +91,67 @@ class GithubMergeQueueAdapterTest :
                   ),
               )
         }
+
+        test("활성 merge_queue rule이 없으면, gh pr merge를 실행하지 않습니다") {
+          val runner =
+              FakeCommandRunner(
+                  CommandResult(
+                      0,
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      "",
+                  ),
+                  CommandResult(0, "[[{\"type\":\"required_status_checks\"}]]", ""),
+              )
+
+          val result =
+              GithubMergeQueueAdapter(Path.of("/repo"), runner)
+                  .enqueue(EnqueueMergeRequest("sk-27", "17", "cr-7", "store-4"))
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "GITHUB_MERGE_QUEUE_REQUIRED"
+          runner.commands
+              .map { it.tokens }
+              .shouldContainExactly(
+                  listOf(
+                      listOf(
+                          "gh",
+                          "pr",
+                          "view",
+                          "17",
+                          "--json",
+                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                      ),
+                      listOf(
+                          "gh",
+                          "api",
+                          "--paginate",
+                          "--slurp",
+                          "repos/{owner}/{repo}/rules/branches/main",
+                      ),
+                  )
+              )
+        }
+
+        test("branch rules API 조회가 실패하면, queue 등록을 진행하지 않습니다") {
+          val runner =
+              FakeCommandRunner(
+                  CommandResult(
+                      0,
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      "",
+                  ),
+                  CommandResult(1, "", "permission denied"),
+              )
+
+          val result =
+              GithubMergeQueueAdapter(Path.of("/repo"), runner)
+                  .enqueue(EnqueueMergeRequest("sk-27", "17", "cr-7", "store-4"))
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "GITHUB_MERGE_QUEUE_FAILED"
+          failure.error.message shouldBe "permission denied"
+          runner.commands.size shouldBe 2
+        }
       }
 
       context("GitHub Merge Queue 상태를 조회하면") {
@@ -84,7 +160,7 @@ class GithubMergeQueueAdapterTest :
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","isInMergeQueue":true,"statusCheckRollup":[{"name":"build","status":"COMPLETED"}]}""",
+                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","autoMergeRequest":{"enabledAt":"2026-01-01T00:00:00Z"},"statusCheckRollup":[{"name":"build","status":"COMPLETED"}]}""",
                       "",
                   )
               )
@@ -99,6 +175,7 @@ class GithubMergeQueueAdapterTest :
                   .single()
 
           entry.validations.single().status.name shouldBe "PENDING"
+          entry.state.name shouldBe "QUEUED"
         }
 
         test("CheckRun conclusion 없이 상태형 status context도 validation 상태로 변환합니다") {
@@ -106,7 +183,7 @@ class GithubMergeQueueAdapterTest :
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","isInMergeQueue":true,"statusCheckRollup":[{"context":"legacy-success","state":"SUCCESS"},{"context":"legacy-failure","state":"FAILURE"},{"context":"legacy-error","state":"ERROR"}]}""",
+                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","statusCheckRollup":[{"context":"legacy-success","state":"SUCCESS"},{"context":"legacy-failure","state":"FAILURE"},{"context":"legacy-error","state":"ERROR"}]}""",
                       "",
                   )
               )
@@ -131,7 +208,7 @@ class GithubMergeQueueAdapterTest :
                   CommandResult(
                       0,
                       """
-                      {"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","isInMergeQueue":true,"statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","databaseId":1},{"name":"test","status":"COMPLETED","conclusion":"FAILURE","databaseId":2}]}
+                      {"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","databaseId":1},{"name":"test","status":"COMPLETED","conclusion":"FAILURE","databaseId":2}]}
                       """
                           .trimIndent(),
                       "",
@@ -166,7 +243,7 @@ class GithubMergeQueueAdapterTest :
                   "view",
                   "17",
                   "--json",
-                  "number,state,isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,statusCheckRollup,isInMergeQueue,autoMergeRequest,mergedAt,mergeCommit",
+                  "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
               )
         }
       }
@@ -178,15 +255,17 @@ class GithubMergeQueueAdapterTest :
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
                       "",
                   ),
+                  CommandResult(0, """[[{"type":"merge_queue"}]]""", ""),
                   CommandResult(0, "queued", ""),
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
                       "",
                   ),
+                  CommandResult(0, """[[{"type":"merge_queue"}]]""", ""),
                   CommandResult(
                       0,
                       """{"state":"MERGED","headRefOid":"abc123","mergeCommit":{"oid":"def456"}}""",
@@ -226,7 +305,7 @@ class GithubMergeQueueAdapterTest :
           integration.subTaskId shouldBe "sk-27"
           integration.mainRevision shouldBe "def456"
           integration.squashCommit shouldBe "def456"
-          runner.commands.drop(2).map { it.tokens } shouldContainExactly
+          runner.commands.drop(3).map { it.tokens } shouldContainExactly
               listOf(
                   listOf(
                       "gh",
@@ -234,7 +313,14 @@ class GithubMergeQueueAdapterTest :
                       "view",
                       "17",
                       "--json",
-                      "number,state,isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,statusCheckRollup,isInMergeQueue,autoMergeRequest,mergedAt,mergeCommit",
+                      "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                  ),
+                  listOf(
+                      "gh",
+                      "api",
+                      "--paginate",
+                      "--slurp",
+                      "repos/{owner}/{repo}/rules/branches/main",
                   ),
                   listOf(
                       "gh",
@@ -251,7 +337,7 @@ class GithubMergeQueueAdapterTest :
                       "view",
                       "17",
                       "--json",
-                      "number,state,isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,statusCheckRollup,isInMergeQueue,autoMergeRequest,mergedAt,mergeCommit",
+                      "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
                   ),
               )
         }
@@ -289,6 +375,58 @@ class GithubMergeQueueAdapterTest :
           runner.commands.size shouldBe 1
         }
 
+        test("활성 merge_queue rule이 없으면, 기존 Queue 항목도 직접 merge하지 않습니다") {
+          val persisted =
+              io.springkit.workflow.domain.MergeQueueEntry(
+                  id = "github-merge-queue-17",
+                  subTaskId = "sk-27",
+                  pullRequestId = "17",
+                  changeRevisionId = "cr-7",
+                  providerRevision = "abc123",
+              )
+          val runner =
+              FakeCommandRunner(
+                  CommandResult(
+                      0,
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      "",
+                  ),
+                  CommandResult(0, "[[]]", ""),
+              )
+          val adapter =
+              GithubMergeQueueAdapter(
+                  repositoryRoot = Path.of("/repo"),
+                  commandRunner = runner,
+                  entryLookup = { persisted },
+              )
+
+          val result = adapter.merge(MergeQueueMergeRequest("github-merge-queue-17", "cr-7"))
+
+          val failure = result.shouldBeTypeOf<PortResult.Failure>()
+          failure.error.code shouldBe "GITHUB_MERGE_QUEUE_REQUIRED"
+          runner.commands
+              .map { it.tokens }
+              .shouldContainExactly(
+                  listOf(
+                      listOf(
+                          "gh",
+                          "pr",
+                          "view",
+                          "17",
+                          "--json",
+                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                      ),
+                      listOf(
+                          "gh",
+                          "api",
+                          "--paginate",
+                          "--slurp",
+                          "repos/{owner}/{repo}/rules/branches/main",
+                      ),
+                  )
+              )
+        }
+
         test("GitHub가 head OID 불일치로 merge를 거부하면, STALE_REVISION을 반환합니다") {
           val persisted =
               io.springkit.workflow.domain.MergeQueueEntry(
@@ -301,9 +439,10 @@ class GithubMergeQueueAdapterTest :
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
                       "",
                   ),
+                  CommandResult(0, """[[{"type":"merge_queue"}]]""", ""),
                   CommandResult(1, "", "head commit does not match"),
               )
           val adapter =
@@ -317,7 +456,7 @@ class GithubMergeQueueAdapterTest :
 
           val failure = result.shouldBeTypeOf<PortResult.Failure>()
           failure.error.code shouldBe "STALE_REVISION"
-          runner.commands.size shouldBe 2
+          runner.commands.size shouldBe 3
         }
 
         test("queue 등록 시점 이후 head OID가 바뀌면, STALE_REVISION을 반환합니다") {
@@ -358,9 +497,10 @@ class GithubMergeQueueAdapterTest :
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123"}""",
+                      """{"number":17,"state":"OPEN","baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
                       "",
                   ),
+                  CommandResult(0, """[[{"type":"merge_queue"}]]""", ""),
                   CommandResult(1, "", "permission denied"),
               )
           val result =
@@ -370,7 +510,7 @@ class GithubMergeQueueAdapterTest :
           val failure = result.shouldBeTypeOf<PortResult.Failure>()
           failure.error.code shouldBe "GITHUB_MERGE_QUEUE_FAILED"
           failure.error.message shouldBe "permission denied"
-          runner.commands.size shouldBe 2
+          runner.commands.size shouldBe 3
         }
 
         test("CommandRunner가 예외를 던지면, 재시도 가능한 PortError로 변환합니다") {
