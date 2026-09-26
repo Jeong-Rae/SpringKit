@@ -143,20 +143,8 @@ class GithubCiAdapter(
 
 private fun GithubStatusCheck.toCiRun(index: Int, revision: String?): CiRun {
   val name = name.ifBlank { context ?: "check-$index" }
-  val statusValue = (status ?: state).orEmpty().uppercase()
   val conclusionValue = conclusion.orEmpty().uppercase()
-  val ciStatus =
-      when {
-        conclusionValue in setOf("SUCCESS", "NEUTRAL", "SKIPPED") -> CiStatus.PASSED
-        conclusionValue.isNotBlank() &&
-            conclusionValue !in setOf("SUCCESS", "NEUTRAL", "SKIPPED") -> CiStatus.FAILED
-        statusValue == "SUCCESS" -> CiStatus.PASSED
-        statusValue in setOf("FAILURE", "ERROR") -> CiStatus.FAILED
-        statusValue in setOf("QUEUED", "REQUESTED", "WAITING", "PENDING") -> CiStatus.PENDING
-        statusValue in setOf("IN_PROGRESS", "EXPECTED") -> CiStatus.RUNNING
-        statusValue == "COMPLETED" -> CiStatus.PENDING
-        else -> CiStatus.PENDING
-      }
+  val ciStatus = githubCheckStatus(status, state, conclusion)
   return CiRun(
       id = databaseId?.toString() ?: "github-check-$index",
       status = ciStatus,

@@ -12,6 +12,7 @@ import io.springkit.workflow.application.PortError
 import io.springkit.workflow.application.PortResult
 import io.springkit.workflow.common.CommandRunner
 import io.springkit.workflow.common.LocalCommandRunner
+import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.Integration
 import io.springkit.workflow.domain.IntegrationState
 import io.springkit.workflow.domain.MergeQueueEntry
@@ -42,7 +43,6 @@ data class GithubMergeQueuePullRequest(
     val headRefName: String? = null,
     val headRefOid: String? = null,
     val statusCheckRollup: List<GithubMergeQueueCheck>? = null,
-    val autoMergeRequest: GithubMergeQueueAutoMergeRequest? = null,
     val mergedAt: String? = null,
     val mergeCommit: GithubMergeQueueCommit? = null,
 )
@@ -56,8 +56,6 @@ data class GithubMergeQueueCheck(
     val conclusion: String? = null,
     val databaseId: Long? = null,
 )
-
-@Serializable data class GithubMergeQueueAutoMergeRequest(val enabledAt: String? = null)
 
 @Serializable data class GithubMergeQueueCommit(val oid: String? = null)
 
@@ -511,7 +509,7 @@ class GithubMergeQueueAdapter(
 
   private companion object {
     const val JSON_FIELDS =
-        "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit"
+        "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit"
 
     val json = Json {
       ignoreUnknownKeys = true
@@ -541,7 +539,6 @@ private fun GithubMergeQueuePullRequest.toMergeQueueState(): MergeQueueState =
       statusCheckRollup.orEmpty().any { it.toValidationStatus() == ValidationStatus.FAILED } ->
           MergeQueueState.FAILED
       mergeStateStatus.equals("CLEAN", ignoreCase = true) -> MergeQueueState.PASSED
-      autoMergeRequest != null -> MergeQueueState.QUEUED
       else -> MergeQueueState.QUEUED
     }
 
@@ -558,17 +555,11 @@ private fun GithubMergeQueuePullRequest.validations(): List<Validation> =
     }
 
 private fun GithubMergeQueueCheck.toValidationStatus(): ValidationStatus {
-  val conclusionValue = conclusion.orEmpty().uppercase()
-  val statusValue = (status ?: state).orEmpty().uppercase()
-  return when {
-    conclusionValue in setOf("SUCCESS", "NEUTRAL", "SKIPPED") -> ValidationStatus.PASSED
-    conclusionValue.isNotBlank() -> ValidationStatus.FAILED
-    statusValue == "SUCCESS" -> ValidationStatus.PASSED
-    statusValue in setOf("FAILURE", "ERROR") -> ValidationStatus.FAILED
-    statusValue in setOf("QUEUED", "REQUESTED", "WAITING", "PENDING") -> ValidationStatus.PENDING
-    statusValue in setOf("IN_PROGRESS", "EXPECTED") -> ValidationStatus.RUNNING
-    statusValue == "COMPLETED" -> ValidationStatus.PENDING
-    else -> ValidationStatus.PENDING
+  return when (githubCheckStatus(status, state, conclusion)) {
+    CiStatus.PASSED -> ValidationStatus.PASSED
+    CiStatus.FAILED -> ValidationStatus.FAILED
+    CiStatus.RUNNING -> ValidationStatus.RUNNING
+    CiStatus.PENDING -> ValidationStatus.PENDING
   }
 }
 

@@ -62,7 +62,7 @@ class GithubMergeQueueAdapterTest :
                           "view",
                           "17",
                           "--json",
-                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit",
                       ),
                       Path.of("/repo"),
                   ),
@@ -119,7 +119,7 @@ class GithubMergeQueueAdapterTest :
                           "view",
                           "17",
                           "--json",
-                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit",
                       ),
                       listOf(
                           "gh",
@@ -160,7 +160,7 @@ class GithubMergeQueueAdapterTest :
               FakeCommandRunner(
                   CommandResult(
                       0,
-                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","autoMergeRequest":{"enabledAt":"2026-01-01T00:00:00Z"},"statusCheckRollup":[{"name":"build","status":"COMPLETED"}]}""",
+                      """{"number":17,"state":"OPEN","headRefName":"sk-27","headRefOid":"abc123","statusCheckRollup":[{"name":"build","status":"COMPLETED"}]}""",
                       "",
                   )
               )
@@ -243,7 +243,7 @@ class GithubMergeQueueAdapterTest :
                   "view",
                   "17",
                   "--json",
-                  "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                  "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit",
               )
         }
       }
@@ -313,7 +313,7 @@ class GithubMergeQueueAdapterTest :
                       "view",
                       "17",
                       "--json",
-                      "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                      "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit",
                   ),
                   listOf(
                       "gh",
@@ -337,7 +337,7 @@ class GithubMergeQueueAdapterTest :
                       "view",
                       "17",
                       "--json",
-                      "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                      "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit",
                   ),
               )
         }
@@ -414,7 +414,7 @@ class GithubMergeQueueAdapterTest :
                           "view",
                           "17",
                           "--json",
-                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,autoMergeRequest,mergedAt,mergeCommit",
+                          "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit",
                       ),
                       listOf(
                           "gh",
