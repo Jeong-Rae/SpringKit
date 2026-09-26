@@ -16,6 +16,11 @@ metadata:
 Write for the reader's immediate goal. State the result or main point first,
 then add only the context needed to understand or act on it.
 
+Before writing, editing, or reviewing text-based content or responding in
+conversation, read
+[references/document-style.md](references/document-style.md). Apply the rules
+that match the language and format of the finished text.
+
 ## Shared Principles
 
 - Develop one main idea per paragraph. Keep sentences short enough to read once.
@@ -51,12 +56,6 @@ defaults. Preserve mandatory formats and authorization boundaries defined in
 Lead with the outcome. Use concise paragraphs and the minimum formatting needed
 for comprehension. Report blockers with the evidence and the next required
 decision.
-
-### Technical Documents
-
-Before writing, editing, or reviewing a technical document, read
-[references/document-style.md](references/document-style.md). Apply its format
-and content checks to the finished document.
 
 ### Commits and Pull Requests
 
