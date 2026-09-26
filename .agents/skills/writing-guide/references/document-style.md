@@ -166,5 +166,4 @@ UI 요소명 뒤에 `메뉴`, `버튼`과 같은 요소 종류를 덧붙이지 �
 - 형식 기준: [카카오디벨로퍼스 문서 스타일 가이드](https://developers.kakao.com/docs/ko/documentation-guideline/document-style-open)
 - 내용 원칙: [토스의 8가지 라이팅 원칙들](https://toss.tech/article/21022)
 
-위 출처의 규칙과 원칙을 다양한 글쓰기에 사용할 수 있도록 요약하고
-일반화했습니다.
+위 출처의 규칙과 원칙이 일반화된 내용입니다.
