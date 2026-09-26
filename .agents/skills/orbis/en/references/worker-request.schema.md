@@ -2,15 +2,12 @@
 
 Use this exact section order when dispatching a worker.
 
+The orchestrator manages internal task names and Worker IDs separately. Do not include them in this message.
+
 ```text
 OBJECTIVE
 
 <The purpose of the logical commit.>
-
-
-TASK ID
-
-<A stable identifier for this worker assignment.>
 
 
 ASSIGNMENT

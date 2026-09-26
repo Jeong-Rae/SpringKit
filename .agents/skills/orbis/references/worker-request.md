@@ -4,15 +4,13 @@
 
 정확한 메시지 형식은 [Worker 요청 스키마](worker-request.schema.md)를 따릅니다.
 
+task 이름과 Worker ID의 매핑은 오케스트레이터가 관리합니다. Worker 요청에는 task 관리 정보를 넣지 않습니다.
+
 ## 필드 의미
 
 ### OBJECTIVE
 
 논리적 커밋 전체가 달성해야 하는 동작 변화를 적습니다. 여러 Worker가 같은 목표를 공유할 수 있습니다.
-
-### TASK ID
-
-질의응답, 후속 작업, 종료 보고를 같은 책임과 연결할 수 있도록 안정적인 식별자를 부여합니다.
 
 ### ASSIGNMENT
 

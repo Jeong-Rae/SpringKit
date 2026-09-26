@@ -44,6 +44,8 @@ Worker가 보고한 검증이 책임의 요구 동작을 증명하는지 확인�
 - `SPLIT`: 발견한 변경이 독립적인 논리적 커밋에 속합니다.
 - `REASSIGN`: 책임이나 소유권을 잘못 배정했습니다.
 
-`DONE_WITH_CONCERNS`의 문제는 수용 전에 검토합니다. `OUT_OF_SCOPE`, `BLOCKED`, `NEED_CONTEXT`는 다음 구현 전에 해소합니다.
+`DONE_WITH_CONCERNS`의 문제는 수용 전에 검토합니다. `OUT_OF_SCOPE`와 `BLOCKED`는 다음 구현 전에 해소합니다.
+
+`NEED_CONTEXT`는 Worker가 `PROCEED` 이후 구현이나 검증을 진행하다가 완료에 필요한 정보가 부족해 작업을 멈춘 상태입니다. 오케스트레이터는 필요한 맥락을 제공한 뒤 같은 Worker에 후속 작업을 보냅니다.
 
 오케스트레이터는 수용 여부와 다음 작업을 판단하지만 구현 코드를 직접 고치지 않습니다. 커밋과 게시는 Worker 밖에서 처리합니다.

@@ -4,15 +4,13 @@ Compose one self-contained request for a worker that does not inherit the orches
 
 Read [Worker Request Schema](worker-request.schema.md) for the exact message shape.
 
+The orchestrator manages the mapping between internal task names and Worker IDs. Do not include task-management information in the worker request.
+
 ## Field Semantics
 
 ### OBJECTIVE
 
 State the behavior change that the whole logical commit must achieve. Several workers may share the same objective.
-
-### TASK ID
-
-Give the assignment a stable identifier that correlates worker questions, follow-up work, and the final report.
 
 ### ASSIGNMENT
 
@@ -34,7 +32,7 @@ Prefer direct repository references. Use known facts only for decisions already 
 
 ### OWNERSHIP
 
-Define authority explicitly with owned write areas, read-only dependencies, and excluded areas. Ownership is a boundary rather than a prediction of which files will change.
+Define writable areas, read-only dependencies, and excluded areas. Ownership is a boundary rather than a prediction of which files will change.
 
 ### ROLE
 

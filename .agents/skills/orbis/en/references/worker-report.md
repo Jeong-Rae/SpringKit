@@ -1,6 +1,6 @@
 # Worker Report
 
-End every worker assignment with one terminal report.
+End every worker responsibility with one terminal report.
 
 Read [Worker Report Schema](worker-report.schema.md) for the exact response shape.
 
@@ -8,19 +8,19 @@ Read [Worker Report Schema](worker-report.schema.md) for the exact response shap
 
 ## Status Semantics
 
-- `DONE`: assignment completed normally.
-- `DONE_WITH_CONCERNS`: assignment completed, but explicit orchestrator review is required.
-- `OUT_OF_SCOPE`: completion requires work outside approved assignment or ownership.
-- `BLOCKED`: in-scope work is understood, but execution cannot continue.
-- `NEED_CONTEXT`: the correct behavior cannot be determined from available context.
+- `DONE`: the approved responsibility was completed normally.
+- `DONE_WITH_CONCERNS`: the responsibility is complete, but explicit orchestrator review is required.
+- `OUT_OF_SCOPE`: completion requires work outside the approved responsibility or ownership.
+- `BLOCKED`: the in-scope work is understood, but execution cannot continue.
+- `NEED_CONTEXT`: after `PROCEED`, the worker stopped at a safe point because implementation or verification cannot be completed without additional information.
 
 ## Test Summary
 
-For every relevant verification, report its purpose, target, method, and observed result. State any relevant check that was not run and explain why.
+For each relevant check, report the purpose, target, method, and observed result. If a required check was not run, state why.
 
 ## Issues
 
-Report unexpected findings and extra handling that were not already implied by the assignment. Write `None.` when there are no such findings.
+Report unexpected findings and the response taken. Write `None.` when there are no such findings.
 
 ## Files
 

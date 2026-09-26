@@ -47,6 +47,8 @@ write(A) ∩ requiredInput(B) = ∅
 write(B) ∩ requiredInput(A) = ∅
 ```
 
+`requiredInput(X)`는 Worker X가 실행을 계속하거나 완료하는 데 필요한 다른 Worker의 확정된 출력을 뜻합니다.
+
 한 Worker가 다른 Worker의 새 출력을 입력으로 써야 하면 순차로 실행합니다.
 
 ## 병렬 작업 전에 계약을 확정합니다
@@ -55,7 +57,7 @@ write(B) ∩ requiredInput(A) = ∅
 
 인터페이스를 결정하거나 변경해야 하면 그 작업을 먼저 끝냅니다. 이후 Worker는 확정된 계약을 기준으로 실행합니다.
 
-형제 Worker는 비정형 reasoning을 주고받으며 인터페이스를 정하지 않습니다.
+Worker끼리 직접 인터페이스를 합의하지 않습니다. 공유 계약은 오케스트레이터가 확정합니다.
 
 ## 통합 책임을 한 Worker에 둡니다
 
