@@ -1,0 +1,573 @@
+package io.springkit.workflow.adapter.github
+
+import io.springkit.workflow.application.ChangeReceipt
+import io.springkit.workflow.application.EnqueueMergeRequest
+import io.springkit.workflow.application.EnqueueMergeResponse
+import io.springkit.workflow.application.GetMergeQueueRequest
+import io.springkit.workflow.application.GetMergeQueueResponse
+import io.springkit.workflow.application.MergeQueueMergeRequest
+import io.springkit.workflow.application.MergeQueueMergeResponse
+import io.springkit.workflow.application.MergeQueuePort
+import io.springkit.workflow.application.PortError
+import io.springkit.workflow.application.PortResult
+import io.springkit.workflow.common.CommandRunner
+import io.springkit.workflow.common.LocalCommandRunner
+import io.springkit.workflow.domain.CiStatus
+import io.springkit.workflow.domain.Integration
+import io.springkit.workflow.domain.IntegrationState
+import io.springkit.workflow.domain.MergeQueueEntry
+import io.springkit.workflow.domain.MergeQueueState
+import io.springkit.workflow.domain.Validation
+import io.springkit.workflow.domain.ValidationStatus
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import java.nio.file.Path
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+
+/*
+ * GitHub pull request 응답에서 Workflow Merge Queue 항목을 복원합니다.
+ */
+fun interface GithubMergeQueueEntryResolver {
+  fun resolve(provider: GithubMergeQueuePullRequest, fallback: MergeQueueEntry): MergeQueueEntry
+}
+
+/*
+ * `gh pr view`와 `gh pr list`가 반환하는 Merge Queue 관련 정보입니다.
+ */
+@Serializable
+data class GithubMergeQueuePullRequest(
+    val number: Long = 0,
+    val state: String = "",
+    val isDraft: Boolean = false,
+    val mergeStateStatus: String? = null,
+    val reviewDecision: String? = null,
+    val baseRefName: String? = null,
+    val headRefName: String? = null,
+    val headRefOid: String? = null,
+    val statusCheckRollup: List<GithubMergeQueueCheck>? = null,
+    val mergedAt: String? = null,
+    val mergeCommit: GithubMergeQueueCommit? = null,
+)
+
+@Serializable
+data class GithubMergeQueueCheck(
+    val name: String = "",
+    val context: String? = null,
+    val status: String? = null,
+    val state: String? = null,
+    val conclusion: String? = null,
+    val databaseId: Long? = null,
+)
+
+@Serializable data class GithubMergeQueueCommit(val oid: String? = null)
+
+/*
+ * GitHub active branch rule response의 필요한 부분입니다.
+ */
+@Serializable data class GithubBranchRule(val type: String = "")
+
+/*
+ * `gh` 실행 결과를 [MergeQueuePort] 계약으로 변환하는 GitHub outbound adapter입니다.
+ *
+ * [entryLookup]과 [entryPersister]는 프로세스 외부의 Workflow Store에 연결해야 하며, 어댑터는 Merge Queue 항목을 메모리에 보관하지
+ * 않습니다.
+ */
+class GithubMergeQueueAdapter(
+    private val repositoryRoot: Path,
+    private val commandRunner: CommandRunner = LocalCommandRunner(),
+    private val entryResolver: GithubMergeQueueEntryResolver = DefaultGithubMergeQueueEntryResolver,
+    private val entryLookup: (String) -> MergeQueueEntry? = { null },
+    private val entryPersister: (MergeQueueEntry) -> Unit = {},
+) : MergeQueuePort {
+  override fun enqueue(request: EnqueueMergeRequest): PortResult<EnqueueMergeResponse> {
+    val viewResult =
+        run(
+            listOf("gh", "pr", "view", request.pullRequestId, "--json", JSON_FIELDS),
+            request.pullRequestId,
+        ) ?: return lastFailure(request.pullRequestId)
+    val provider =
+        decode(viewResult.stdout, request.pullRequestId)
+            ?: return lastFailure(request.pullRequestId)
+    val providerRevision = provider.headRefOid?.takeIf { it.isNotBlank() }
+    if (providerRevision == null) {
+      return PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+              message = "GitHub pull request의 queue 시점 revision이 없습니다.",
+              target = request.pullRequestId,
+          ),
+          ChangeReceipt(
+              id = "github-merge-queue-enqueue-${request.pullRequestId}",
+              operation = "github-merge-queue-enqueue",
+              status = io.springkit.workflow.application.ChangeStatus.PENDING,
+          ),
+      )
+    }
+    val baseBranch = provider.baseRefName?.takeIf { it.isNotBlank() }
+    if (baseBranch == null) {
+      return invalidPullRequestResponse(request.pullRequestId, "base branch")
+    }
+    when (val rule = requireMergeQueueRule(baseBranch, request.pullRequestId)) {
+      is PortResult.Failure -> return rule
+      is PortResult.Success -> Unit
+    }
+    val command =
+        listOf(
+            "gh",
+            "pr",
+            "merge",
+            request.pullRequestId,
+            "--squash",
+            "--auto",
+            "--match-head-commit",
+            providerRevision,
+        )
+    run(command, request.pullRequestId, staleRevision = true)
+        ?: return lastFailure(request.pullRequestId)
+    val fallback =
+        MergeQueueEntry(
+            id = entryId(request.pullRequestId),
+            subTaskId = request.subTaskId,
+            pullRequestId = request.pullRequestId,
+            changeRevisionId = request.changeRevisionId,
+            providerRevision = providerRevision,
+            state = MergeQueueState.QUEUED,
+        )
+    val entry =
+        resolvedEntry(provider, fallback)
+            .copy(
+                state = MergeQueueState.QUEUED,
+                providerRevision = providerRevision,
+            )
+    entryPersister(entry)
+    return PortResult.Success(
+        EnqueueMergeResponse(
+            entry = entry,
+            change =
+                ChangeReceipt(
+                    id = "github-merge-queue-enqueue-${request.pullRequestId}",
+                    operation = "github-merge-queue-enqueue",
+                ),
+        )
+    )
+  }
+
+  override fun get(request: GetMergeQueueRequest): PortResult<GetMergeQueueResponse> {
+    val reference = request.pullRequestId ?: request.subTaskId ?: "all"
+    val command =
+        if (request.pullRequestId != null) {
+          listOf("gh", "pr", "view", reference, "--json", JSON_FIELDS)
+        } else if (request.subTaskId != null) {
+          listOf(
+              "gh",
+              "pr",
+              "list",
+              "--head",
+              reference,
+              "--state",
+              "all",
+              "--json",
+              JSON_FIELDS,
+          )
+        } else {
+          listOf("gh", "pr", "list", "--state", "all", "--json", JSON_FIELDS)
+        }
+    val result = run(command, reference) ?: return lastFailure(reference)
+    return try {
+      val providers =
+          if (request.pullRequestId != null) {
+            listOf(json.decodeFromString<GithubMergeQueuePullRequest>(result.stdout))
+          } else {
+            json.decodeFromString<List<GithubMergeQueuePullRequest>>(result.stdout)
+          }
+      val entries =
+          providers
+              .filter { provider ->
+                (request.pullRequestId == null ||
+                    provider.number.toString() == request.pullRequestId) &&
+                    (request.subTaskId == null || provider.headRefName == request.subTaskId)
+              }
+              .map { provider ->
+                val pullRequestId = provider.number.toString()
+                val fallback = fallbackEntry(provider, request, pullRequestId)
+                val entry = resolvedEntry(provider, fallback)
+                entry
+              }
+      PortResult.Success(GetMergeQueueResponse(entries))
+    } catch (_: SerializationException) {
+      PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+              message = "GitHub Merge Queue 응답 JSON을 해석할 수 없습니다.",
+              target = reference,
+          )
+      )
+    }
+  }
+
+  override fun merge(request: MergeQueueMergeRequest): PortResult<MergeQueueMergeResponse> {
+    val persistedEntry =
+        entryLookup(request.entryId) ?: entryLookup(pullRequestIdFromEntry(request.entryId))
+    val reference = persistedEntry?.pullRequestId ?: pullRequestIdFromEntry(request.entryId)
+    val beforeView =
+        run(listOf("gh", "pr", "view", reference, "--json", JSON_FIELDS), reference)
+            ?: return lastFailure(reference)
+    val beforeProvider = decode(beforeView.stdout, reference) ?: return lastFailure(reference)
+    val pullRequestId = beforeProvider.number.takeIf { it > 0 }?.toString() ?: reference
+    val previous = persistedEntry ?: entryLookup(pullRequestId)
+    if (previous == null) {
+      return PortResult.Failure(
+          PortError(
+              code = "MERGE_QUEUE_STATE_REQUIRED",
+              message = "Merge Queue 항목의 영속 상태를 확인할 수 없습니다.",
+              target = pullRequestId,
+          )
+      )
+    }
+    val headRefName = beforeProvider.headRefName?.takeIf { it.isNotBlank() }
+    val headRefOid = beforeProvider.headRefOid?.takeIf { it.isNotBlank() }
+    if (headRefName == null || headRefOid == null) {
+      return PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+              message = "GitHub pull request의 branch 또는 revision이 없습니다.",
+              target = pullRequestId,
+          )
+      )
+    }
+    val beforeFallback =
+        previous.copy(
+            id = request.entryId,
+            subTaskId = headRefName,
+            pullRequestId = pullRequestId,
+            state = beforeProvider.toMergeQueueState(),
+            validations = beforeProvider.validations(),
+        )
+    val beforeEntry = resolvedEntry(beforeProvider, beforeFallback)
+    if (beforeEntry.changeRevisionId != request.expectedChangeRevisionId) {
+      return PortResult.Failure(
+          PortError(
+              code = "STALE_REVISION",
+              message = "요청한 change revision과 GitHub pull request revision이 다릅니다.",
+              target = pullRequestId,
+          )
+      )
+    }
+    val queuedProviderRevision = previous.providerRevision ?: beforeEntry.providerRevision
+    if (queuedProviderRevision == null || queuedProviderRevision != headRefOid) {
+      return PortResult.Failure(
+          PortError(
+              code = "STALE_REVISION",
+              message = "Merge Queue 등록 이후 GitHub pull request revision이 변경되었습니다.",
+              target = pullRequestId,
+          )
+      )
+    }
+    val baseBranch = beforeProvider.baseRefName?.takeIf { it.isNotBlank() }
+    if (baseBranch == null) {
+      return invalidPullRequestResponse(pullRequestId, "base branch")
+    }
+    when (val rule = requireMergeQueueRule(baseBranch, pullRequestId)) {
+      is PortResult.Failure -> return rule
+      is PortResult.Success -> Unit
+    }
+    val mergeResult =
+        run(
+            listOf(
+                "gh",
+                "pr",
+                "merge",
+                pullRequestId,
+                "--squash",
+                "--match-head-commit",
+                headRefOid,
+            ),
+            request.entryId,
+            staleRevision = true,
+        ) ?: return lastFailure(request.entryId)
+    val viewResult =
+        run(listOf("gh", "pr", "view", pullRequestId, "--json", JSON_FIELDS), pullRequestId)
+            ?: return lastFailure(pullRequestId, mergeResult)
+    val provider =
+        decode(viewResult.stdout, pullRequestId)
+            ?: return PortResult.Failure(
+                PortError(
+                    code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+                    message = "GitHub squash merge 응답 JSON을 해석할 수 없습니다.",
+                    target = pullRequestId,
+                ),
+                pendingMergeReceipt(request.entryId),
+            )
+    val commit = provider.mergeCommit?.oid?.takeIf { it.isNotBlank() }
+    if (!provider.state.equals("MERGED", ignoreCase = true) || commit == null) {
+      return PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_NOT_MERGED",
+              message = "GitHub pull request가 squash merge되지 않았습니다.",
+              target = pullRequestId,
+          ),
+          ChangeReceipt(
+              id = "github-merge-queue-merge-${request.entryId}",
+              operation = "github-merge-queue-merge",
+              status = io.springkit.workflow.application.ChangeStatus.PENDING,
+          ),
+      )
+    }
+    val fallback =
+        beforeEntry.copy(
+            pullRequestId = pullRequestId,
+            changeRevisionId = request.expectedChangeRevisionId,
+            state = MergeQueueState.MERGED,
+        )
+    val entry = resolvedEntry(provider, fallback).copy(state = MergeQueueState.MERGED)
+    entryPersister(entry)
+    val integration =
+        Integration(
+            subTaskId = entry.subTaskId,
+            state = IntegrationState.MERGED,
+            mergeQueue = entry,
+            mainRevision = commit,
+            squashCommit = commit,
+        )
+    return PortResult.Success(
+        MergeQueueMergeResponse(
+            integration = integration,
+            change =
+                ChangeReceipt(
+                    id = "github-merge-queue-merge-${request.entryId}",
+                    operation = "github-merge-queue-merge",
+                    beforeRevision = provider.headRefOid,
+                    afterRevision = commit,
+                ),
+        )
+    )
+  }
+
+  private fun fallbackEntry(
+      provider: GithubMergeQueuePullRequest,
+      request: GetMergeQueueRequest,
+      pullRequestId: String,
+  ): MergeQueueEntry {
+    val previous = entryLookup(pullRequestId)
+    return (previous
+            ?: MergeQueueEntry(
+                id = entryId(pullRequestId),
+                subTaskId = provider.headRefName ?: request.subTaskId ?: "github-$pullRequestId",
+                pullRequestId = pullRequestId,
+                changeRevisionId = provider.headRefOid ?: "github-change-$pullRequestId",
+                state = MergeQueueState.QUEUED,
+                providerRevision = provider.headRefOid,
+            ))
+        .copy(
+            state = provider.toMergeQueueState(),
+            validations = provider.validations(),
+        )
+  }
+
+  private fun resolvedEntry(
+      provider: GithubMergeQueuePullRequest,
+      fallback: MergeQueueEntry,
+  ): MergeQueueEntry {
+    val resolved = entryResolver.resolve(provider, fallback)
+    return resolved.copy(
+        providerRevision =
+            provider.headRefOid?.takeIf { it.isNotBlank() } ?: resolved.providerRevision
+    )
+  }
+
+  private fun run(
+      command: List<String>,
+      target: String,
+      staleRevision: Boolean = false,
+  ): io.springkit.workflow.common.CommandResult? {
+    val result =
+        try {
+          commandRunner.run(command, repositoryRoot)
+        } catch (failure: Exception) {
+          lastFailure =
+              PortResult.Failure(
+                  PortError(
+                      code = "GITHUB_MERGE_QUEUE_FAILED",
+                      message =
+                          "gh 명령을 실행할 수 없습니다: ${failure.message ?: failure::class.simpleName}",
+                      retryable = true,
+                      target = target,
+                  )
+              )
+          return null
+        }
+    if (result.exitCode == 0) {
+      lastFailure = null
+      return result
+    }
+    val output = result.stderr.trim().ifBlank { result.stdout.trim() }
+    val code =
+        if (
+            staleRevision &&
+                output.contains("head", ignoreCase = true) &&
+                (output.contains("match", ignoreCase = true) ||
+                    output.contains("stale", ignoreCase = true))
+        ) {
+          "STALE_REVISION"
+        } else {
+          "GITHUB_MERGE_QUEUE_FAILED"
+        }
+    lastFailure =
+        PortResult.Failure(
+            PortError(
+                code = code,
+                message = output.ifBlank { "gh 명령이 종료 코드 ${result.exitCode}로 실패했습니다." },
+                retryable = result.exitCode == 2,
+                target = target,
+            )
+        )
+    return null
+  }
+
+  private fun <T> lastFailure(
+      target: String,
+      result: io.springkit.workflow.common.CommandResult? = null,
+  ): PortResult<T> =
+      lastFailure
+          ?: PortResult.Failure(
+              PortError(
+                  code = "GITHUB_MERGE_QUEUE_FAILED",
+                  message =
+                      result?.stderr?.trim().orEmpty().ifBlank {
+                        "gh 명령을 실행할 수 없습니다."
+                      },
+                  target = target,
+              )
+          )
+
+  private var lastFailure: PortResult.Failure? = null
+
+  private fun decode(stdout: String, target: String): GithubMergeQueuePullRequest? =
+      try {
+        json.decodeFromString<GithubMergeQueuePullRequest>(stdout)
+      } catch (_: SerializationException) {
+        lastFailure =
+            PortResult.Failure(
+                PortError(
+                    code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+                    message = "GitHub Merge Queue 응답 JSON을 해석할 수 없습니다.",
+                    target = target,
+                )
+            )
+        null
+      }
+
+  private fun requireMergeQueueRule(branch: String, target: String): PortResult<Unit> {
+    val encodedBranch = URLEncoder.encode(branch, StandardCharsets.UTF_8).replace("+", "%20")
+    val result =
+        run(
+            listOf(
+                "gh",
+                "api",
+                "--paginate",
+                "--slurp",
+                "repos/{owner}/{repo}/rules/branches/$encodedBranch",
+            ),
+            target,
+        ) ?: return lastFailure(target)
+    val pages =
+        try {
+          json.decodeFromString<List<List<GithubBranchRule>>>(result.stdout)
+        } catch (_: SerializationException) {
+          return PortResult.Failure(
+              PortError(
+                  code = "GITHUB_MERGE_QUEUE_RULE_RESPONSE_INVALID",
+                  message = "GitHub branch rule 응답 JSON을 해석할 수 없습니다.",
+                  target = target,
+              )
+          )
+        }
+    return if (pages.flatten().any { it.type == "merge_queue" }) {
+      PortResult.Success(Unit)
+    } else {
+      PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_REQUIRED",
+              message = "대상 branch에 활성 Merge Queue rule이 없습니다.",
+              target = target,
+          )
+      )
+    }
+  }
+
+  private fun invalidPullRequestResponse(target: String, field: String): PortResult.Failure =
+      PortResult.Failure(
+          PortError(
+              code = "GITHUB_MERGE_QUEUE_RESPONSE_INVALID",
+              message = "GitHub pull request의 $field 정보를 확인할 수 없습니다.",
+              target = target,
+          )
+      )
+
+  private fun pendingMergeReceipt(entryId: String): ChangeReceipt =
+      ChangeReceipt(
+          id = "github-merge-queue-merge-$entryId",
+          operation = "github-merge-queue-merge",
+          status = io.springkit.workflow.application.ChangeStatus.PENDING,
+      )
+
+  private companion object {
+    const val JSON_FIELDS =
+        "number,state,isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName,headRefOid,statusCheckRollup,mergedAt,mergeCommit"
+
+    val json = Json {
+      ignoreUnknownKeys = true
+      explicitNulls = false
+    }
+
+    fun entryId(pullRequestId: String): String = "github-merge-queue-$pullRequestId"
+
+    fun number(reference: String): Long = reference.toLongOrNull() ?: 0
+
+    fun pullRequestIdFromEntry(entryId: String): String =
+        entryId.removePrefix("github-merge-queue-").ifBlank { entryId }
+  }
+}
+
+private object DefaultGithubMergeQueueEntryResolver : GithubMergeQueueEntryResolver {
+  override fun resolve(
+      provider: GithubMergeQueuePullRequest,
+      fallback: MergeQueueEntry,
+  ): MergeQueueEntry = fallback
+}
+
+private fun GithubMergeQueuePullRequest.toMergeQueueState(): MergeQueueState =
+    when {
+      state.equals("MERGED", ignoreCase = true) -> MergeQueueState.MERGED
+      state.equals("CLOSED", ignoreCase = true) -> MergeQueueState.FAILED
+      statusCheckRollup.orEmpty().any { it.toValidationStatus() == ValidationStatus.FAILED } ->
+          MergeQueueState.FAILED
+      mergeStateStatus.equals("CLEAN", ignoreCase = true) -> MergeQueueState.PASSED
+      else -> MergeQueueState.QUEUED
+    }
+
+private fun GithubMergeQueuePullRequest.validations(): List<Validation> =
+    statusCheckRollup.orEmpty().mapIndexed { index, check ->
+      val status = check.toValidationStatus()
+      Validation(
+          id = check.databaseId?.toString() ?: "github-validation-$index",
+          name = check.name.ifBlank { check.context ?: "check-$index" },
+          status = status,
+          revision = headRefOid,
+          message = if (status == ValidationStatus.FAILED) check.failureMessage() else null,
+      )
+    }
+
+private fun GithubMergeQueueCheck.toValidationStatus(): ValidationStatus {
+  return when (githubCheckStatus(status, state, conclusion)) {
+    CiStatus.PASSED -> ValidationStatus.PASSED
+    CiStatus.FAILED -> ValidationStatus.FAILED
+    CiStatus.RUNNING -> ValidationStatus.RUNNING
+    CiStatus.PENDING -> ValidationStatus.PENDING
+  }
+}
+
+private fun GithubMergeQueueCheck.failureMessage(): String =
+    conclusion.orEmpty().ifBlank { state.orEmpty() }.ifBlank { "GitHub 검증이 실패했습니다." }
