@@ -91,5 +91,5 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 # 전문 스킬
 
-- `$writing-guide`를 사용해야 합니다. 기술 문서를 작성, 수정, 검토할 때는 스킬이 정한 문서 작성 기준도 적용해야 합니다.
+- `$writing-guide`를 사용해야 합니다. 텍스트 기반 콘텐츠와 대화 응답을 작성, 수정, 검토할 때 스킬이 정한 글쓰기 기준을 적용해야 합니다.
 - `$create-pr`: 작업을 검증하고 커밋한 뒤 초안 PR을 생성할 때 사용할 수 있습니다.
