@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Delegate to the repository's shared Gradle wrapper while selecting this
+# directory as the project. Keeping one wrapper binary avoids copying it into
+# each small SpringKit tool project.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+exec "$SCRIPT_DIR/../../template/spring-boot-kotlin/gradlew" -p "$SCRIPT_DIR" "$@"
