@@ -6,7 +6,6 @@ import io.springkit.workflow.domain.BlockedBy
 import io.springkit.workflow.domain.CandidateId
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.GateRecorded
@@ -31,7 +30,7 @@ data class DeployGateRequest(
 }
 
 /*
- * Feature Flag 외부 공개를 시작하기 위한 사람 Gate 요청입니다.
+ * Release를 시작하기 위한 사람 Gate 요청입니다.
  */
 data class ReleaseGateRequest(
     val releaseId: ReleaseId,
@@ -54,7 +53,6 @@ class DeliveryGateUseCases(
     private val idPort: IdPort? = null,
     private val clockPort: ClockPort? = null,
     private val compensationPort: CompensationPort = NoOpCompensationPort,
-    private val featureFlagPort: FeatureFlagPort? = null,
 ) {
   /*
    * 사람의 배포 승인을 확인하고 고위험 후보의 Production Canary를 시작합니다.
@@ -89,10 +87,6 @@ class DeliveryGateUseCases(
         gateFailure(GateType.DEPLOY, actor, stored, current, request.candidateId)?.let {
           return@executeGate it
         }
-        validateFeatureFlagDefaults(snapshot, current)?.let {
-          return@executeGate it
-        }
-
         val started =
             when (val result = deploymentPort.startCanary(StartCanaryRequest(current.id, actor))) {
               is PortResult.Failure -> return@executeGate result
@@ -137,7 +131,7 @@ class DeliveryGateUseCases(
       }
 
   /*
-   * 사람의 공개 승인을 확인하고 내부 검수가 끝난 Feature Flag 공개를 시작합니다.
+   * 사람의 공개 승인을 확인하고 내부 검수가 끝난 Release를 시작합니다.
    */
   fun release(request: ReleaseGateRequest): WorkflowResult<StartReleaseResponse> =
       executeGate(
@@ -323,8 +317,6 @@ class DeliveryGateUseCases(
         actual.id != expected.id -> "release provider returned a different release"
         actual.candidateId != expected.candidateId ->
             "release provider returned a different candidate"
-        actual.featureFlagId != expected.featureFlagId ->
-            "release provider returned a different feature flag"
         actual.cleanupSubTaskId != expected.cleanupSubTaskId ->
             "release provider changed the cleanup subtask"
         actual.state != expectedState -> "release provider returned an unexpected release state"
@@ -334,42 +326,6 @@ class DeliveryGateUseCases(
             "release provider changed internal validation readiness"
         else -> null
       }
-
-  private fun validateFeatureFlagDefaults(
-      snapshot: WorkflowStoreSnapshot,
-      candidate: DeploymentCandidate,
-  ): PortResult.Failure? {
-    val featureFlagIds =
-        candidate.includedSubTasks
-            .mapNotNull { subTaskId ->
-              snapshot.subTasks.firstOrNull { it.id == subTaskId }
-            }
-            .filter { it.exposure == Exposure.FEATURE_FLAG }
-            .mapNotNull { it.featureFlagId }
-            .distinct()
-    if (featureFlagIds.isEmpty()) return null
-    val port =
-        featureFlagPort
-            ?: return failurePort(
-                FailureCode.INVALID_GATE_STATE,
-                "Feature Flag의 안전한 기본 동작을 확인할 공급자가 없습니다.",
-                candidate.id,
-            )
-    featureFlagIds.forEach { featureFlagId ->
-      when (val result = port.validateDefault(ValidateFeatureFlagRequest(featureFlagId))) {
-        is PortResult.Failure -> return result
-        is PortResult.Success ->
-            if (!result.value.safeDefault) {
-              return failurePort(
-                  FailureCode.INVALID_GATE_STATE,
-                  "Feature Flag의 기본 동작이 안전하지 않습니다.",
-                  featureFlagId,
-              )
-            }
-      }
-    }
-    return null
-  }
 
   private fun gateFailure(
       gate: GateType,

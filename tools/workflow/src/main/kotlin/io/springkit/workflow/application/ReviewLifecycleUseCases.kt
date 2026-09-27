@@ -11,10 +11,8 @@ import io.springkit.workflow.domain.CheckResult
 import io.springkit.workflow.domain.CheckSummary
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.DomainEvent
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
-import io.springkit.workflow.domain.FeatureFlagId
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
@@ -41,8 +39,6 @@ data class OpenReviewLifecycleRequest(
     val subTaskId: SubTaskId,
     val body: String,
     val risk: Risk,
-    val exposure: Exposure,
-    val featureFlagId: FeatureFlagId? = null,
     val expectedStoreRevision: String? = null,
     val requestId: String = "review-open-$subTaskId",
 ) {
@@ -51,12 +47,6 @@ data class OpenReviewLifecycleRequest(
     require(subTaskId.isNotBlank()) { "review subtask id must not be blank" }
     require(body.isNotBlank()) { "review body must not be blank" }
     require(requestId.isNotBlank()) { "review request id must not be blank" }
-    require(exposure != Exposure.FEATURE_FLAG || !featureFlagId.isNullOrBlank()) {
-      "feature-flag exposure requires a feature flag id"
-    }
-    require(exposure != Exposure.UNCHANGED || featureFlagId == null) {
-      "unchanged exposure must not have a feature flag id"
-    }
   }
 }
 
@@ -116,7 +106,6 @@ class ReviewLifecycleUseCases(
     private val storePort: WorkflowStorePort,
     private val clockPort: ClockPort? = null,
     private val compensationPort: CompensationPort? = null,
-    private val featureFlagPort: FeatureFlagPort? = null,
 ) {
   /*
    * 현재 Worktree를 검증하고 Draft PR과 초기 게이트를 게시합니다.
@@ -140,8 +129,6 @@ class ReviewLifecycleUseCases(
     }
     val workspace = context.workspace
     val subTask = context.subTask
-    val featureFlagFailure = validateFeatureFlag(request)
-    if (featureFlagFailure != null) return featureFlagFailure
     if (snapshot.pullRequests.any { it.subTaskId == subTask.id }) {
       return failure(FailureCode.REVIEW_ALREADY_OPEN, "SubTask의 Review가 이미 열려 있습니다.", subTask.id)
     }
@@ -215,8 +202,6 @@ class ReviewLifecycleUseCases(
                     base = base,
                     branch = subTask.branch,
                     risk = request.risk,
-                    exposure = request.exposure,
-                    featureFlagId = request.featureFlagId,
                     changeRevision = changeRevision,
                     reviewRevision = reviewRevision,
                 )
@@ -292,8 +277,6 @@ class ReviewLifecycleUseCases(
                         pullRequestId = pullRequest.id,
                         state = pullRequest.state.toSubTaskState(),
                         risk = request.risk,
-                        exposure = request.exposure,
-                        featureFlagId = request.featureFlagId,
                     )
                 ),
         )
@@ -615,33 +598,6 @@ class ReviewLifecycleUseCases(
     return ContextSuccess(snapshot, workspace, subTask, status)
   }
 
-  private fun validateFeatureFlag(request: OpenReviewLifecycleRequest): WorkflowResult.Failure? {
-    if (request.exposure != Exposure.FEATURE_FLAG) return null
-    val featureFlagId =
-        request.featureFlagId
-            ?: return failure(FailureCode.INVALID_ARGUMENT, "Feature Flag 식별자가 필요합니다.")
-    val port =
-        featureFlagPort
-            ?: return failure(
-                FailureCode.INVALID_GATE_STATE,
-                "Feature Flag의 안전한 기본 동작을 확인할 공급자가 없습니다.",
-                featureFlagId,
-            )
-    return when (val result = port.validateDefault(ValidateFeatureFlagRequest(featureFlagId))) {
-      is PortResult.Failure -> portFailure(result)
-      is PortResult.Success ->
-          if (result.value.safeDefault) {
-            null
-          } else {
-            failure(
-                FailureCode.INVALID_GATE_STATE,
-                "Feature Flag의 기본 동작이 안전하지 않습니다.",
-                featureFlagId,
-            )
-          }
-    }
-  }
-
   private fun requirePassedCheck(
       snapshot: WorkflowStoreSnapshot,
       subTaskId: SubTaskId,
@@ -787,8 +743,6 @@ class ReviewLifecycleUseCases(
           pullRequest.base == base &&
           pullRequest.state == PullRequestState.DRAFT &&
           pullRequest.risk == request.risk &&
-          pullRequest.exposure == request.exposure &&
-          pullRequest.featureFlagId == request.featureFlagId &&
           pullRequest.reviewRevision.id == reviewRevision.id &&
           pullRequest.changeRevision.id == changeRevision.id
 

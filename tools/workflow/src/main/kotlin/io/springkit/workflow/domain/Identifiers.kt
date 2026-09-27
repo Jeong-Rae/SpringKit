@@ -31,8 +31,6 @@ typealias CandidateId = String
 
 typealias ReleaseId = String
 
-typealias FeatureFlagId = String
-
 typealias MainRevision = String
 
 @Serializable

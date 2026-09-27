@@ -8,7 +8,6 @@ import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
 import io.springkit.workflow.domain.EventLog
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.IntegrationState
@@ -92,7 +91,6 @@ class DeploymentLifecycleUseCase(
     private val idPort: IdPort? = null,
     private val clockPort: ClockPort? = null,
     private val compensationPort: CompensationPort? = null,
-    private val featureFlagPort: FeatureFlagPort? = null,
 ) {
   /*
    * merge된 SubTask로 배포 후보를 만들고 검증을 시작합니다.
@@ -284,10 +282,6 @@ class DeploymentLifecycleUseCase(
                     changes,
                 )
             )
-          }
-
-          validateFeatureFlagDefaults(current, validationCandidate)?.let {
-            return@transaction Operation.Abort(it, changes)
           }
 
           val canary =
@@ -750,10 +744,6 @@ class DeploymentLifecycleUseCase(
             )
           }
 
-          validateFeatureFlagDefaults(latest, validatedCandidate)?.let {
-            return@transaction Operation.Abort(it, listOfNotNull(validationChange))
-          }
-
           val canary =
               when (
                   val result = deploymentPort.startCanary(StartCanaryRequest(latestCandidate.id))
@@ -934,42 +924,6 @@ class DeploymentLifecycleUseCase(
             FailureCode.INVARIANT_VIOLATION to "deployment provider changed candidate risks"
         else -> null
       }
-
-  private fun validateFeatureFlagDefaults(
-      snapshot: WorkflowStoreSnapshot,
-      candidate: DeploymentCandidate,
-  ): PortResult.Failure? {
-    val featureFlagIds =
-        candidate.includedSubTasks
-            .mapNotNull { subTaskId ->
-              snapshot.subTasks.firstOrNull { it.id == subTaskId }
-            }
-            .filter { it.exposure == Exposure.FEATURE_FLAG }
-            .mapNotNull(SubTask::featureFlagId)
-            .distinct()
-    if (featureFlagIds.isEmpty()) return null
-    val port =
-        featureFlagPort
-            ?: return failurePort(
-                FailureCode.INVALID_GATE_STATE,
-                "Feature Flag의 안전한 기본 동작을 확인할 공급자가 없습니다.",
-                candidate.id,
-            )
-    featureFlagIds.forEach { featureFlagId ->
-      when (val result = port.validateDefault(ValidateFeatureFlagRequest(featureFlagId))) {
-        is PortResult.Failure -> return result
-        is PortResult.Success ->
-            if (!result.value.safeDefault) {
-              return failurePort(
-                  FailureCode.INVALID_GATE_STATE,
-                  "Feature Flag의 기본 동작이 안전하지 않습니다.",
-                  featureFlagId,
-              )
-            }
-      }
-    }
-    return null
-  }
 
   private fun <T> transaction(
       request: StoreTransactionRequest,

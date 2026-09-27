@@ -39,7 +39,6 @@ class ProviderReleaseAdapterTest :
                   CreateReleaseRequest(
                       releaseId = "rel-1",
                       candidateId = "dc-1",
-                      featureFlagId = "recommendation-v2",
                   )
               )
 
@@ -54,7 +53,7 @@ class ProviderReleaseAdapterTest :
           val request = Json.parseToJsonElement(runner.commands.single().tokens[5]).jsonObject
           request["release_id"]?.jsonPrimitive?.content shouldBe "rel-1"
           request["candidate_id"]?.jsonPrimitive?.content shouldBe "dc-1"
-          request["feature_flag_id"]?.jsonPrimitive?.content shouldBe "recommendation-v2"
+          request["feature_flag_id"] shouldBe null
         }
 
         test("actor가 있으면, 최소 actor 필드를 snake_case 요청 JSON에 포함합니다") {
@@ -186,7 +185,7 @@ class ProviderReleaseAdapterTest :
 
           val failure =
               adapter
-                  .create(CreateReleaseRequest("rel-1", "dc-1", "recommendation-v2"))
+                  .create(CreateReleaseRequest("rel-1", "dc-1"))
                   .shouldBeTypeOf<PortResult.Failure>()
 
           failure.error.code shouldBe "RELEASE_PROVIDER_RESPONSE_INVALID"
@@ -288,6 +287,6 @@ private fun resultFor(stdout: String): CommandResult = CommandResult(0, stdout, 
 
 private fun releaseJson(id: String = "rel-1"): String =
     """
-    {"release_id":"$id","candidate_id":"dc-1","feature_flag_id":"recommendation-v2","state":"SAFE_DEFAULT","production_ready":true,"internal_validation_passed":true}
+    {"release_id":"$id","candidate_id":"dc-1","state":"SAFE_DEFAULT","production_ready":true,"internal_validation_passed":true}
     """
         .trimIndent()

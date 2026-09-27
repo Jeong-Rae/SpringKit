@@ -171,6 +171,70 @@ class GithubReviewAdapter(
   private val effectivePullRequestResolver: GithubPullRequestResolver =
       pullRequestResolver ?: DefaultGithubPullRequestResolver(humanActorIds)
 
+  /*
+   * PR을 변경하기 전에 현재 gh 인증 사용자와 작성자를 비교합니다. 인증 설정은 변경하지 않습니다.
+   */
+  fun authorizeAccountMismatch(
+      pullRequestId: String,
+      allowAccountMismatch: Boolean = false,
+  ): PortResult<String?> {
+    val authenticated =
+        execute(listOf("gh", "api", "user", "--jq", ".login"), pullRequestId)
+            ?: return failure(
+                "GITHUB_ACCOUNT_UNAVAILABLE",
+                "현재 gh 로그인 사용자를 확인할 수 없습니다.",
+                pullRequestId,
+            )
+    val currentLogin = authenticated.stdout.trim()
+    if (currentLogin.isBlank()) {
+      return failure(
+          "GITHUB_ACCOUNT_UNAVAILABLE",
+          "현재 gh 로그인 사용자를 확인할 수 없습니다.",
+          pullRequestId,
+      )
+    }
+    val authorResponse =
+        execute(
+            listOf("gh", "pr", "view", pullRequestId, "--json", "author"),
+            pullRequestId,
+        )
+            ?: return failure(
+                "GITHUB_PULL_REQUEST_AUTHOR_UNAVAILABLE",
+                "GitHub pull request 작성자를 확인할 수 없습니다.",
+                pullRequestId,
+            )
+    val authorLogin =
+        try {
+              json.decodeFromString<GithubPullRequest>(authorResponse.stdout).author?.login
+            } catch (_: SerializationException) {
+              null
+            }
+            ?.takeIf(String::isNotBlank)
+            ?: return failure(
+                "GITHUB_PULL_REQUEST_AUTHOR_UNAVAILABLE",
+                "GitHub pull request 작성자를 확인할 수 없습니다.",
+                pullRequestId,
+            )
+    if (currentLogin.equals(authorLogin, ignoreCase = true)) {
+      return PortResult.Success(null)
+    }
+    if (allowAccountMismatch) {
+      return PortResult.Success(
+          "현재 gh 사용자 '$currentLogin'와 PR 작성자 '$authorLogin'가 다릅니다. " +
+              "--allow-account-mismatch로 해당 불일치를 허용해 PR 변경을 계속합니다."
+      )
+    }
+    return PortResult.Failure(
+        PortError(
+            code = "GITHUB_ACCOUNT_MISMATCH",
+            message =
+                "현재 gh 사용자 '$currentLogin'와 PR 작성자 '$authorLogin'가 다릅니다. " +
+                    "PR 변경을 중단했습니다. 계속하려면 --allow-account-mismatch를 지정하세요.",
+            target = pullRequestId,
+        ),
+    )
+  }
+
   override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> {
     val created =
         execute(
@@ -215,8 +279,6 @@ class GithubReviewAdapter(
               base = request.base,
               state = PullRequestState.DRAFT,
               risk = request.risk,
-              exposure = request.exposure,
-              featureFlagId = request.featureFlagId,
               reviewRevision = request.reviewRevision,
               changeRevision =
                   request.changeRevision.copy(

@@ -3,6 +3,7 @@ package io.springkit.workflow.adapter.github
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeTypeOf
 import io.springkit.workflow.application.AddReviewCommentRequest
 import io.springkit.workflow.application.AddReviewCommentResponse
@@ -27,7 +28,6 @@ import io.springkit.workflow.domain.Approval
 import io.springkit.workflow.domain.ChangeRevision
 import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.Diff
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
 import io.springkit.workflow.domain.ReviewComment
@@ -39,6 +39,56 @@ import java.nio.file.Path
 
 class GithubAdapterTest :
     FunSpec({
+      context("PR 변경 전에 gh 계정과 PR 작성자를 비교하면") {
+        test("불일치 시 두 로그인과 재실행 옵션을 알리고 중단합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "agent-account\n", ""))
+          runner.enqueue(CommandResult(0, """{"author":{"login":"Jeong-Rae"}}""", ""))
+          val adapter = GithubReviewAdapter(Path.of("/repo"), runner)
+
+          val failure = adapter.authorizeAccountMismatch("17").shouldBeTypeOf<PortResult.Failure>()
+
+          failure.error.code shouldBe "GITHUB_ACCOUNT_MISMATCH"
+          failure.error.message shouldContain "agent-account"
+          failure.error.message shouldContain "Jeong-Rae"
+          failure.error.message shouldContain "--allow-account-mismatch"
+          runner.commands.map { it.tokens } shouldContainExactly
+              listOf(
+                  listOf("gh", "api", "user", "--jq", ".login"),
+                  listOf("gh", "pr", "view", "17", "--json", "author"),
+              )
+        }
+
+        test("명시적 override도 불일치를 경고하고 확인 절차만 건너뜁니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "agent-account\n", ""))
+          runner.enqueue(CommandResult(0, """{"author":{"login":"Jeong-Rae"}}""", ""))
+          val adapter = GithubReviewAdapter(Path.of("/repo"), runner)
+
+          val warning =
+              adapter
+                  .authorizeAccountMismatch("17", allowAccountMismatch = true)
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+
+          warning shouldBe
+              "현재 gh 사용자 'agent-account'와 PR 작성자 'Jeong-Rae'가 다릅니다. " +
+                  "--allow-account-mismatch로 해당 불일치를 허용해 PR 변경을 계속합니다."
+          runner.commands.map { it.tokens }.none { it.contains("auth") } shouldBe true
+        }
+
+        test("같은 계정이면 경고 없이 통과합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(CommandResult(0, "Jeong-Rae\n", ""))
+          runner.enqueue(CommandResult(0, """{"author":{"login":"jeong-rae"}}""", ""))
+          val adapter = GithubReviewAdapter(Path.of("/repo"), runner)
+
+          val result = adapter.authorizeAccountMismatch("17")
+
+          result shouldBe PortResult.Success(null)
+        }
+      }
+
       context("GitHub pull request를 열면") {
         test("gh pr create와 gh pr view에 요청 토큰을 전달하면, 도메인 revision을 보존합니다") {
           val runner = RecordingCommandRunner()
@@ -66,7 +116,6 @@ class GithubAdapterTest :
                       base = "main",
                       branch = "sk-27",
                       risk = Risk.HIGH,
-                      exposure = Exposure.UNCHANGED,
                       changeRevision = changeRevision,
                       reviewRevision = reviewRevision,
                   )
@@ -141,7 +190,6 @@ class GithubAdapterTest :
                           base = "main",
                           branch = "sk-27",
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                           changeRevision = ChangeRevision("cr-1", 1, Diff("local-fp")),
                           reviewRevision = ReviewRevision("rv-1", 1, "설명"),
                       )

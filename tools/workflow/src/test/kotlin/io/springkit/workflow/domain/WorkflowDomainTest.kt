@@ -104,7 +104,6 @@ class WorkflowDomainTest :
               Release(
                   id = "rel-1",
                   candidateId = "dc-1",
-                  featureFlagId = "flag-v2",
                   state = ReleaseState.AWAITING_RELEASE_APPROVAL,
                   productionReady = true,
                   internalValidationPassed = true,
@@ -121,7 +120,6 @@ class WorkflowDomainTest :
               Release(
                   id = "rel-1",
                   candidateId = "dc-1",
-                  featureFlagId = "flag-v2",
                   state = ReleaseState.CLEANUP_REQUIRED,
                   productionReady = true,
                   internalValidationPassed = true,
@@ -140,7 +138,6 @@ class WorkflowDomainTest :
               Release(
                   id = "rel-1",
                   candidateId = "dc-1",
-                  featureFlagId = "flag-v2",
                   state = ReleaseState.RELEASED,
                   productionReady = true,
                   internalValidationPassed = true,

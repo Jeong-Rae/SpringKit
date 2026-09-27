@@ -29,7 +29,6 @@ import io.springkit.workflow.application.SyncRequest
 import io.springkit.workflow.application.UpdateReviewLifecycleRequest
 import io.springkit.workflow.domain.ActorKind
 import io.springkit.workflow.domain.BlockedBy
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
@@ -64,6 +63,10 @@ class WorkflowCommandGateway(
     private val commentId: (String) -> PortResult<String> = { revision ->
       PortResult.Success("comment-$revision")
     },
+    private val reviewAccountMismatchCheck: (String, Boolean) -> PortResult<String?> = { _, _ ->
+      PortResult.Success(null)
+    },
+    private val reviewAccountMismatchWarning: (String) -> Unit = { System.err.println(it) },
 ) : CliWorkflowCommandGateway {
   override fun execute(request: WorkflowCommandRequest): WorkflowResult<JsonObject> =
       try {
@@ -171,8 +174,6 @@ class WorkflowCommandGateway(
                       subTaskId = workspace.subTaskId,
                       body = body,
                       risk = request.risk.toRisk(),
-                      exposure = request.exposure.toExposure(),
-                      featureFlagId = request.featureFlag,
                   )
               )
             }
@@ -222,7 +223,6 @@ class WorkflowCommandGateway(
               put("change_revision", pullRequest.changeRevision.id)
               put("diff_identity", pullRequest.changeRevision.diff.identity)
               put("risk", pullRequest.risk.name)
-              put("exposure", pullRequest.exposure.name)
               put("ci", pullRequest.ci.name)
               put("ai_review", pullRequest.aiReview.name)
               put("ready", pullRequest.state != io.springkit.workflow.domain.PullRequestState.DRAFT)
@@ -288,17 +288,19 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentWorkspaceContext().flatMapResult { workspace ->
-              optionalBody(workspace.path, request.bodyFile).flatMap { body ->
-                reviewLifecycle.update(
-                    UpdateReviewLifecycleRequest(
-                        workspaceId = workspace.id,
-                        subTaskId = workspace.subTaskId,
-                        pullRequestId = current.pullRequestId,
-                        expectedReviewRevisionId = request.revision,
-                        body = body,
-                    )
-                )
+            authorizeReviewMutation(current.subTaskId, request.allowAccountMismatch) {
+              context.currentWorkspaceContext().flatMapResult { workspace ->
+                optionalBody(workspace.path, request.bodyFile).flatMap { body ->
+                  reviewLifecycle.update(
+                      UpdateReviewLifecycleRequest(
+                          workspaceId = workspace.id,
+                          subTaskId = workspace.subTaskId,
+                          pullRequestId = current.pullRequestId,
+                          expectedReviewRevisionId = request.revision,
+                          body = body,
+                      )
+                  )
+                }
               }
             }
           }
@@ -327,25 +329,27 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentWorkspaceContext().flatMapResult { workspace ->
-              body(workspace.path, request.body, request.bodyFile).flatMap { text ->
-                context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
-                  commentId(request.revision).flatMapResult { id ->
-                    review.comment(
-                        AddReviewCommentRequest(
-                            current.pullRequestId,
-                            request.revision,
-                            actor,
-                            request.level.toReviewLevel(),
-                            ReviewComment(
-                                id,
-                                actor,
-                                text,
-                                path = request.path,
-                                line = request.line,
-                            ),
-                        ),
-                    )
+            authorizeReviewMutation(current.subTaskId, request.allowAccountMismatch) {
+              context.currentWorkspaceContext().flatMapResult { workspace ->
+                body(workspace.path, request.body, request.bodyFile).flatMap { text ->
+                  context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
+                    commentId(request.revision).flatMapResult { id ->
+                      review.comment(
+                          AddReviewCommentRequest(
+                              current.pullRequestId,
+                              request.revision,
+                              actor,
+                              request.level.toReviewLevel(),
+                              ReviewComment(
+                                  id,
+                                  actor,
+                                  text,
+                                  path = request.path,
+                                  line = request.line,
+                              ),
+                          ),
+                      )
+                    }
                   }
                 }
               }
@@ -369,25 +373,27 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentWorkspaceContext().flatMapResult { workspace ->
-              body(workspace.path, request.body, request.bodyFile).flatMap { text ->
-                context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
-                  val id =
-                      deterministicReplyCommentId(
-                          current.pullRequestId,
-                          request.revision,
-                          request.thread,
-                          actor.id,
-                          text,
-                      )
-                  review.reply(
-                      ReplyReviewThreadRequest(
-                          current.pullRequestId,
-                          request.revision,
-                          request.thread,
-                          ReviewComment(id, actor, text),
-                      )
-                  )
+            authorizeReviewMutation(current.subTaskId, request.allowAccountMismatch) {
+              context.currentWorkspaceContext().flatMapResult { workspace ->
+                body(workspace.path, request.body, request.bodyFile).flatMap { text ->
+                  context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
+                    val id =
+                        deterministicReplyCommentId(
+                            current.pullRequestId,
+                            request.revision,
+                            request.thread,
+                            actor.id,
+                            text,
+                        )
+                    review.reply(
+                        ReplyReviewThreadRequest(
+                            current.pullRequestId,
+                            request.revision,
+                            request.thread,
+                            ReviewComment(id, actor, text),
+                        )
+                    )
+                  }
                 }
               }
             }
@@ -428,15 +434,17 @@ class WorkflowCommandGateway(
       context
           .currentReview()
           .flatMapResult { current ->
-            context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
-              review.resolve(
-                  ResolveReviewThreadRequest(
-                      current.pullRequestId,
-                      request.revision,
-                      request.thread,
-                      actor,
-                  )
-              )
+            authorizeReviewMutation(current.subTaskId, request.allowAccountMismatch) {
+              context.currentActor(current.reviewRevision.id).flatMapResult { actor ->
+                review.resolve(
+                    ResolveReviewThreadRequest(
+                        current.pullRequestId,
+                        request.revision,
+                        request.thread,
+                        actor,
+                    )
+                )
+              }
             }
           }
           .toJson { data ->
@@ -453,20 +461,34 @@ class WorkflowCommandGateway(
           }
 
   private fun stack(request: WorkflowCommandRequest.Stack) =
-      context
-          .currentWorkspaceContext()
-          .flatMapResult { workspace ->
-            stackSync.stack(StackRequest(workspace.subTaskId, request.requires, request.clear))
-          }
-          .toJson(::stackJson)
+      context.currentWorkspaceContext().flatMapResult { workspace ->
+        authorizeReviewMutation(workspace.subTaskId, request.allowAccountMismatch) {
+          stackSync
+              .stack(StackRequest(workspace.subTaskId, request.requires, request.clear))
+              .toJson(::stackJson)
+        }
+      }
 
   private fun sync(request: WorkflowCommandRequest.Sync) =
-      context
-          .currentWorkspaceContext()
-          .flatMapResult { workspace ->
-            stackSync.sync(SyncRequest(workspace.subTaskId, request.continueSync, request.abort))
+      context.currentWorkspaceContext().flatMapResult { workspace ->
+        if (request.abort) {
+          stackSync
+              .sync(SyncRequest(workspace.subTaskId, request.continueSync, request.abort))
+              .toJson(::syncJson)
+        } else {
+          authorizeReviewMutation(workspace.subTaskId, request.allowAccountMismatch) {
+            stackSync
+                .sync(
+                    SyncRequest(
+                        workspace.subTaskId,
+                        request.continueSync,
+                        request.abort,
+                    ),
+                )
+                .toJson(::syncJson)
           }
-          .toJson(::syncJson)
+        }
+      }
 
   private fun status(request: WorkflowCommandRequest.Status) =
       status
@@ -481,72 +503,86 @@ class WorkflowCommandGateway(
           .toJson(::statusJson)
 
   private fun gateReady(request: WorkflowCommandRequest.GateReady) =
-      reviewGate.ready(ReadyGateRequest(request.target, request.reviewRevision)).toJson { data ->
-        buildJsonObject {
-          put(
-              "subtask",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.SubTask.serializer(),
-                  data.subTask,
-              ),
-          )
-          put(
-              "pull_request",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.PullRequest.serializer(),
-                  data.pullRequest,
-              ),
-          )
-          put(
-              "audit",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.AuditEntry.serializer(),
-                  data.audit,
-              ),
-          )
+      authorizeReviewMutation(request.target, request.allowAccountMismatch) {
+        reviewGate.ready(ReadyGateRequest(request.target, request.reviewRevision)).toJson { data ->
+          buildJsonObject {
+            put(
+                "subtask",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.SubTask.serializer(),
+                    data.subTask,
+                ),
+            )
+            put(
+                "pull_request",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.PullRequest.serializer(),
+                    data.pullRequest,
+                ),
+            )
+            put(
+                "audit",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.AuditEntry.serializer(),
+                    data.audit,
+                ),
+            )
+          }
         }
       }
 
   private fun gateApprove(request: WorkflowCommandRequest.GateApprove) =
-      reviewGate.approve(ApproveGateRequest(request.target, request.changeRevision)).toJson { data
-        ->
-        buildJsonObject {
-          put(
-              "subtask",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.SubTask.serializer(),
-                  data.subTask,
-              ),
-          )
-          put(
-              "pull_request",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.PullRequest.serializer(),
-                  data.pullRequest,
-              ),
-          )
-          put(
-              "approval",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.Approval.serializer(),
-                  data.approval,
-              ),
-          )
-          put(
-              "merge_queue",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.MergeQueueEntry.serializer(),
-                  data.mergeQueue,
-              ),
-          )
-          put(
-              "audit",
-              WorkflowJson.format.encodeToJsonElement(
-                  io.springkit.workflow.domain.AuditEntry.serializer(),
-                  data.audit,
-              ),
-          )
+      authorizeReviewMutation(request.target, request.allowAccountMismatch) {
+        reviewGate.approve(ApproveGateRequest(request.target, request.changeRevision)).toJson { data
+          ->
+          buildJsonObject {
+            put(
+                "subtask",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.SubTask.serializer(),
+                    data.subTask,
+                ),
+            )
+            put(
+                "pull_request",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.PullRequest.serializer(),
+                    data.pullRequest,
+                ),
+            )
+            put(
+                "approval",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.Approval.serializer(),
+                    data.approval,
+                ),
+            )
+            put(
+                "merge_queue",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.MergeQueueEntry.serializer(),
+                    data.mergeQueue,
+                ),
+            )
+            put(
+                "audit",
+                WorkflowJson.format.encodeToJsonElement(
+                    io.springkit.workflow.domain.AuditEntry.serializer(),
+                    data.audit,
+                ),
+            )
+          }
         }
+      }
+
+  private fun <T> authorizeReviewMutation(
+      subTaskId: String,
+      allowAccountMismatch: Boolean,
+      action: () -> WorkflowResult<T>,
+  ): WorkflowResult<T> =
+      reviewAccountMismatchCheck(subTaskId, allowAccountMismatch).flatMapResult { warning ->
+        warning?.let(reviewAccountMismatchWarning)
+        action()
       }
 
   private fun gateDeploy(request: WorkflowCommandRequest.GateDeploy) =
@@ -692,8 +728,6 @@ class WorkflowCommandGateway(
         put("change_revision", review.changeRevision)
         put("diff_identity", review.diffIdentity)
         put("risk", review.risk.name)
-        put("exposure", review.exposure.name)
-        review.featureFlagId?.let { put("feature_flag_id", it) }
         put(
             "threads",
             WorkflowJson.format.encodeToJsonElement(
@@ -753,7 +787,6 @@ class WorkflowCommandGateway(
       buildJsonObject {
         put("release_id", release.releaseId)
         put("state", release.state.name)
-        put("feature_flag_id", release.featureFlagId)
         put("candidate_id", release.release.candidateId)
         put("gate_required", release.gateRequired)
       }
@@ -794,13 +827,6 @@ class WorkflowCommandGateway(
         "normal" -> Risk.NORMAL
         "high" -> Risk.HIGH
         else -> throw InvalidWorkflowCommandArgument("--risk는 normal 또는 high여야 합니다.")
-      }
-
-  private fun String.toExposure(): Exposure =
-      when (lowercase()) {
-        "unchanged" -> Exposure.UNCHANGED
-        "feature-flag" -> Exposure.FEATURE_FLAG
-        else -> throw InvalidWorkflowCommandArgument("--exposure는 unchanged 또는 feature-flag여야 합니다.")
       }
 
   private fun String.toReviewLevel(): ReviewLevel =

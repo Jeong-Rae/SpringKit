@@ -9,7 +9,6 @@ import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DiffIdentity
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
 import io.springkit.workflow.domain.Integration
@@ -100,8 +99,6 @@ data class StatusReview(
     val changeRevision: ChangeRevisionId = pullRequest.changeRevision.id,
     val diffIdentity: DiffIdentity = pullRequest.changeRevision.diff.identity,
     val risk: Risk = pullRequest.risk,
-    val exposure: Exposure = pullRequest.exposure,
-    val featureFlagId: String? = pullRequest.featureFlagId,
     val threads: List<ReviewThread> = pullRequest.reviewRevision.threads,
     val ready: Boolean = state != PullRequestState.DRAFT,
     val approval: io.springkit.workflow.domain.Approval? = pullRequest.approval,
@@ -132,7 +129,6 @@ data class StatusDeployment(
 data class StatusRelease(
     val release: Release,
     val releaseId: ReleaseId = release.id,
-    val featureFlagId: String = release.featureFlagId,
     val state: ReleaseState = release.state,
     val gateRequired: Boolean = release.state == ReleaseState.AWAITING_RELEASE_APPROVAL,
 )

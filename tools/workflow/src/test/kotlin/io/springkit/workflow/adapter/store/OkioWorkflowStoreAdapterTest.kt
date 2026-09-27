@@ -22,7 +22,6 @@ import io.springkit.workflow.domain.Dependency
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.EventLog
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.GateRecorded
 import io.springkit.workflow.domain.GateType
 import io.springkit.workflow.domain.IdSequence
@@ -310,8 +309,6 @@ private fun fixtureState(): WorkflowState {
           SubTaskState.APPROVED,
           workspace = workspaceA,
           risk = Risk.HIGH,
-          exposure = Exposure.FEATURE_FLAG,
-          featureFlagId = "flag-1",
       )
   val subTaskB = SubTask("sk-102", "task-1", "Second", requires = "sk-101", workspace = workspaceB)
   val comment = ReviewComment("comment-1", human, "Looks good", 10, "src/App.kt", 4)
@@ -335,8 +332,6 @@ private fun fixtureState(): WorkflowState {
           "develop",
           PullRequestState.APPROVED,
           Risk.HIGH,
-          Exposure.FEATURE_FLAG,
-          "flag-1",
           review,
           change,
           Approval("approval-1", human, "cr-1", "diff-1", 12),
@@ -384,8 +379,7 @@ private fun fixtureState(): WorkflowState {
       deploymentCandidates = mapOf(candidate.id to candidate),
       releases =
           mapOf(
-              "release-1" to
-                  Release("release-1", "candidate-1", "flag-1", ReleaseState.RELEASED, true, true)
+              "release-1" to Release("release-1", "candidate-1", ReleaseState.RELEASED, true, true)
           ),
       startRequests =
           mapOf(

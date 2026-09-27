@@ -4,6 +4,7 @@ import io.springkit.workflow.adapter.json.WorkflowJson
 import io.springkit.workflow.domain.WorkflowState
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 
@@ -19,7 +20,8 @@ object WorkflowStateJsonCodec {
       WorkflowJson.format.encodeToString(serializer, state)
 
   fun decode(json: String): WorkflowState = decodeSafely {
-    WorkflowJson.format.decodeFromString(serializer, json)
+    val element = WorkflowJson.format.parseToJsonElement(json)
+    WorkflowJson.format.decodeFromJsonElement(serializer, withoutLegacyFeatureFlagFields(element))
   }
 
   fun decode(json: ByteArray): WorkflowState = decode(json.toString(Charsets.UTF_8))
@@ -28,7 +30,29 @@ object WorkflowStateJsonCodec {
       WorkflowJson.format.encodeToJsonElement(serializer, state)
 
   fun decode(json: JsonElement): WorkflowState = decodeSafely {
-    WorkflowJson.format.decodeFromJsonElement(serializer, json)
+    WorkflowJson.format.decodeFromJsonElement(serializer, withoutLegacyFeatureFlagFields(json))
+  }
+
+  private fun withoutLegacyFeatureFlagFields(element: JsonElement): JsonElement {
+    val root = element as? JsonObject ?: return element
+    val fieldsByCollection =
+        mapOf(
+            "sub_tasks" to setOf("exposure", "feature_flag_id"),
+            "pull_requests" to setOf("exposure", "feature_flag_id"),
+            "releases" to setOf("feature_flag_id"),
+        )
+    return JsonObject(
+        root.mapValues { (collection, values) ->
+          val legacyFields = fieldsByCollection[collection] ?: return@mapValues values
+          val records = values as? JsonObject ?: return@mapValues values
+          JsonObject(
+              records.mapValues { (_, record) ->
+                val fields = record as? JsonObject ?: return@mapValues record
+                JsonObject(fields.filterKeys { it !in legacyFields })
+              }
+          )
+        }
+    )
   }
 
   private fun decodeSafely(read: () -> WorkflowState): WorkflowState =

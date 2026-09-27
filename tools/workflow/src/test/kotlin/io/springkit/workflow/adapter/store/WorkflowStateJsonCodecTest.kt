@@ -16,7 +16,6 @@ import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.EventLog
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.GateRecorded
 import io.springkit.workflow.domain.GateType
@@ -73,6 +72,73 @@ class WorkflowStateJsonCodecTest :
 
           WorkflowStateJsonCodec.encodeToString(state) shouldBe
               WorkflowStateJsonCodec.encodeToString(state)
+        }
+      }
+
+      context("이전 Feature Flag 필드가 포함된 상태를 디코딩하면") {
+        test("구형 필드를 무시하고 다시 인코딩할 때 제거합니다") {
+          val state = fixture()
+          val root =
+              WorkflowJson.format
+                  .parseToJsonElement(WorkflowStateJsonCodec.encodeToString(state))
+                  .jsonObject
+          fun withLegacyFields(collection: String, id: String, fields: Map<String, JsonPrimitive>) =
+              JsonObject(
+                  root.getValue(collection).jsonObject.let { records ->
+                    records + (id to JsonObject(records.getValue(id).jsonObject + fields))
+                  }
+              )
+          val legacyRoot =
+              JsonObject(
+                  root +
+                      ("sub_tasks" to
+                          withLegacyFields(
+                              "sub_tasks",
+                              "sk-101",
+                              mapOf(
+                                  "exposure" to JsonPrimitive("FEATURE_FLAG"),
+                                  "feature_flag_id" to JsonPrimitive("flag-1"),
+                              ),
+                          )) +
+                      ("pull_requests" to
+                          withLegacyFields(
+                              "pull_requests",
+                              "pr-1",
+                              mapOf(
+                                  "exposure" to JsonPrimitive("FEATURE_FLAG"),
+                                  "feature_flag_id" to JsonPrimitive("flag-1"),
+                              ),
+                          )) +
+                      ("releases" to
+                          withLegacyFields(
+                              "releases",
+                              "release-1",
+                              mapOf("feature_flag_id" to JsonPrimitive("flag-1")),
+                          ))
+              )
+
+          val decoded = WorkflowStateJsonCodec.decode(legacyRoot)
+          val encoded =
+              WorkflowJson.format
+                  .parseToJsonElement(WorkflowStateJsonCodec.encodeToString(decoded))
+                  .jsonObject
+
+          decoded shouldBe state
+          encoded
+              .getValue("sub_tasks")
+              .jsonObject
+              .getValue("sk-101")
+              .jsonObject["feature_flag_id"] shouldBe null
+          encoded
+              .getValue("pull_requests")
+              .jsonObject
+              .getValue("pr-1")
+              .jsonObject["exposure"] shouldBe null
+          encoded
+              .getValue("releases")
+              .jsonObject
+              .getValue("release-1")
+              .jsonObject["feature_flag_id"] shouldBe null
         }
       }
 
@@ -142,8 +208,6 @@ private fun fixture(): WorkflowState {
           workspace =
               Workspace("ws-1", "sk-101", WorkspacePath("/tmp/sk-101"), "sk-101", dirty = true),
           risk = Risk.HIGH,
-          exposure = Exposure.FEATURE_FLAG,
-          featureFlagId = "flag-1",
       )
   val human = Actor("alice", ActorKind.HUMAN, "Alice")
   val comment = ReviewComment("comment-1", human, "Please keep the state stable", 11, "state.kt", 4)
@@ -168,8 +232,6 @@ private fun fixture(): WorkflowState {
           "develop",
           PullRequestState.APPROVED,
           Risk.HIGH,
-          Exposure.FEATURE_FLAG,
-          "flag-1",
           review,
           change,
           Approval("approval-1", human, "cr-1", "diff-1", 12),
@@ -230,8 +292,7 @@ private fun fixture(): WorkflowState {
       deploymentCandidates = mapOf("candidate-1" to candidate),
       releases =
           mapOf(
-              "release-1" to
-                  Release("release-1", "candidate-1", "flag-1", ReleaseState.INTERNAL_VALIDATION)
+              "release-1" to Release("release-1", "candidate-1", ReleaseState.INTERNAL_VALIDATION)
           ),
       startRequests =
           mapOf(

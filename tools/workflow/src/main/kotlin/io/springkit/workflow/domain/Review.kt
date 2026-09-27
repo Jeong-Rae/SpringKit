@@ -9,12 +9,6 @@ enum class Risk {
 }
 
 @Serializable
-enum class Exposure {
-  UNCHANGED,
-  FEATURE_FLAG,
-}
-
-@Serializable
 enum class PullRequestState {
   DRAFT,
   READY,
@@ -180,8 +174,6 @@ data class PullRequest(
     val base: BranchName,
     val state: PullRequestState = PullRequestState.DRAFT,
     val risk: Risk = Risk.NORMAL,
-    val exposure: Exposure = Exposure.UNCHANGED,
-    val featureFlagId: FeatureFlagId? = null,
     val reviewRevision: ReviewRevision,
     val changeRevision: ChangeRevision,
     val approval: Approval? = null,
@@ -194,9 +186,6 @@ data class PullRequest(
     require(title.isNotBlank()) { "pull request title must not be blank" }
     require(body.isNotBlank()) { "pull request body must not be blank" }
     require(base.isNotBlank()) { "pull request base must not be blank" }
-    require(exposure != Exposure.FEATURE_FLAG || !featureFlagId.isNullOrBlank()) {
-      "feature-flag exposure requires a feature flag id"
-    }
   }
 }
 

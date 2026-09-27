@@ -18,9 +18,7 @@ import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.DomainEvent
 import io.springkit.workflow.domain.EventLog
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
-import io.springkit.workflow.domain.FeatureFlagId
 import io.springkit.workflow.domain.IdSequence
 import io.springkit.workflow.domain.Integration
 import io.springkit.workflow.domain.MainRevision
@@ -619,23 +617,6 @@ interface GitPublishPort {
   fun publish(request: PublishBranchRequest): PortResult<PublishBranchResponse>
 }
 
-/*
- * Feature Flag의 안전한 기본 동작을 확인하는 요청입니다.
- */
-data class ValidateFeatureFlagRequest(val featureFlagId: FeatureFlagId)
-
-/*
- * Feature Flag 기본 동작 검증 결과입니다.
- */
-data class ValidateFeatureFlagResponse(val safeDefault: Boolean)
-
-/*
- * Feature Flag 공급자의 안전 기본 동작 검증 포트입니다.
- */
-interface FeatureFlagPort {
-  fun validateDefault(request: ValidateFeatureFlagRequest): PortResult<ValidateFeatureFlagResponse>
-}
-
 data class OpenReviewRequest(
     val subTaskId: SubTaskId,
     val title: String,
@@ -643,8 +624,6 @@ data class OpenReviewRequest(
     val base: BranchName,
     val branch: BranchName,
     val risk: Risk,
-    val exposure: Exposure,
-    val featureFlagId: FeatureFlagId? = null,
     val changeRevision: ChangeRevision,
     val reviewRevision: ReviewRevision,
 )
@@ -930,7 +909,6 @@ data class GetReleaseResponse(val releases: List<Release>)
 data class CreateReleaseRequest(
     val releaseId: ReleaseId,
     val candidateId: CandidateId,
-    val featureFlagId: FeatureFlagId,
 )
 
 data class CreateReleaseResponse(
@@ -1023,7 +1001,6 @@ enum class IdKind {
   MERGE_QUEUE,
   CANDIDATE,
   RELEASE,
-  FEATURE_FLAG,
   TRANSACTION,
   EVENT,
   AUDIT,

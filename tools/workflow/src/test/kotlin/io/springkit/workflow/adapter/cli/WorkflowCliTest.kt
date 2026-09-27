@@ -61,8 +61,8 @@ class WorkflowCliTest :
             CommandCase("check", "check", WorkflowCommandRequest.Check),
             CommandCase(
                 "review open",
-                "review open --body-file pr.md --risk high --exposure feature-flag --feature-flag flag-1",
-                WorkflowCommandRequest.ReviewOpen("pr.md", "high", "feature-flag", "flag-1"),
+                "review open --body-file pr.md --risk high",
+                WorkflowCommandRequest.ReviewOpen("pr.md", "high"),
             ),
             CommandCase(
                 "review show",
@@ -75,9 +75,34 @@ class WorkflowCliTest :
                 WorkflowCommandRequest.ReviewUpdate("rv-8", "pr.md"),
             ),
             CommandCase(
+                "review update mismatch override",
+                "review update --revision rv-8 --body-file pr.md --allow-account-mismatch",
+                WorkflowCommandRequest.ReviewUpdate("rv-8", "pr.md", allowAccountMismatch = true),
+            ),
+            CommandCase(
+                "review comment mismatch override",
+                "review comment --revision rv-8 --level R --body 의견 --allow-account-mismatch",
+                WorkflowCommandRequest.ReviewComment(
+                    revision = "rv-8",
+                    level = "R",
+                    body = "의견",
+                    allowAccountMismatch = true,
+                ),
+            ),
+            CommandCase(
                 "review reply",
                 "review reply --revision rv-8 --thread thread-1 --body 답변",
                 WorkflowCommandRequest.ReviewReply("rv-8", "thread-1", body = "답변"),
+            ),
+            CommandCase(
+                "review reply mismatch override",
+                "review reply --revision rv-8 --thread thread-1 --body 답변 --allow-account-mismatch",
+                WorkflowCommandRequest.ReviewReply(
+                    "rv-8",
+                    "thread-1",
+                    body = "답변",
+                    allowAccountMismatch = true,
+                ),
             ),
             CommandCase(
                 "review resolve",
@@ -85,9 +110,23 @@ class WorkflowCliTest :
                 WorkflowCommandRequest.ReviewResolve("rv-8", "thread-1"),
             ),
             CommandCase(
+                "review resolve mismatch override",
+                "review resolve --revision rv-8 --thread thread-1 --allow-account-mismatch",
+                WorkflowCommandRequest.ReviewResolve(
+                    "rv-8",
+                    "thread-1",
+                    allowAccountMismatch = true,
+                ),
+            ),
+            CommandCase(
                 "stack requires",
                 "stack --requires sk-101",
                 WorkflowCommandRequest.Stack(requires = "sk-101"),
+            ),
+            CommandCase(
+                "stack mismatch override",
+                "stack --requires sk-101 --allow-account-mismatch",
+                WorkflowCommandRequest.Stack(requires = "sk-101", allowAccountMismatch = true),
             ),
             CommandCase(
                 "stack clear",
@@ -99,6 +138,11 @@ class WorkflowCliTest :
                 "sync continue",
                 "sync --continue",
                 WorkflowCommandRequest.Sync(continueSync = true),
+            ),
+            CommandCase(
+                "sync mismatch override",
+                "sync --continue --allow-account-mismatch",
+                WorkflowCommandRequest.Sync(continueSync = true, allowAccountMismatch = true),
             ),
             CommandCase(
                 "sync abort",
@@ -116,9 +160,19 @@ class WorkflowCliTest :
                 WorkflowCommandRequest.GateReady("sk-101", "rv-8"),
             ),
             CommandCase(
+                "gate ready mismatch override",
+                "gate ready sk-101 --review-revision rv-8 --allow-account-mismatch",
+                WorkflowCommandRequest.GateReady("sk-101", "rv-8", allowAccountMismatch = true),
+            ),
+            CommandCase(
                 "gate approve",
                 "gate approve sk-101 --change-revision cr-4",
                 WorkflowCommandRequest.GateApprove("sk-101", "cr-4"),
+            ),
+            CommandCase(
+                "gate approve mismatch override",
+                "gate approve sk-101 --change-revision cr-4 --allow-account-mismatch",
+                WorkflowCommandRequest.GateApprove("sk-101", "cr-4", allowAccountMismatch = true),
             ),
             CommandCase(
                 "gate deploy",
@@ -144,24 +198,32 @@ class WorkflowCliTest :
         }
       }
 
-      context("서로 함께 사용할 수 없는 CLI 인자를 검증할 때") {
+      context("지원하지 않는 CLI 인자를 검증할 때") {
         withData(
             nameFn = { "${it.name}, 요청을 전달하지 않고 실패합니다" },
             InvalidCommandCase(
                 "review open의 risk가 지원 값이 아니면",
-                "review open --body-file pr.md --risk medium --exposure unchanged",
+                "review open --body-file pr.md --risk medium",
             ),
             InvalidCommandCase(
-                "review open의 exposure가 지원 값이 아니면",
-                "review open --body-file pr.md --risk normal --exposure public",
+                "review open에서 Feature Flag 옵션을 입력하면",
+                "review open --body-file pr.md --risk normal --feature-flag flag-1",
             ),
             InvalidCommandCase(
-                "feature-flag exposure에 Feature Flag가 없으면",
-                "review open --body-file pr.md --risk normal --exposure feature-flag",
+                "review open에서 exposure 옵션을 입력하면",
+                "review open --body-file pr.md --risk normal --exposure unchanged",
             ),
             InvalidCommandCase(
-                "unchanged exposure에 Feature Flag가 있으면",
-                "review open --body-file pr.md --risk normal --exposure unchanged --feature-flag flag-1",
+                "PR 작성자를 비교할 수 없는 review open에는 override를 쓸 수 없으면",
+                "review open --body-file pr.md --risk normal --allow-account-mismatch",
+            ),
+            InvalidCommandCase(
+                "조회 명령 review show에 mismatch override를 입력하면",
+                "review show --threads all --allow-account-mismatch",
+            ),
+            InvalidCommandCase(
+                "조회 명령 status에 mismatch override를 입력하면",
+                "status --candidate dc-1 --allow-account-mismatch",
             ),
             InvalidCommandCase(
                 "review comment에 본문 입력이 없으면",

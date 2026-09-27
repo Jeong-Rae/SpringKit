@@ -20,7 +20,6 @@ import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.Diff
 import io.springkit.workflow.domain.EventLog
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.Integration
 import io.springkit.workflow.domain.IntegrationState
@@ -211,7 +210,6 @@ class WorkflowApplicationRuntimeTest :
                           "WORKFLOW_REPO_ROOT" to root.toString(),
                           "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
                           "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
-                          "WORKFLOW_FEATURE_FLAG_COMMAND" to "[\"feature\"]",
                       ),
                   commandRunner = RuntimeCommandRunnerForComposition,
                   eventPort = eventPort,
@@ -257,10 +255,10 @@ class WorkflowApplicationRuntimeTest :
           eventPort.acknowledged?.accepted shouldBe false
         }
 
-        test("Production 후보가 여러 Feature Flag를 포함하면, Release를 모두 생성합니다") {
+        test("Production candidate에 SubTask가 여러 개여도, Release를 하나만 생성합니다") {
           val root = Files.createTempDirectory("workflow-runtime-release-all-")
           val statePath = root.resolve("state.json")
-          val state = productionState(featureFlagIds = listOf("flag-1", "flag-2"))
+          val state = productionState(includedSubTaskCount = 2)
           Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
           val runner = RuntimeProviderCommandRunner(root)
           val eventPort = RecordingWorkflowEventPort()
@@ -280,21 +278,17 @@ class WorkflowApplicationRuntimeTest :
 
           result.shouldBeInstanceOf<WorkflowResult.Success<*>>()
           eventPort.acknowledged?.accepted shouldBe true
-          runner.operationCalls("create-release") shouldBe 2
-          runner.operationCalls("validate-release") shouldBe 2
+          runner.operationCalls("create-release") shouldBe 1
+          runner.operationCalls("validate-release") shouldBe 1
           WorkflowStateJsonCodec.decode(Files.readString(statePath)).releases.values.map {
-            it.featureFlagId
-          } shouldBe listOf("flag-1", "flag-2")
+            it.candidateId
+          } shouldBe listOf("candidate-1")
         }
 
         test("RELEASE_CHANGED가 ROLLOUT이면, Release provider의 rollout을 계속 실행합니다") {
           val root = Files.createTempDirectory("workflow-runtime-release-rollout-")
           val statePath = root.resolve("state.json")
-          val state =
-              productionState(
-                  featureFlagIds = listOf("flag-1"),
-                  releaseState = ReleaseState.ROLLOUT,
-              )
+          val state = productionState(releaseState = ReleaseState.ROLLOUT)
           Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
           val runner = RuntimeProviderCommandRunner(root)
           val eventPort = RecordingWorkflowEventPort()
@@ -323,7 +317,7 @@ class WorkflowApplicationRuntimeTest :
         test("Production 전환 뒤 후속 merge가 있으면, 최신 main revision으로 다음 후보를 만듭니다") {
           val root = Files.createTempDirectory("workflow-runtime-next-candidate-")
           val statePath = root.resolve("state.json")
-          val state = productionState(featureFlagIds = emptyList(), includeNextMerge = true)
+          val state = productionState(includeNextMerge = true)
           Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
           val runner = RuntimeProviderCommandRunner(root)
           val eventPort = RecordingWorkflowEventPort()
@@ -350,12 +344,7 @@ class WorkflowApplicationRuntimeTest :
         test("Production 뒤 event log가 일부만 남으면, integrations에서 후속 merge를 찾아 후보를 만듭니다") {
           val root = Files.createTempDirectory("workflow-runtime-partial-event-log-")
           val statePath = root.resolve("state.json")
-          val state =
-              productionState(
-                  featureFlagIds = emptyList(),
-                  includeNextMerge = true,
-                  partialEventLog = true,
-              )
+          val state = productionState(includeNextMerge = true, partialEventLog = true)
           Files.writeString(statePath, WorkflowStateJsonCodec.encodeToString(state))
           val runner = RuntimeProviderCommandRunner(root)
           val runtime = providerRuntime(root, statePath, runner, RecordingWorkflowEventPort())
@@ -396,39 +385,24 @@ private fun providerRuntime(
                 "WORKFLOW_STATE_FILE" to statePath.toString(),
                 "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
                 "WORKFLOW_RELEASE_COMMAND" to "[\"release\"]",
-                "WORKFLOW_FEATURE_FLAG_COMMAND" to "[\"feature\"]",
             ),
         commandRunner = runner,
         eventPort = eventPort,
     )
 
 private fun productionState(
-    featureFlagIds: List<String>,
+    includedSubTaskCount: Int = 1,
     releaseState: ReleaseState? = null,
     includeNextMerge: Boolean = false,
     partialEventLog: Boolean = false,
 ): WorkflowState {
-  val currentSubTasks = featureFlagIds.mapIndexed { index, featureFlagId ->
-    SubTask(
-        id = "sk-flag-${index + 1}",
-        taskId = "task-1",
-        title = "기능 플래그 ${index + 1}",
-        state = SubTaskState.MERGED,
-        exposure = Exposure.FEATURE_FLAG,
-        featureFlagId = featureFlagId,
-    )
-  }
   val currentSubTask =
-      if (currentSubTasks.isNotEmpty()) {
-        currentSubTasks
-      } else {
-        listOf(
-            SubTask(
-                id = "sk-current",
-                taskId = "task-1",
-                title = "현재 변경",
-                state = SubTaskState.MERGED,
-            )
+      (1..includedSubTaskCount).map { index ->
+        SubTask(
+            id = "sk-current-$index",
+            taskId = "task-1",
+            title = "현재 변경 $index",
+            state = SubTaskState.MERGED,
         )
       }
   val nextSubTask =
@@ -462,7 +436,6 @@ private fun productionState(
     Release(
         id = "release-1",
         candidateId = candidate.id,
-        featureFlagId = requireNotNull(featureFlagIds.singleOrNull()),
         state = it,
         productionReady = true,
         internalValidationPassed = true,
@@ -505,7 +478,7 @@ private class RuntimeProviderCommandRunner(private val repositoryRoot: Path) : C
 
   private val commands = mutableListOf<List<String>>()
   private val candidates = mutableMapOf<String, CandidatePayload>()
-  private val releases = mutableMapOf<String, Pair<String, String>>()
+  private val releases = mutableMapOf<String, String>()
 
   fun operationCalls(operation: String): Int = commands.count { it.getOrNull(1) == operation }
 
@@ -566,21 +539,17 @@ private class RuntimeProviderCommandRunner(private val repositoryRoot: Path) : C
   ): CommandResult {
     val payload = Json.parseToJsonElement(command.last()).jsonObject
     val releaseId = payload.getValue("release_id").jsonPrimitive.content
-    val target =
+    val candidateId =
         if (command.getOrNull(1) == "create-release") {
-          val value =
-              payload.getValue("candidate_id").jsonPrimitive.content to
-                  payload.getValue("feature_flag_id").jsonPrimitive.content
-          releases[releaseId] = value
-          value
+          payload.getValue("candidate_id").jsonPrimitive.content.also {
+            releases[releaseId] = it
+          }
         } else {
-          releases[releaseId] ?: ("candidate-1" to "flag-1")
+          releases[releaseId] ?: "candidate-1"
         }
-    val candidateId = target.first
-    val featureFlagId = target.second
     return CommandResult(
         0,
-        """{"release":{"release_id":"$releaseId","candidate_id":"$candidateId","feature_flag_id":"$featureFlagId","state":"${state.name}","production_ready":$validated,"internal_validation_passed":$validated}}""",
+        """{"release":{"release_id":"$releaseId","candidate_id":"$candidateId","state":"${state.name}","production_ready":$validated,"internal_validation_passed":$validated}}""",
         "",
     )
   }

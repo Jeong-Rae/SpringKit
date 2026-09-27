@@ -121,7 +121,6 @@ class StoreIdAdapter(private val store: WorkflowStorePort) : IdPort {
         IdKind.PULL_REQUEST -> "pr"
         IdKind.VALIDATION -> "validation"
         IdKind.CHECK -> "check"
-        IdKind.FEATURE_FLAG -> "ff"
         IdKind.TRANSACTION -> "tx"
         IdKind.EVENT -> "event"
         IdKind.COMPENSATION -> "compensation"

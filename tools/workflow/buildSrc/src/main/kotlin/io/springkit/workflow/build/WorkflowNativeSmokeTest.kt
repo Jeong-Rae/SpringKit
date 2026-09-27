@@ -104,7 +104,6 @@ abstract class WorkflowNativeSmokeTest : DefaultTask() {
                 mapOf(
                     "WORKFLOW_DEPLOYMENT_COMMAND" to "[\"deploy\"]",
                     "WORKFLOW_RELEASE_COMMAND" to "",
-                    "WORKFLOW_FEATURE_FLAG_COMMAND" to "",
                 ),
         )
     val configurationJson =

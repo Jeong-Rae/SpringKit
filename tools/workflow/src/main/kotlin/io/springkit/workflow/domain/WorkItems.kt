@@ -116,8 +116,6 @@ data class SubTask(
     val requires: SubTaskId? = null,
     val pullRequestId: PullRequestId? = null,
     val risk: Risk = Risk.NORMAL,
-    val exposure: Exposure = Exposure.UNCHANGED,
-    val featureFlagId: FeatureFlagId? = null,
     /*
      * Merge 이후 정리 과정에서 마지막으로 저장한 상태입니다.
      */
@@ -134,12 +132,6 @@ data class SubTask(
     require(branch == id) { "subtask branch must equal subtask id" }
     require(cleanupRevision == null || cleanupRevision.isNotBlank()) {
       "cleanup revision must not be blank"
-    }
-    require(exposure != Exposure.FEATURE_FLAG || !featureFlagId.isNullOrBlank()) {
-      "feature-flag exposure requires a feature flag id"
-    }
-    require(exposure != Exposure.UNCHANGED || featureFlagId == null) {
-      "unchanged exposure must not have a feature flag id"
     }
   }
 }

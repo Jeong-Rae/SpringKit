@@ -10,7 +10,6 @@ import io.springkit.workflow.adapter.local.LocalWorkspaceAdapter
 import io.springkit.workflow.adapter.local.SnapshotTaskAdapter
 import io.springkit.workflow.adapter.local.SystemClockAdapter
 import io.springkit.workflow.adapter.provider.ProviderDeploymentAdapter
-import io.springkit.workflow.adapter.provider.ProviderFeatureFlagAdapter
 import io.springkit.workflow.adapter.provider.ProviderReleaseAdapter
 import io.springkit.workflow.adapter.store.OkioWorkflowStoreAdapter
 import io.springkit.workflow.adapter.store.StoreIdAdapter
@@ -27,7 +26,6 @@ import io.springkit.workflow.application.DeploymentLifecycleRequest
 import io.springkit.workflow.application.DeploymentLifecycleResponse
 import io.springkit.workflow.application.DeploymentLifecycleUseCase
 import io.springkit.workflow.application.DeploymentPort
-import io.springkit.workflow.application.FeatureFlagPort
 import io.springkit.workflow.application.GetCandidateRequest
 import io.springkit.workflow.application.GetCandidateResponse
 import io.springkit.workflow.application.GetReleaseRequest
@@ -170,14 +168,6 @@ fun createDefaultApplicationRuntime(
             commandRunner = commandRunner,
         )
       } ?: UnavailableReleasePort
-  val featureFlagPort: FeatureFlagPort? =
-      providerCommands?.featureFlag?.let {
-        ProviderFeatureFlagAdapter(
-            commandPrefix = it,
-            workingDirectory = repositoryRoot,
-            commandRunner = commandRunner,
-        )
-      }
   val validation = LocalValidationAdapter(workspacePath, commandRunner = commandRunner)
   val reviewAdapter =
       io.springkit.workflow.adapter.github.GithubReviewAdapter(
@@ -229,7 +219,6 @@ fun createDefaultApplicationRuntime(
           ciPort = ci,
           storePort = store,
           clockPort = clock,
-          featureFlagPort = featureFlagPort,
       )
   val stackSync = StackSyncUseCases(git, reviewAdapter, store, idPort, clockPort = clock)
   val mergeQueueLifecycle =
@@ -247,7 +236,6 @@ fun createDefaultApplicationRuntime(
           idPort = idPort,
           clockPort = clock,
           compensationPort = RuntimeCompensationPort,
-          featureFlagPort = featureFlagPort,
       )
   val releaseLifecycle =
       ReleaseLifecycleUseCases(
@@ -289,7 +277,6 @@ fun createDefaultApplicationRuntime(
           idPort = idPort,
           clockPort = clock,
           compensationPort = RuntimeCompensationPort,
-          featureFlagPort = featureFlagPort,
       )
   val commandGateway =
       WorkflowCommandGateway(
@@ -312,6 +299,22 @@ fun createDefaultApplicationRuntime(
                 }
               }
               is PortResult.Failure -> result
+            }
+          },
+          reviewAccountMismatchCheck = { subTaskId, allowAccountMismatch ->
+            when (val result = store.snapshot(StoreSnapshotRequest())) {
+              is PortResult.Failure -> PortResult.Failure(result.error, result.change)
+              is PortResult.Success -> {
+                val pullRequest =
+                    result.value.snapshot.pullRequests.firstOrNull {
+                      it.subTaskId == subTaskId
+                    }
+                if (pullRequest == null) {
+                  PortResult.Success(null)
+                } else {
+                  reviewAdapter.authorizeAccountMismatch(pullRequest.id, allowAccountMismatch)
+                }
+              }
             }
           },
       )
@@ -425,25 +428,23 @@ private fun latestMergedRevisionAfter(
 private data class ProviderCommandPrefixes(
     val deployment: List<String>,
     val release: List<String>,
-    val featureFlag: List<String>,
 )
 
 /*
- * 세 provider 명령 설정을 모두 구성했는지 확인하고 JSON 배열을 해석합니다.
+ * 두 provider 명령 설정을 모두 구성했는지 확인하고 JSON 배열을 해석합니다.
  */
 private fun providerCommands(environment: Map<String, String>): ProviderCommandPrefixes? {
   val values =
       mapOf(
               "WORKFLOW_DEPLOYMENT_COMMAND" to environment["WORKFLOW_DEPLOYMENT_COMMAND"],
               "WORKFLOW_RELEASE_COMMAND" to environment["WORKFLOW_RELEASE_COMMAND"],
-              "WORKFLOW_FEATURE_FLAG_COMMAND" to environment["WORKFLOW_FEATURE_FLAG_COMMAND"],
           )
           .mapValues { (_, value) -> value?.trim()?.takeIf(String::isNotBlank) }
   if (values.values.all { it == null }) return null
   val missing = values.filterValues { it == null }.keys
   if (missing.isNotEmpty()) {
     throw WorkflowConfigurationException(
-        "provider CLI 설정은 세 환경 변수를 모두 지정해야 합니다. 누락: ${missing.joinToString(", ")}"
+        "provider CLI 설정은 두 환경 변수를 모두 지정해야 합니다. 누락: ${missing.joinToString(", ")}"
     )
   }
   return ProviderCommandPrefixes(
@@ -456,11 +457,6 @@ private fun providerCommands(environment: Map<String, String>): ProviderCommandP
           decodeProviderCommand(
               "WORKFLOW_RELEASE_COMMAND",
               values.getValue("WORKFLOW_RELEASE_COMMAND")!!,
-          ),
-      featureFlag =
-          decodeProviderCommand(
-              "WORKFLOW_FEATURE_FLAG_COMMAND",
-              values.getValue("WORKFLOW_FEATURE_FLAG_COMMAND")!!,
           ),
   )
 }

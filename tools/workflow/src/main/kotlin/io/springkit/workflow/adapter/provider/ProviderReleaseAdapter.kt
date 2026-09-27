@@ -69,9 +69,6 @@ class ProviderReleaseAdapter(
       require(release.candidateId == request.candidateId) {
         "provider returned candidate ${release.candidateId} for ${request.candidateId}"
       }
-      require(release.featureFlagId == request.featureFlagId) {
-        "provider returned feature flag ${release.featureFlagId} for ${request.featureFlagId}"
-      }
       CreateReleaseResponse(release, change ?: receipt(Operation.CREATE, request.releaseId))
     }
   }
@@ -285,7 +282,6 @@ class ProviderReleaseAdapter(
   private fun validateCreateRequest(request: CreateReleaseRequest): PortResult.Failure? {
     if (request.releaseId.isBlank()) return invalidRequest(request.releaseId)
     if (request.candidateId.isBlank()) return invalidRequest(request.candidateId)
-    if (request.featureFlagId.isBlank()) return invalidRequest(request.featureFlagId)
     return null
   }
 
@@ -327,7 +323,6 @@ private data class GetRequestPayload(
 private data class CreateRequestPayload(
     @SerialName("release_id") val releaseId: String,
     @SerialName("candidate_id") val candidateId: String,
-    @SerialName("feature_flag_id") val featureFlagId: String,
 )
 
 @Serializable
@@ -364,7 +359,6 @@ private data class ChangeResponsePayload(
 private data class ReleasePayload(
     @SerialName("release_id") val id: String,
     @SerialName("candidate_id") val candidateId: String,
-    @SerialName("feature_flag_id") val featureFlagId: String,
     val state: ReleaseState = ReleaseState.SAFE_DEFAULT,
     @SerialName("production_ready") val productionReady: Boolean = false,
     @SerialName("internal_validation_passed") val internalValidationPassed: Boolean = false,
@@ -374,7 +368,6 @@ private data class ReleasePayload(
       Release(
           id = id,
           candidateId = candidateId,
-          featureFlagId = featureFlagId,
           state = state,
           productionReady = productionReady,
           internalValidationPassed = internalValidationPassed,
@@ -412,7 +405,6 @@ private fun CreateReleaseRequest.toPayload(): CreateRequestPayload =
     CreateRequestPayload(
         releaseId = releaseId,
         candidateId = candidateId,
-        featureFlagId = featureFlagId,
     )
 
 private fun ValidateReleaseRequest.toPayload(): ValidateRequestPayload =

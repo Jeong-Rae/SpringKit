@@ -13,7 +13,6 @@ import io.springkit.workflow.domain.CheckSummary
 import io.springkit.workflow.domain.CiRun
 import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.Diff
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.ExternalTaskId
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.PullRequest
@@ -43,7 +42,6 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           body = validReviewBody(),
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                       )
                   )
 
@@ -75,7 +73,6 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           body = validReviewBody(),
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                       )
                   )
 
@@ -83,28 +80,6 @@ class ReviewLifecycleUseCasesTest :
               io.springkit.workflow.domain.FailureCode.STALE_DIFF_IDENTITY
           fixture.publish.requests shouldBe emptyList()
           fixture.store.current.pullRequests shouldBe emptyList()
-        }
-
-        test("Feature Flag 기본 동작이 안전하지 않으면, PR을 게시하지 않고 Gate 오류를 반환합니다") {
-          val fixture = ReviewLifecycleFixture(featureSafeDefault = false)
-
-          val result =
-              fixture
-                  .useCases()
-                  .open(
-                      OpenReviewLifecycleRequest(
-                          workspaceId = "ws-101",
-                          subTaskId = "sk-101",
-                          body = validReviewBody(),
-                          risk = Risk.HIGH,
-                          exposure = Exposure.FEATURE_FLAG,
-                          featureFlagId = "flag-v2",
-                      )
-                  )
-
-          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
-              io.springkit.workflow.domain.FailureCode.INVALID_GATE_STATE
-          fixture.publish.requests shouldBe emptyList()
         }
 
         test("AI Review 공급자가 없으면, Draft PR을 열고 AI Review를 PENDING으로 유지합니다") {
@@ -119,7 +94,6 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           body = validReviewBody(),
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                       )
                   )
 
@@ -144,7 +118,6 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           body = "# 해결하려는 문제\n내용",
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                       )
                   )
 
@@ -177,7 +150,6 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           body = body,
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                       )
                   )
 
@@ -303,7 +275,6 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           body = validReviewBody(),
                           risk = Risk.NORMAL,
-                          exposure = Exposure.UNCHANGED,
                       )
                   )
 
@@ -321,7 +292,6 @@ private class ReviewLifecycleFixture(
     statusRevision: String = "head-1",
     withPullRequest: Boolean = false,
     private val ciFailure: Boolean = false,
-    private val featureSafeDefault: Boolean = true,
     private val withAiReview: Boolean = true,
 ) {
   val store = LifecycleFakeStore(snapshot(withPullRequest))
@@ -332,7 +302,6 @@ private class ReviewLifecycleFixture(
   val ci = LifecycleFakeCiPort(ciFailure)
   val ai = LifecycleFakeAiPort()
   val compensation = LifecycleFakeCompensationPort()
-  val featureFlag = LifecycleFakeFeatureFlagPort(featureSafeDefault)
 
   init {
     if (withPullRequest) store.current = store.current.copy(pullRequests = listOf(pullRequest()))
@@ -348,7 +317,6 @@ private class ReviewLifecycleFixture(
           aiReviewPort = ai.takeIf { withAiReview },
           storePort = store,
           compensationPort = compensation,
-          featureFlagPort = featureFlag,
       )
 }
 
@@ -504,8 +472,6 @@ private class LifecycleFakeReviewPort : ReviewPort {
             request.base,
             PullRequestState.DRAFT,
             request.risk,
-            request.exposure,
-            request.featureFlagId,
             request.reviewRevision,
             request.changeRevision,
         )
@@ -576,13 +542,6 @@ private class LifecycleFakeCompensationPort : CompensationPort {
     calls += 1
     return PortResult.Success(CompensateResponse(request.change))
   }
-}
-
-private class LifecycleFakeFeatureFlagPort(private val safeDefault: Boolean) : FeatureFlagPort {
-  override fun validateDefault(
-      request: ValidateFeatureFlagRequest
-  ): PortResult<ValidateFeatureFlagResponse> =
-      PortResult.Success(ValidateFeatureFlagResponse(safeDefault))
 }
 
 private class LifecycleFakeStore(initial: WorkflowStoreSnapshot) : WorkflowStorePort {

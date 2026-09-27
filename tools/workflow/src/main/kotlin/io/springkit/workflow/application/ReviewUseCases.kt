@@ -279,24 +279,6 @@ class ReviewUseCases(
     if (request.base.isBlank() || request.branch.isBlank()) {
       return FailureData(FailureCode.INVALID_ARGUMENT, "review base and branch must not be blank")
     }
-    if (
-        request.exposure == io.springkit.workflow.domain.Exposure.FEATURE_FLAG &&
-            request.featureFlagId.isNullOrBlank()
-    ) {
-      return FailureData(
-          FailureCode.INVALID_ARGUMENT,
-          "feature-flag exposure requires a feature flag id",
-      )
-    }
-    if (
-        request.exposure == io.springkit.workflow.domain.Exposure.UNCHANGED &&
-            request.featureFlagId != null
-    ) {
-      return FailureData(
-          FailureCode.INVALID_ARGUMENT,
-          "unchanged exposure must not have a feature flag id",
-      )
-    }
     return null
   }
 
@@ -342,8 +324,6 @@ class ReviewUseCases(
         pullRequest.base == request.base &&
         pullRequest.state == io.springkit.workflow.domain.PullRequestState.DRAFT &&
         pullRequest.risk == request.risk &&
-        pullRequest.exposure == request.exposure &&
-        pullRequest.featureFlagId == request.featureFlagId &&
         pullRequest.reviewRevision.id == request.reviewRevision.id &&
         pullRequest.changeRevision.id == request.changeRevision.id
   }

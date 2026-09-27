@@ -11,7 +11,6 @@ import io.springkit.workflow.domain.Approval
 import io.springkit.workflow.domain.ChangeRevision
 import io.springkit.workflow.domain.CiStatus
 import io.springkit.workflow.domain.Diff
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.PullRequest
 import io.springkit.workflow.domain.PullRequestState
 import io.springkit.workflow.domain.ReviewComment
@@ -381,7 +380,6 @@ private fun pullRequest(): PullRequest =
         base = "main",
         state = PullRequestState.REVIEW,
         risk = Risk.NORMAL,
-        exposure = Exposure.UNCHANGED,
         reviewRevision = revision("rv-1", "body"),
         changeRevision = ChangeRevision("cr-1", 1, Diff("diff-1")),
         approval =

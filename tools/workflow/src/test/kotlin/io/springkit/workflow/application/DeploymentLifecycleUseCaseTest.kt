@@ -7,7 +7,6 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.EventLog
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.Integration
 import io.springkit.workflow.domain.IntegrationState
@@ -32,74 +31,6 @@ class DeploymentLifecycleUseCaseTest :
           response.candidate.includedSubTasks shouldContainExactly listOf("sk-101")
           response.candidate.risks shouldBe mapOf("sk-101" to Risk.NORMAL)
           fixture.deployment.startCanaryCalls shouldBe 1
-        }
-
-        test("Feature Flag SubTask의 기본 동작이 안전하면, Canary를 시작합니다") {
-          val fixture = DeploymentLifecycleFixture()
-          fixture.enableFeatureFlag(
-              PortResult.Success(ValidateFeatureFlagResponse(safeDefault = true))
-          )
-
-          val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
-
-          result.successData().candidate.state shouldBe DeploymentCandidateState.CANARY
-          fixture.featureFlag!!.calls shouldBe listOf("recommendation-v2")
-          fixture.deployment.startCanaryCalls shouldBe 1
-        }
-
-        test("같은 Feature Flag를 사용하는 SubTask가 여러 개이면, provider를 한 번만 검증합니다") {
-          val fixture = DeploymentLifecycleFixture()
-          fixture.enableDuplicateFeatureFlags(
-              PortResult.Success(ValidateFeatureFlagResponse(safeDefault = true))
-          )
-
-          val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
-
-          result.successData().candidate.includedSubTasks shouldContainExactly
-              listOf("sk-101", "sk-102")
-          fixture.featureFlag!!.calls shouldBe listOf("recommendation-v2")
-          fixture.deployment.startCanaryCalls shouldBe 1
-        }
-
-        test("Feature Flag 기본 동작이 안전하지 않으면, Canary를 시작하지 않고 롤백합니다") {
-          val fixture = DeploymentLifecycleFixture()
-          fixture.enableFeatureFlag(
-              PortResult.Success(ValidateFeatureFlagResponse(safeDefault = false))
-          )
-
-          val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
-
-          result.failureData().code shouldBe FailureCode.INVALID_GATE_STATE
-          fixture.featureFlag!!.calls shouldBe listOf("recommendation-v2")
-          fixture.deployment.startCanaryCalls shouldBe 0
-          fixture.store.writes shouldBe 0
-          fixture.store.rollbacks shouldBe 1
-        }
-
-        test("Feature Flag provider가 실패하면, Canary를 시작하지 않고 롤백합니다") {
-          val fixture = DeploymentLifecycleFixture()
-          fixture.enableFeatureFlag(
-              PortResult.Failure(PortError(FailureCode.EXTERNAL_FAILURE.name, "provider failed"))
-          )
-
-          val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
-
-          result.failureData().code shouldBe FailureCode.EXTERNAL_FAILURE
-          fixture.deployment.startCanaryCalls shouldBe 0
-          fixture.store.writes shouldBe 0
-          fixture.store.rollbacks shouldBe 1
-        }
-
-        test("Feature Flag provider가 없으면, Canary를 시작하지 않고 롤백합니다") {
-          val fixture = DeploymentLifecycleFixture()
-          fixture.enableFeatureFlag(null)
-
-          val result = fixture.useCase().create(DeploymentLifecycleRequest("main-1"))
-
-          result.failureData().code shouldBe FailureCode.INVALID_GATE_STATE
-          fixture.deployment.startCanaryCalls shouldBe 0
-          fixture.store.writes shouldBe 0
-          fixture.store.rollbacks shouldBe 1
         }
       }
 
@@ -276,22 +207,6 @@ class DeploymentLifecycleUseCaseTest :
           fixture.deployment.getCandidateCalls shouldBe 1
           fixture.deployment.validateCalls shouldBe 1
           fixture.deployment.startCanaryCalls shouldBe 1
-        }
-
-        test("Canary 직전 Feature Flag 기본 동작이 안전하지 않으면, 시작하지 않고 롤백합니다") {
-          val fixture = DeploymentLifecycleFixture()
-          fixture.enableFeatureFlag(
-              PortResult.Success(ValidateFeatureFlagResponse(safeDefault = false))
-          )
-          fixture.prepareCandidate(DeploymentCandidateState.VALIDATING)
-
-          val result = fixture.useCase().handle(deploymentChangedEvent("deployment-event-flag"))
-
-          result.failureData().code shouldBe FailureCode.INVALID_GATE_STATE
-          fixture.featureFlag!!.calls shouldBe listOf("recommendation-v2")
-          fixture.deployment.startCanaryCalls shouldBe 0
-          fixture.store.writes shouldBe 0
-          fixture.store.rollbacks shouldBe 1
         }
 
         test("high 후보의 필수 validation이 통과하면, 배포 승인 대기로 전환합니다") {
@@ -471,7 +386,6 @@ private class DeploymentLifecycleFixture(
 ) {
   val store = DeploymentStore()
   val compensation = DeploymentCompensationPort()
-  var featureFlag: DeploymentFeatureFlagPort? = null
   val deployment =
       DeploymentProvider(
           risk = risk,
@@ -494,57 +408,7 @@ private class DeploymentLifecycleFixture(
           storePort = store,
           deploymentPort = deployment,
           compensationPort = compensation,
-          featureFlagPort = featureFlag,
       )
-
-  fun enableFeatureFlag(result: PortResult<ValidateFeatureFlagResponse>?) {
-    store.current =
-        store.current.copy(
-            subTasks =
-                listOf(
-                    SubTask(
-                        "sk-101",
-                        "task-1",
-                        "Feature Flag 배포 변경",
-                        risk = risk,
-                        exposure = Exposure.FEATURE_FLAG,
-                        featureFlagId = "recommendation-v2",
-                    )
-                )
-        )
-    featureFlag = result?.let(::DeploymentFeatureFlagPort)
-  }
-
-  fun enableDuplicateFeatureFlags(result: PortResult<ValidateFeatureFlagResponse>) {
-    store.current =
-        store.current.copy(
-            subTasks =
-                listOf(
-                    SubTask(
-                        "sk-101",
-                        "task-1",
-                        "첫 번째 Feature Flag 배포 변경",
-                        risk = risk,
-                        exposure = Exposure.FEATURE_FLAG,
-                        featureFlagId = "recommendation-v2",
-                    ),
-                    SubTask(
-                        "sk-102",
-                        "task-1",
-                        "두 번째 Feature Flag 배포 변경",
-                        risk = risk,
-                        exposure = Exposure.FEATURE_FLAG,
-                        featureFlagId = "recommendation-v2",
-                    ),
-                ),
-            integrations =
-                listOf(
-                    Integration("sk-101", IntegrationState.MERGED, mainRevision = "main-1"),
-                    Integration("sk-102", IntegrationState.MERGED, mainRevision = "main-1"),
-                ),
-        )
-    featureFlag = DeploymentFeatureFlagPort(result)
-  }
 
   fun prepareCandidate(state: DeploymentCandidateState) {
     val candidate =
@@ -558,19 +422,6 @@ private class DeploymentLifecycleFixture(
         )
     store.current = store.current.copy(candidates = listOf(candidate))
     deployment.setCandidate(candidate)
-  }
-}
-
-private class DeploymentFeatureFlagPort(
-    private val result: PortResult<ValidateFeatureFlagResponse>,
-) : FeatureFlagPort {
-  val calls = mutableListOf<String>()
-
-  override fun validateDefault(
-      request: ValidateFeatureFlagRequest
-  ): PortResult<ValidateFeatureFlagResponse> {
-    calls += request.featureFlagId
-    return result
   }
 }
 

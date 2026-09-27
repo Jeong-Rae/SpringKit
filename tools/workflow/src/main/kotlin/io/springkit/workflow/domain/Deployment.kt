@@ -60,7 +60,6 @@ data class DeploymentCandidate(
 data class Release(
     val id: ReleaseId,
     val candidateId: CandidateId,
-    val featureFlagId: FeatureFlagId,
     val state: ReleaseState = ReleaseState.SAFE_DEFAULT,
     val productionReady: Boolean = false,
     val internalValidationPassed: Boolean = false,
@@ -69,7 +68,6 @@ data class Release(
   init {
     require(id.isNotBlank()) { "release id must not be blank" }
     require(candidateId.isNotBlank()) { "release candidate id must not be blank" }
-    require(featureFlagId.isNotBlank()) { "release feature flag id must not be blank" }
   }
 }
 

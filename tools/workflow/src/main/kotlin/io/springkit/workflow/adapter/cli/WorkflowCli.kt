@@ -32,8 +32,6 @@ sealed interface WorkflowCommandRequest {
   data class ReviewOpen(
       val bodyFile: String,
       val risk: String,
-      val exposure: String,
-      val featureFlag: String? = null,
   ) : WorkflowCommandRequest
 
   data class ReviewShow(
@@ -44,6 +42,7 @@ sealed interface WorkflowCommandRequest {
   data class ReviewUpdate(
       val revision: String,
       val bodyFile: String? = null,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class ReviewComment(
@@ -53,6 +52,7 @@ sealed interface WorkflowCommandRequest {
       val bodyFile: String? = null,
       val path: String? = null,
       val line: Int? = null,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class ReviewReply(
@@ -60,21 +60,25 @@ sealed interface WorkflowCommandRequest {
       val thread: String,
       val body: String? = null,
       val bodyFile: String? = null,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class ReviewResolve(
       val revision: String,
       val thread: String,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class Stack(
       val requires: String? = null,
       val clear: Boolean = false,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class Sync(
       val continueSync: Boolean = false,
       val abort: Boolean = false,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class Status(
@@ -87,11 +91,13 @@ sealed interface WorkflowCommandRequest {
   data class GateReady(
       val target: String,
       val reviewRevision: String,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class GateApprove(
       val target: String,
       val changeRevision: String,
+      val allowAccountMismatch: Boolean = false,
   ) : WorkflowCommandRequest
 
   data class GateDeploy(val target: String) : WorkflowCommandRequest
@@ -277,20 +283,12 @@ private class ReviewOpenCommand(
 ) : WorkflowLeafCommand("open", "현재 변경을 게시하고 Draft PR을 생성합니다.", gateway, stdout, stderr) {
   private val bodyFile by option("--body-file").required()
   private val risk by option("--risk").required()
-  private val exposure by option("--exposure").required()
-  private val featureFlag by option("--feature-flag")
 
   override fun run() {
     if (risk != "normal" && risk != "high") {
       invalid("--risk는 normal 또는 high여야 합니다.")
     }
-    if (exposure != "unchanged" && exposure != "feature-flag") {
-      invalid("--exposure는 unchanged 또는 feature-flag여야 합니다.")
-    }
-    if ((exposure == "feature-flag") != (featureFlag != null)) {
-      invalid("feature-flag 공개에는 --feature-flag가 필요하고 unchanged 공개에는 사용할 수 없습니다.")
-    }
-    execute(WorkflowCommandRequest.ReviewOpen(bodyFile, risk, exposure, featureFlag))
+    execute(WorkflowCommandRequest.ReviewOpen(bodyFile, risk))
   }
 }
 
@@ -318,9 +316,15 @@ private class ReviewUpdateCommand(
 ) : WorkflowLeafCommand("update", "Review 변경을 다시 게시합니다.", gateway, stdout, stderr) {
   private val revision by option("--revision").required()
   private val bodyFile by option("--body-file")
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
-    execute(WorkflowCommandRequest.ReviewUpdate(revision, bodyFile))
+    execute(WorkflowCommandRequest.ReviewUpdate(revision, bodyFile, allowAccountMismatch))
   }
 }
 
@@ -335,12 +339,28 @@ private class ReviewCommentCommand(
   private val bodyFile by option("--body-file")
   private val path by option("--path")
   private val line by option("--line").int()
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
     requireExactlyOne("--body", body, "--body-file", bodyFile)
     if ((path == null) != (line == null)) invalid("--path와 --line은 함께 지정해야 합니다.")
     if (level !in setOf("R", "C", "A")) invalid("--level은 R, C 또는 A여야 합니다.")
-    execute(WorkflowCommandRequest.ReviewComment(revision, level, body, bodyFile, path, line))
+    execute(
+        WorkflowCommandRequest.ReviewComment(
+            revision,
+            level,
+            body,
+            bodyFile,
+            path,
+            line,
+            allowAccountMismatch,
+        )
+    )
   }
 }
 
@@ -353,10 +373,24 @@ private class ReviewReplyCommand(
   private val thread by option("--thread").required()
   private val body by option("--body")
   private val bodyFile by option("--body-file")
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
     requireExactlyOne("--body", body, "--body-file", bodyFile)
-    execute(WorkflowCommandRequest.ReviewReply(revision, thread, body, bodyFile))
+    execute(
+        WorkflowCommandRequest.ReviewReply(
+            revision,
+            thread,
+            body,
+            bodyFile,
+            allowAccountMismatch,
+        )
+    )
   }
 }
 
@@ -367,9 +401,15 @@ private class ReviewResolveCommand(
 ) : WorkflowLeafCommand("resolve", "Review thread를 해결 상태로 변경합니다.", gateway, stdout, stderr) {
   private val revision by option("--revision").required()
   private val thread by option("--thread").required()
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
-    execute(WorkflowCommandRequest.ReviewResolve(revision, thread))
+    execute(WorkflowCommandRequest.ReviewResolve(revision, thread, allowAccountMismatch))
   }
 }
 
@@ -380,10 +420,16 @@ private class StackCommand(
 ) : WorkflowLeafCommand("stack", "직접 코드 의존성을 변경합니다.", gateway, stdout, stderr) {
   private val requires by option("--requires")
   private val clear by option("--clear").flag()
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
     if ((requires == null) == !clear) invalid("--requires 또는 --clear 중 하나만 지정해야 합니다.")
-    execute(WorkflowCommandRequest.Stack(requires, clear))
+    execute(WorkflowCommandRequest.Stack(requires, clear, allowAccountMismatch))
   }
 }
 
@@ -394,10 +440,16 @@ private class SyncCommand(
 ) : WorkflowLeafCommand("sync", "Worktree와 원격 상태를 동기화합니다.", gateway, stdout, stderr) {
   private val continueSync by option("--continue").flag()
   private val abort by option("--abort").flag()
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
     if (continueSync && abort) invalid("--continue와 --abort 중 하나만 지정해야 합니다.")
-    execute(WorkflowCommandRequest.Sync(continueSync, abort))
+    execute(WorkflowCommandRequest.Sync(continueSync, abort, allowAccountMismatch))
   }
 }
 
@@ -444,9 +496,15 @@ private class GateReadyCommand(
 ) : WorkflowLeafCommand("ready", "PR을 사람 리뷰 대상으로 전환합니다.", gateway, stdout, stderr) {
   private val target by argument("subtask")
   private val reviewRevision by option("--review-revision").required()
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
-    execute(WorkflowCommandRequest.GateReady(target, reviewRevision))
+    execute(WorkflowCommandRequest.GateReady(target, reviewRevision, allowAccountMismatch))
   }
 }
 
@@ -457,9 +515,15 @@ private class GateApproveCommand(
 ) : WorkflowLeafCommand("approve", "코드 변경을 승인합니다.", gateway, stdout, stderr) {
   private val target by argument("subtask")
   private val changeRevision by option("--change-revision").required()
+  private val allowAccountMismatch by
+      option(
+              "--allow-account-mismatch",
+              help = "현재 gh 사용자와 PR 작성자가 다를 때 해당 불일치만 허용합니다.",
+          )
+          .flag()
 
   override fun run() {
-    execute(WorkflowCommandRequest.GateApprove(target, changeRevision))
+    execute(WorkflowCommandRequest.GateApprove(target, changeRevision, allowAccountMismatch))
   }
 }
 

@@ -9,7 +9,6 @@ import io.springkit.workflow.adapter.store.StoreIdAdapter
 import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.Release
 import io.springkit.workflow.domain.ReleaseRecorded
@@ -24,7 +23,7 @@ import okio.fakefilesystem.FakeFileSystem
 
 class ReleaseLifecycleUseCasesTest :
     FunSpec({
-      context("Production 후보의 Feature Flag SubTask를 공개할 때") {
+      context("Production 후보를 공개할 때") {
         test("내부 검수가 성공하면, AWAITING_RELEASE_APPROVAL과 사람 승인 행동을 반환합니다") {
           val store = ReleaseRecordingStore(snapshot())
           val releasePort = ReleaseRecordingPort()
@@ -56,8 +55,9 @@ class ReleaseLifecycleUseCasesTest :
           releasePort.validateCalls shouldBe 1
         }
 
-        test("서로 다른 Feature Flag 요구가 포함되면, 후보마다 독립 Release를 생성합니다") {
-          val store = ReleaseRecordingStore(snapshot(featureFlagIds = listOf("flag-1", "flag-2")))
+        test("여러 SubTask가 포함되어도 candidate당 Release 하나를 생성합니다") {
+          val store =
+              ReleaseRecordingStore(snapshot(includedSubTaskIds = listOf("sk-101", "sk-102")))
           val releasePort = ReleaseRecordingPort()
           val result =
               useCase(store, releasePort)
@@ -67,18 +67,19 @@ class ReleaseLifecycleUseCasesTest :
 
           val success =
               result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
-          success.data.map { it.release.featureFlagId } shouldBe listOf("flag-1", "flag-2")
-          success.data.map { it.release.id }.distinct().size shouldBe 2
-          releasePort.createCalls shouldBe 2
-          releasePort.validateCalls shouldBe 2
-          store.written?.releases?.map { it.featureFlagId } shouldBe listOf("flag-1", "flag-2")
+          success.data.map { it.release.candidateId } shouldBe listOf("candidate-1")
+          success.data.map { it.release.id }.distinct().size shouldBe 1
+          releasePort.createCalls shouldBe 1
+          releasePort.validateCalls shouldBe 1
+          store.written?.releases?.map { it.candidateId } shouldBe listOf("candidate-1")
         }
 
-        test("실제 Store에서 Release ID를 발급하면, 최신 revision으로 여러 Release를 생성합니다") {
+        test("실제 Store에서 Release ID를 발급하면, candidate에 연결해 저장합니다") {
           val fileSystem = FakeFileSystem()
           val path = "/workflow/state.json".toPath()
           val store = OkioWorkflowStoreAdapter(fileSystem, path)
-          val initial = snapshot(featureFlagIds = listOf("flag-1", "flag-2")).copy(revision = "0")
+          val initial =
+              snapshot(includedSubTaskIds = listOf("sk-101", "sk-102")).copy(revision = "0")
           writeSnapshot(store, initial)
           val releasePort = ReleaseRecordingPort()
 
@@ -90,33 +91,25 @@ class ReleaseLifecycleUseCasesTest :
 
           val success =
               result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
-          success.data.map { it.release.id } shouldBe listOf("rel-1", "rel-2")
-          success.data.map { it.release.featureFlagId } shouldBe listOf("flag-1", "flag-2")
-          releasePort.createCalls shouldBe 2
-          releasePort.validateCalls shouldBe 2
+          success.data.map { it.release.id } shouldBe listOf("rel-1")
+          success.data.map { it.release.candidateId } shouldBe listOf("candidate-1")
+          releasePort.createCalls shouldBe 1
+          releasePort.validateCalls shouldBe 1
           val stored =
               store
                   .snapshot(StoreSnapshotRequest())
                   .shouldBeInstanceOf<PortResult.Success<StoreSnapshotResponse>>()
-          stored.value.snapshot.revision shouldBe "5"
-          stored.value.snapshot.sequence.release shouldBe 2
-          stored.value.snapshot.releases.map { it.featureFlagId } shouldBe
-              listOf("flag-1", "flag-2")
+          stored.value.snapshot.revision shouldBe "3"
+          stored.value.snapshot.sequence.release shouldBe 1
+          stored.value.snapshot.releases.map { it.candidateId } shouldBe listOf("candidate-1")
         }
 
-        test("한 Feature Flag Release가 이미 있으면, 다른 Feature Flag Release 생성을 생략하지 않습니다") {
+        test("candidate Release가 이미 있으면, 재처리에서 기존 Release를 반환합니다") {
           val existing =
               release(
                   state = ReleaseState.AWAITING_RELEASE_APPROVAL,
-                  featureFlagId = "flag-1",
               )
-          val store =
-              ReleaseRecordingStore(
-                  snapshot(
-                      release = existing,
-                      featureFlagIds = listOf("flag-1", "flag-2"),
-                  )
-              )
+          val store = ReleaseRecordingStore(snapshot(release = existing))
           val releasePort = ReleaseRecordingPort(existing)
           val result =
               useCase(store, releasePort)
@@ -126,13 +119,16 @@ class ReleaseLifecycleUseCasesTest :
 
           val success =
               result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
-          success.data.map { it.release.featureFlagId } shouldBe listOf("flag-1", "flag-2")
-          releasePort.createCalls shouldBe 1
-          releasePort.validateCalls shouldBe 1
+          success.data.map { it.release.id } shouldBe listOf(existing.id)
+          releasePort.createCalls shouldBe 0
+          releasePort.validateCalls shouldBe 0
         }
 
-        test("Feature Flag가 없는 Production 후보이면, Release 없이 성공합니다") {
-          val store = ReleaseRecordingStore(snapshot(featureFlagIds = emptyList()))
+        test("SubTask 정보가 없어도 Production candidate에 Release를 생성합니다") {
+          val store =
+              ReleaseRecordingStore(
+                  snapshot(includedSubTaskIds = emptyList(), includeSubTasks = false)
+              )
           val result =
               useCase(store, ReleaseRecordingPort())
                   .handleDeploymentAll(
@@ -141,7 +137,8 @@ class ReleaseLifecycleUseCasesTest :
 
           val success =
               result.shouldBeInstanceOf<WorkflowResult.Success<List<ReleaseLifecycleResponse>>>()
-          success.data shouldBe emptyList()
+          success.data.size shouldBe 1
+          success.data.single().release.candidateId shouldBe "candidate-1"
         }
       }
 
@@ -206,21 +203,25 @@ private fun createRequest() =
     CreateReleaseLifecycleRequest(
         candidateId = "candidate-1",
         releaseId = "release-1",
-        featureFlagId = "flag-1",
         requestId = "request-1",
     )
 
 private fun snapshot(
     release: Release? = null,
-    featureFlagIds: List<String> = listOf("flag-1"),
+    includedSubTaskIds: List<String> = listOf("sk-101"),
+    includeSubTasks: Boolean = true,
 ): WorkflowStoreSnapshot =
     WorkflowStoreSnapshot(
         revision = "store-1",
         subTasks =
-            featureFlagIds.mapIndexed { index, featureFlagId ->
-              featureFlagSubTask(index, featureFlagId)
+            if (includeSubTasks) {
+              includedSubTaskIds.mapIndexed { index, id ->
+                SubTask(id, "task-1", "SubTask ${index + 1}")
+              }
+            } else {
+              emptyList()
             },
-        candidates = listOf(productionCandidate(featureFlagIds)),
+        candidates = listOf(productionCandidate(includedSubTaskIds)),
         releases = listOfNotNull(release),
     )
 
@@ -231,35 +232,23 @@ private fun writeSnapshot(store: WorkflowStorePort, snapshot: WorkflowStoreSnaps
   store.commit(transaction)
 }
 
-private fun productionCandidate(featureFlagIds: List<String>) =
+private fun productionCandidate(includedSubTaskIds: List<String>) =
     DeploymentCandidate(
         id = "candidate-1",
         mainRevision = "main-1",
-        includedSubTasks = featureFlagIds.indices.map { index -> "sk-${index + 101}" },
-        risks = featureFlagIds.indices.associate { index -> "sk-${index + 101}" to Risk.NORMAL },
+        includedSubTasks = includedSubTaskIds,
+        risks = includedSubTaskIds.associateWith { Risk.NORMAL },
         validations = listOf(Validation("validation-1", "test", ValidationStatus.PASSED)),
         state = DeploymentCandidateState.PRODUCTION,
-    )
-
-private fun featureFlagSubTask(index: Int = 0, featureFlagId: String = "flag-1") =
-    SubTask(
-        id = "sk-${index + 101}",
-        taskId = "task-1",
-        title = "Feature Flag use case",
-        state = io.springkit.workflow.domain.SubTaskState.MERGED,
-        exposure = Exposure.FEATURE_FLAG,
-        featureFlagId = featureFlagId,
     )
 
 private fun release(
     state: ReleaseState,
     internalValidationPassed: Boolean = true,
-    featureFlagId: String = "flag-1",
 ) =
     Release(
         id = "release-1",
         candidateId = "candidate-1",
-        featureFlagId = featureFlagId,
         state = state,
         productionReady = true,
         internalValidationPassed = internalValidationPassed,
@@ -363,7 +352,6 @@ private class ReleaseRecordingPort(
         Release(
             id = request.releaseId,
             candidateId = request.candidateId,
-            featureFlagId = request.featureFlagId,
             state = ReleaseState.SAFE_DEFAULT,
         )
     current[created.id] = created

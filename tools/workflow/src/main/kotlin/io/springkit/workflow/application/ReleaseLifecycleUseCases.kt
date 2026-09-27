@@ -6,35 +6,28 @@ import io.springkit.workflow.domain.DeploymentCandidate
 import io.springkit.workflow.domain.DeploymentCandidateState
 import io.springkit.workflow.domain.DeploymentRecorded
 import io.springkit.workflow.domain.DomainEvent
-import io.springkit.workflow.domain.Exposure
 import io.springkit.workflow.domain.FailureCode
 import io.springkit.workflow.domain.FailureData
-import io.springkit.workflow.domain.FeatureFlagId
 import io.springkit.workflow.domain.NextAction
 import io.springkit.workflow.domain.Release
 import io.springkit.workflow.domain.ReleaseId
 import io.springkit.workflow.domain.ReleaseRecorded
 import io.springkit.workflow.domain.ReleaseState
-import io.springkit.workflow.domain.SubTask
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.nextReleaseAction
 
 /*
- * Production 후보에서 Feature Flag 외부 공개 대상을 만드는 요청입니다.
+ * Production 후보에서 Release를 만드는 요청입니다.
  */
 data class CreateReleaseLifecycleRequest(
     val candidateId: CandidateId,
     val releaseId: ReleaseId? = null,
-    val featureFlagId: FeatureFlagId? = null,
     val expectedStoreRevision: String? = null,
     val requestId: String = "release-create-$candidateId",
 ) {
   init {
     require(candidateId.isNotBlank()) { "release candidate id must not be blank" }
     require(releaseId == null || releaseId.isNotBlank()) { "release id must not be blank" }
-    require(featureFlagId == null || featureFlagId.isNotBlank()) {
-      "feature flag id must not be blank"
-    }
     require(expectedStoreRevision == null || expectedStoreRevision.isNotBlank()) {
       "expected store revision must not be blank"
     }
@@ -96,12 +89,11 @@ data class ContinueRolloutLifecycleRequest(
 }
 
 /*
- * 공개 대상과 연결된 Production 후보 및 Feature Flag SubTask입니다.
+ * Production 후보와 연결된 Release입니다.
  */
 data class ReleaseLifecycleResponse(
     val release: Release,
     val candidate: DeploymentCandidate,
-    val featureFlagSubTask: SubTask,
     val next: List<NextAction> = nextReleaseAction(release)?.let(::listOf).orEmpty(),
 )
 
@@ -111,7 +103,7 @@ data class ReleaseLifecycleResponse(
 data class ReleaseEventResponse(val response: ReleaseLifecycleResponse?)
 
 /*
- * Feature Flag 공개 대상을 생성하고 내부 검수부터 rollout 완료까지 조정합니다.
+ * Release를 생성하고 내부 검수부터 rollout 완료까지 조정합니다.
  */
 class ReleaseLifecycleUseCases(
     private val storePort: WorkflowStorePort,
@@ -121,7 +113,7 @@ class ReleaseLifecycleUseCases(
     private val compensationPort: CompensationPort? = null,
 ) {
   /*
-   * Production 후보의 Feature Flag SubTask를 찾아 Release를 만들고 내부 검수를 시작합니다.
+   * Production 후보에 Release를 만들고 내부 검수를 시작합니다.
    */
   fun create(request: CreateReleaseLifecycleRequest): WorkflowResult<ReleaseLifecycleResponse> {
     val snapshot = loadSnapshot() ?: return lastFailure
@@ -141,19 +133,7 @@ class ReleaseLifecycleUseCases(
                 "deployment candidate was not found",
                 request.candidateId,
             )
-    val existingForCandidate = snapshot.releases.firstOrNull { it.candidateId == candidate.id }
-    val flagged =
-        if (request.featureFlagId != null) {
-          featureFlagSubTask(snapshot, candidate, request.featureFlagId)
-        } else {
-          existingForCandidate?.let { featureFlagSubTask(snapshot, candidate, it.featureFlagId) }
-              ?: featureFlagSubTask(snapshot, candidate)
-        }
-    val existing = flagged?.let { selected ->
-      snapshot.releases.firstOrNull {
-        it.candidateId == candidate.id && it.featureFlagId == selected.featureFlagId
-      }
-    }
+    val existing = snapshot.releases.firstOrNull { it.candidateId == candidate.id }
     if (existing != null) {
       if (request.releaseId != null && request.releaseId != existing.id) {
         return failure(
@@ -171,30 +151,14 @@ class ReleaseLifecycleUseCases(
           candidate.id,
       )
     }
-    val selectedFlagged =
-        flagged
-            ?: return failure(
-                FailureCode.INVALID_GATE_STATE,
-                "production candidate does not contain a Feature Flag SubTask",
-                candidate.id,
-            )
-    if (
-        request.releaseId != null &&
-            snapshot.releases.any {
-              it.id == request.releaseId &&
-                  (it.candidateId != candidate.id ||
-                      it.featureFlagId != selectedFlagged.featureFlagId)
-            }
-    ) {
+    if (request.releaseId != null && snapshot.releases.any { it.id == request.releaseId }) {
       return failure(
           FailureCode.IDEMPOTENCY_CONFLICT,
           "release request targets a different existing release",
           candidate.id,
       )
     }
-    val releaseId =
-        request.releaseId
-            ?: issueReleaseId(releaseRequestId(request.requestId, selectedFlagged.featureFlagId!!))
+    val releaseId = request.releaseId ?: issueReleaseId(request.requestId)
     if (releaseId == null) {
       return failure(FailureCode.EXTERNAL_FAILURE, "release id could not be issued", candidate.id)
     }
@@ -215,21 +179,8 @@ class ReleaseLifecycleUseCases(
         } else {
           candidate
         }
-    val latestFlagged =
-        if (request.releaseId == null) {
-          featureFlagSubTask(latestSnapshot, latestCandidate, selectedFlagged.featureFlagId)
-              ?: return failure(
-                  FailureCode.INVALID_GATE_STATE,
-                  "production candidate does not contain a Feature Flag SubTask",
-                  latestCandidate.id,
-              )
-        } else {
-          selectedFlagged
-        }
     val latestExisting =
-        latestSnapshot.releases.firstOrNull {
-          it.candidateId == latestCandidate.id && it.featureFlagId == latestFlagged.featureFlagId
-        }
+        latestSnapshot.releases.firstOrNull { it.candidateId == latestCandidate.id }
     if (latestExisting != null) {
       if (request.releaseId != null && request.releaseId != latestExisting.id) {
         return failure(
@@ -240,14 +191,7 @@ class ReleaseLifecycleUseCases(
       }
       return responseFor(latestSnapshot, latestExisting)
     }
-    if (
-        request.releaseId != null &&
-            latestSnapshot.releases.any {
-              it.id == request.releaseId &&
-                  (it.candidateId != latestCandidate.id ||
-                      it.featureFlagId != latestFlagged.featureFlagId)
-            }
-    ) {
+    if (request.releaseId != null && latestSnapshot.releases.any { it.id == request.releaseId }) {
       return failure(
           FailureCode.IDEMPOTENCY_CONFLICT,
           "release request targets a different existing release",
@@ -264,10 +208,10 @@ class ReleaseLifecycleUseCases(
     val transaction =
         transaction(
             latestSnapshot.revision,
-            "release-create:${request.requestId}:${selectedFlagged.featureFlagId}",
+            "release-create:${request.requestId}",
         )
     return executeReleaseTransaction(transaction) { current, changes ->
-      createAndValidate(current, request, latestCandidate, latestFlagged, releaseId, changes)
+      createAndValidate(current, request, latestCandidate, releaseId, changes)
     }
   }
 
@@ -298,9 +242,7 @@ class ReleaseLifecycleUseCases(
                       stored.id,
                   )
         }
-    if (
-        provider.candidateId != stored.candidateId || provider.featureFlagId != stored.featureFlagId
-    ) {
+    if (provider.candidateId != stored.candidateId) {
       return failure(
           FailureCode.INVARIANT_VIOLATION,
           "release provider returned a different release target",
@@ -347,16 +289,9 @@ class ReleaseLifecycleUseCases(
                 "deployment candidate was not found",
                 stored.candidateId,
             )
-    val flagged =
-        featureFlagSubTask(snapshot, candidate, stored.featureFlagId)
-            ?: return failure(
-                FailureCode.INVALID_GATE_STATE,
-                "release Feature Flag SubTask was not found",
-                candidate.id,
-            )
     val transaction = transaction(snapshot.revision, "release-validate:${request.requestId}")
     return executeReleaseTransaction(transaction) { current, changes ->
-      validateIn(current, request, stored, candidate, flagged, changes)
+      validateIn(current, request, stored, candidate, changes)
     }
   }
 
@@ -415,13 +350,6 @@ class ReleaseLifecycleUseCases(
                 "deployment candidate was not found",
                 stored.candidateId,
             )
-    val flagged =
-        featureFlagSubTask(snapshot, candidate, stored.featureFlagId)
-            ?: return failure(
-                FailureCode.INVALID_GATE_STATE,
-                "release Feature Flag SubTask was not found",
-                candidate.id,
-            )
     val transaction = transaction(snapshot.revision, "release-rollout:${request.requestId}")
     return executeReleaseTransaction(transaction) { current, changes ->
       val continued =
@@ -449,7 +377,7 @@ class ReleaseLifecycleUseCases(
       val event = ReleaseRecorded(updated.id, updated.state, now(request.requestId))
       PortResult.Success(
           TransactionMutation(
-              data = responseData(current, updated, candidate, flagged),
+              data = responseData(current, updated, candidate),
               snapshot =
                   current.copy(
                       releases = current.releases.replaceById(updated) { value -> value.id },
@@ -472,7 +400,7 @@ class ReleaseLifecycleUseCases(
   }
 
   /*
-   * Production 배포 Event를 반영해 Feature Flag별 Release를 모두 멱등적으로 생성합니다.
+   * Production 배포 Event를 반영해 candidate Release를 멱등적으로 생성합니다.
    */
   fun handleDeploymentAll(
       event: DeploymentRecorded
@@ -488,29 +416,18 @@ class ReleaseLifecycleUseCases(
     if (event.state != DeploymentCandidateState.PRODUCTION) {
       return WorkflowResult.Success(emptyList())
     }
-    val flagged = featureFlagSubTasks(snapshot, candidate)
-    if (flagged.isEmpty()) {
-      return WorkflowResult.Success(emptyList())
+    return when (
+        val result =
+            create(
+                CreateReleaseLifecycleRequest(
+                    candidateId = candidate.id,
+                    requestId = "event-${event.targetId}-${event.occurredAtEpochMillis}",
+                )
+            )
+    ) {
+      is WorkflowResult.Failure -> result
+      is WorkflowResult.Success -> WorkflowResult.Success(listOf(result.data))
     }
-    val responses = mutableListOf<ReleaseLifecycleResponse>()
-    flagged.forEach { subTask ->
-      when (
-          val result =
-              create(
-                  CreateReleaseLifecycleRequest(
-                      candidateId = candidate.id,
-                      featureFlagId = subTask.featureFlagId,
-                      requestId =
-                          "event-${event.targetId}-${subTask.featureFlagId}-" +
-                              event.occurredAtEpochMillis,
-                  )
-              )
-      ) {
-        is WorkflowResult.Failure -> return result
-        is WorkflowResult.Success -> responses += result.data
-      }
-    }
-    return WorkflowResult.Success(responses)
   }
 
   /*
@@ -532,15 +449,8 @@ class ReleaseLifecycleUseCases(
                 "deployment candidate was not found",
                 stored.candidateId,
             )
-    val flagged =
-        featureFlagSubTask(snapshot, candidate, stored.featureFlagId)
-            ?: return failure(
-                FailureCode.INVALID_GATE_STATE,
-                "release Feature Flag SubTask was not found",
-                candidate.id,
-            )
     val updated = normalizeEventResult(stored, event.state)
-    if (updated == stored) return responseFor(snapshot, stored, candidate, flagged)
+    if (updated == stored) return responseFor(snapshot, stored, candidate)
     val transaction =
         transaction(
             snapshot.revision,
@@ -549,7 +459,7 @@ class ReleaseLifecycleUseCases(
     return executeReleaseTransaction(transaction) { current, _ ->
       PortResult.Success(
           TransactionMutation(
-              data = responseData(current, updated, candidate, flagged),
+              data = responseData(current, updated, candidate),
               snapshot =
                   current.copy(
                       releases = current.releases.replaceById(updated) { value -> value.id },
@@ -579,17 +489,11 @@ class ReleaseLifecycleUseCases(
       snapshot: WorkflowStoreSnapshot,
       request: CreateReleaseLifecycleRequest,
       candidate: DeploymentCandidate,
-      flagged: SubTask,
       releaseId: ReleaseId,
       changes: MutableList<ChangeReceipt?>,
   ): PortResult<TransactionMutation<ReleaseLifecycleResponse>> {
     val created =
-        when (
-            val result =
-                releasePort.create(
-                    CreateReleaseRequest(releaseId, candidate.id, flagged.featureFlagId!!)
-                )
-        ) {
+        when (val result = releasePort.create(CreateReleaseRequest(releaseId, candidate.id))) {
           is PortResult.Failure -> {
             changes += result.change
             return result
@@ -599,11 +503,7 @@ class ReleaseLifecycleUseCases(
             result.value
           }
         }
-    if (
-        created.release.id != releaseId ||
-            created.release.candidateId != candidate.id ||
-            created.release.featureFlagId != flagged.featureFlagId
-    ) {
+    if (created.release.id != releaseId || created.release.candidateId != candidate.id) {
       return failurePort(
           FailureCode.INVARIANT_VIOLATION,
           "release provider returned an invalid release",
@@ -621,11 +521,7 @@ class ReleaseLifecycleUseCases(
             result.value
           }
         }
-    if (
-        validating.release.id != releaseId ||
-            validating.release.candidateId != candidate.id ||
-            validating.release.featureFlagId != flagged.featureFlagId
-    ) {
+    if (validating.release.id != releaseId || validating.release.candidateId != candidate.id) {
       return failurePort(
           FailureCode.INVARIANT_VIOLATION,
           "internal validation returned an invalid release",
@@ -636,7 +532,7 @@ class ReleaseLifecycleUseCases(
     val event = ReleaseRecorded(updated.id, updated.state, now(request.requestId))
     return PortResult.Success(
         TransactionMutation(
-            data = responseData(snapshot, updated, candidate, flagged),
+            data = responseData(snapshot, updated, candidate),
             snapshot =
                 snapshot.copy(
                     releases = snapshot.releases.replaceOrAdd(updated) { value -> value.id },
@@ -652,7 +548,6 @@ class ReleaseLifecycleUseCases(
       request: ValidateReleaseLifecycleRequest,
       stored: Release,
       candidate: DeploymentCandidate,
-      flagged: SubTask,
       changes: MutableList<ChangeReceipt?>,
   ): PortResult<TransactionMutation<ReleaseLifecycleResponse>> {
     val validated =
@@ -666,11 +561,7 @@ class ReleaseLifecycleUseCases(
             result.value
           }
         }
-    if (
-        validated.release.id != stored.id ||
-            validated.release.candidateId != candidate.id ||
-            validated.release.featureFlagId != flagged.featureFlagId
-    ) {
+    if (validated.release.id != stored.id || validated.release.candidateId != candidate.id) {
       return failurePort(
           FailureCode.INVARIANT_VIOLATION,
           "internal validation returned an invalid release",
@@ -681,7 +572,7 @@ class ReleaseLifecycleUseCases(
     val event = ReleaseRecorded(updated.id, updated.state, now(request.requestId))
     return PortResult.Success(
         TransactionMutation(
-            data = responseData(snapshot, updated, candidate, flagged),
+            data = responseData(snapshot, updated, candidate),
             snapshot =
                 snapshot.copy(
                     releases = snapshot.releases.replaceById(updated) { value -> value.id },
@@ -737,34 +628,11 @@ class ReleaseLifecycleUseCases(
         -> 4
       }
 
-  private fun featureFlagSubTasks(
-      snapshot: WorkflowStoreSnapshot,
-      candidate: DeploymentCandidate,
-  ): List<SubTask> =
-      candidate.includedSubTasks
-          .asSequence()
-          .mapNotNull { id -> snapshot.subTasks.firstOrNull { it.id == id } }
-          .filter { it.exposure == Exposure.FEATURE_FLAG && !it.featureFlagId.isNullOrBlank() }
-          .distinctBy { it.featureFlagId }
-          .toList()
-
-  private fun featureFlagSubTask(
-      snapshot: WorkflowStoreSnapshot,
-      candidate: DeploymentCandidate,
-      featureFlagId: FeatureFlagId? = null,
-  ): SubTask? =
-      featureFlagSubTasks(snapshot, candidate).firstOrNull {
-        featureFlagId == null || it.featureFlagId == featureFlagId
-      }
-
   private fun responseFor(
       snapshot: WorkflowStoreSnapshot,
       release: Release,
       candidate: DeploymentCandidate? =
           snapshot.candidates.firstOrNull { it.id == release.candidateId },
-      flagged: SubTask? = candidate?.let {
-        featureFlagSubTask(snapshot, it, release.featureFlagId)
-      },
   ): WorkflowResult<ReleaseLifecycleResponse> {
     if (candidate == null)
         return failure(
@@ -772,13 +640,7 @@ class ReleaseLifecycleUseCases(
             "deployment candidate was not found",
             release.candidateId,
         )
-    if (flagged == null)
-        return failure(
-            FailureCode.INVALID_GATE_STATE,
-            "release Feature Flag SubTask was not found",
-            candidate.id,
-        )
-    return WorkflowResult.Success(responseData(snapshot, release, candidate, flagged))
+    return WorkflowResult.Success(responseData(snapshot, release, candidate))
   }
 
   private fun responseData(
@@ -786,14 +648,10 @@ class ReleaseLifecycleUseCases(
       release: Release,
       candidate: DeploymentCandidate? =
           snapshot.candidates.firstOrNull { it.id == release.candidateId },
-      flagged: SubTask? = candidate?.let {
-        featureFlagSubTask(snapshot, it, release.featureFlagId)
-      },
   ): ReleaseLifecycleResponse =
       ReleaseLifecycleResponse(
           release = release,
           candidate = requireNotNull(candidate),
-          featureFlagSubTask = requireNotNull(flagged),
       )
 
   private var lastFailure: WorkflowResult.Failure =
@@ -814,9 +672,6 @@ class ReleaseLifecycleUseCases(
         is PortResult.Failure,
         null -> null
       }
-
-  private fun releaseRequestId(requestId: String, featureFlagId: FeatureFlagId): String =
-      "$requestId-$featureFlagId"
 
   private fun transaction(revision: String, operation: String): StoreTransactionRequest =
       StoreTransactionRequest(
