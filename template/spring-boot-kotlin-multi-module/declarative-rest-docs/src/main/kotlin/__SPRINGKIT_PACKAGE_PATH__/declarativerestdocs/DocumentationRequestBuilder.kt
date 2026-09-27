@@ -13,27 +13,38 @@ internal class DocumentationRequestBuilder(private val objectMapper: ObjectMappe
     val request = request(requestLine.method, requestLine.uri, *pathValues)
 
     requestLine.queryParameters.forEach { parameter ->
-      request.queryParam(parameter.key, requestValue(parameter.sample))
+      request.queryParam(parameter.key, *requestValues(parameter.sample))
     }
     documentation.requestHeaders.headers.forEach { header ->
       request.header(header.key, requestValue(header.sample))
     }
     documentation.requestBody.fields.takeIf(List<Field>::isNotEmpty)?.let { fields ->
-      request.contentType(MediaType.APPLICATION_JSON)
+      if (documentation.requestHeaders.headers.none { it.key.equals("Content-Type", ignoreCase = true) }) {
+        request.contentType(MediaType.APPLICATION_JSON)
+      }
       request.content(objectMapper.writeValueAsString(requestBody(fields)))
     }
 
     return request
   }
 
-  private fun requestValue(sample: Sample): String {
-    val serialized = objectMapper.writeValueAsString(sample.value)
+  private fun requestValues(sample: Sample): Array<String> =
+      when (val value = sample.value) {
+        is Collection<*> -> value.map(::requestValue).toTypedArray()
+        is Array<*> -> value.map(::requestValue).toTypedArray()
+        else -> arrayOf(requestValue(value))
+      }
+
+  private fun requestValue(value: Any): String {
+    val serialized = objectMapper.writeValueAsString(value)
     return if (serialized.startsWith('"') && serialized.endsWith('"')) {
       objectMapper.readValue(serialized, String::class.java)
     } else {
       serialized
     }
   }
+
+  private fun requestValue(sample: Sample): String = requestValue(sample.value)
 
   private fun requestBody(fields: List<Field>): Map<String, Any> =
       linkedMapOf<String, Any>().apply {
