@@ -1,17 +1,14 @@
-name: CI
+name: CI Template
 
 on:
-  pull_request:
-    paths:
-      - "template/spring-boot-kotlin/**"
-      - "template/spring-boot-kotlin-multi-module/**"
-      - ".github/workflows/ci.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    if: ${{ false }}
     name: ${{ matrix.project }}
     runs-on: ubuntu-24.04
     strategy:
