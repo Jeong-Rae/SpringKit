@@ -340,6 +340,33 @@ class LocalRuntimeAdapterTest :
               .kind shouldBe ActorKind.HUMAN
         }
 
+        test("human allowlist의 현재 gh principal은 사람 Gate를 수행할 수 있습니다") {
+          val runner = RecordingCommandRunner(CommandResult(0, "octocat\n", ""))
+          val adapter =
+              EnvironmentIdentityAdapter(
+                  commandRunner = runner,
+                  environment = mapOf("USER" to "runner"),
+                  humanActorIds = setOf("octocat"),
+              )
+
+          val result =
+              adapter.authorize(
+                  AuthorizeRequest(
+                      Actor("octocat", ActorKind.HUMAN),
+                      Capability.APPROVE,
+                      "pr-1",
+                  )
+              )
+          val response =
+              result
+                  .shouldBeInstanceOf<
+                      PortResult.Success<io.springkit.workflow.application.AuthorizeResponse>
+                  >()
+                  .value
+
+          response.allowed shouldBe true
+        }
+
         test("자동화 principal이 사람 Gate를 요청하면, 권한을 거부합니다") {
           val adapter =
               EnvironmentIdentityAdapter(

@@ -225,10 +225,50 @@ class GithubAdapterTest :
           pullRequest.changeRevision.providerRevision shouldBe "abc123"
           pullRequest.reviewRevision.threads.single().id shouldBe "PRRT_external"
           pullRequest.reviewRevision.threads.single().comments.single().id shouldBe "PRRC_external"
+          pullRequest.reviewRevision.threads.single().comments.single().author.kind shouldBe
+              ActorKind.HUMAN
           runner.commands[1]
               .tokens
               .first { it.startsWith("query=") }
               .contains("authorAssociation") shouldBe true
+        }
+
+        test("PR review thread는 Agent 접두사가 사람 작성자 메타데이터보다 우선합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  """{"number":17,"title":"기능 추가","body":"설명","state":"OPEN","isDraft":false,"baseRefName":"main","headRefName":"sk-27","headRefOid":"abc123"}""",
+                  "",
+              )
+          )
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  reviewThreadsResponse(
+                      threadId = "PRRT_external",
+                      commentId = "PRRC_external",
+                      databaseId = 201,
+                      body = "[Agent] [R] 자동 검토 의견",
+                      path = "src/Main.kt",
+                      line = 8,
+                      authorLogin = "human-1",
+                      authorAssociation = "COLLABORATOR",
+                  ),
+                  "",
+              )
+          )
+
+          val pullRequest =
+              GithubReviewAdapter(Path.of("/repo"), runner, humanActorIds = setOf("human-1"))
+                  .get(GetReviewRequest("17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+
+          pullRequest.reviewRevision.threads.single().comments.single().author.kind shouldBe
+              ActorKind.AGENT
         }
 
         test("저장된 provider SHA와 GitHub head OID가 다르면, 새 change revision을 반환합니다") {
@@ -731,41 +771,117 @@ class GithubAdapterTest :
               "GITHUB_REPLY_IDEMPOTENCY_CONFLICT"
         }
 
-        test("사람이 작성한 일반 코멘트를 agent가 해결하면, GitHub API 호출 없이 거부합니다") {
+        test("Agent 접두사가 있는 HUMAN 계정 코멘트는 agent가 해결할 수 있습니다") {
           val runner = RecordingCommandRunner()
-          val localThread =
-              ReviewThread(
-                  id = "github-issue-comment-IC_remote",
-                  level = ReviewLevel.C,
-                  comments =
-                      listOf(
-                          ReviewComment(
-                              "IC_remote",
-                              Actor("human-1", ActorKind.HUMAN),
-                              "[C] 확인했습니다",
-                          )
-                      ),
+          val providerComment =
+              issueCommentsPullRequest(
+                  "[Agent] [C] 자동 검토 의견",
+                  authorLogin = "Human-1",
+                  authorAssociation = "COLLABORATOR",
               )
-          val current =
-              pullRequest()
-                  .copy(
-                      reviewRevision =
-                          pullRequest().reviewRevision.copy(threads = listOf(localThread))
-                  )
+          runner.enqueue(CommandResult(0, providerComment, ""))
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          runner.enqueue(CommandResult(0, providerComment, ""))
+          runner.enqueue(CommandResult(0, "{}", ""))
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[Agent] [C] 자동 검토 의견\n\n<!-- springkit:issue-comment-resolved -->",
+                      authorLogin = "Human-1",
+                      authorAssociation = "COLLABORATOR",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          var current: PullRequest? = null
+          val adapter =
+              GithubReviewAdapter(
+                  Path.of("/repo"),
+                  runner,
+                  currentPullRequest = { current },
+                  humanActorIds = setOf("human-1"),
+              )
+
+          val pullRequest =
+              adapter
+                  .get(GetReviewRequest("17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+          current = pullRequest
+          val thread = pullRequest.reviewRevision.threads.single()
+
+          thread.comments.single().author.kind shouldBe ActorKind.AGENT
+          thread.requiresHumanResolution shouldBe false
           val result =
-              GithubReviewAdapter(Path.of("/repo"), runner, currentPullRequest = { current })
-                  .resolve(
-                      ResolveReviewThreadRequest(
-                          pullRequestId = "17",
-                          reviewRevisionId = "rv-1",
-                          threadId = "github-issue-comment-IC_remote",
-                          actor = Actor("agent-1", ActorKind.AGENT),
-                      )
+              adapter.resolve(
+                  ResolveReviewThreadRequest(
+                      pullRequestId = "17",
+                      reviewRevisionId = pullRequest.reviewRevision.id,
+                      threadId = thread.id,
+                      actor = Actor("agent-1", ActorKind.AGENT),
                   )
+              )
+
+          val response =
+              result
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<io.springkit.workflow.application.ResolveReviewThreadResponse>()
+          response.reviewRevision.threads.single().state.name shouldBe "RESOLVED"
+          runner.commands.size shouldBe 6
+        }
+
+        test("Agent 접두사가 없는 HUMAN 계정 코멘트는 agent 해결을 거부합니다") {
+          val runner = RecordingCommandRunner()
+          runner.enqueue(
+              CommandResult(
+                  0,
+                  issueCommentsPullRequest(
+                      "[C] 사람 검토 의견",
+                      authorLogin = "human-1",
+                      authorAssociation = "COLLABORATOR",
+                  ),
+                  "",
+              )
+          )
+          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
+          var current: PullRequest? = null
+          val adapter =
+              GithubReviewAdapter(
+                  Path.of("/repo"),
+                  runner,
+                  currentPullRequest = { current },
+                  humanActorIds = setOf("human-1"),
+              )
+          val pullRequest =
+              adapter
+                  .get(GetReviewRequest("17"))
+                  .shouldBeTypeOf<PortResult.Success<*>>()
+                  .value
+                  .shouldBeTypeOf<GetReviewResponse>()
+                  .pullRequest
+          current = pullRequest
+          val thread = pullRequest.reviewRevision.threads.single()
+
+          thread.comments.single().author.kind shouldBe ActorKind.HUMAN
+          thread.requiresHumanResolution shouldBe true
+          val result =
+              adapter.resolve(
+                  ResolveReviewThreadRequest(
+                      pullRequestId = "17",
+                      reviewRevisionId = pullRequest.reviewRevision.id,
+                      threadId = thread.id,
+                      actor = Actor("agent-1", ActorKind.AGENT),
+                  )
+              )
 
           val failure = result.shouldBeTypeOf<PortResult.Failure>()
           failure.error.code shouldBe "HUMAN_REQUIRED"
-          runner.commands shouldBe emptyList()
+          runner.commands.size shouldBe 2
         }
 
         test("일반 pull request 코멘트에 답변하면, root thread에 답글을 묶어 반환합니다") {
@@ -859,52 +975,6 @@ class GithubAdapterTest :
                 it.tokens.getOrNull(1) == "api" &&
                 it.tokens.getOrNull(3) == "POST"
           } shouldBe 1
-        }
-
-        test("설정된 사람 작성자가 본문에 Agent 접두사를 넣어도, agent 해결을 거부합니다") {
-          val runner = RecordingCommandRunner()
-          runner.enqueue(
-              CommandResult(
-                  0,
-                  issueCommentsPullRequest(
-                      "[Agent] [R] 사람이 남긴 확인 요청",
-                      authorLogin = "Human-1",
-                      authorAssociation = "UNKNOWN",
-                  ),
-                  "",
-              )
-          )
-          runner.enqueue(CommandResult(0, emptyReviewThreadsResponse(), ""))
-          var persistedPullRequest: PullRequest? = null
-          val adapter =
-              GithubReviewAdapter(
-                  Path.of("/repo"),
-                  runner,
-                  currentPullRequest = { persistedPullRequest },
-                  humanActorIds = setOf("human-1"),
-              )
-
-          val pullRequest =
-              adapter
-                  .get(GetReviewRequest("17"))
-                  .shouldBeTypeOf<PortResult.Success<*>>()
-                  .value
-                  .shouldBeTypeOf<GetReviewResponse>()
-                  .pullRequest
-          persistedPullRequest = pullRequest
-
-          val result =
-              adapter.resolve(
-                  ResolveReviewThreadRequest(
-                      pullRequestId = "17",
-                      reviewRevisionId = pullRequest.reviewRevision.id,
-                      threadId = "github-issue-comment-IC_root",
-                      actor = Actor("agent-1", ActorKind.AGENT),
-                  )
-              )
-
-          result.shouldBeTypeOf<PortResult.Failure>().error.code shouldBe "HUMAN_REQUIRED"
-          runner.commands.size shouldBe 2
         }
 
         test("일반 pull request 코멘트를 해결하면, 숨은 marker로 해결 상태를 복원합니다") {
@@ -1324,11 +1394,12 @@ private fun reviewThreadsResponse(
     body: String,
     path: String,
     line: Int,
+    authorLogin: String = "reviewer-1",
     authorAssociation: String = "COLLABORATOR",
     resolved: Boolean = false,
 ): String =
     """
-    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"$threadId","isResolved":$resolved,"comments":{"nodes":[{"id":"$commentId","databaseId":$databaseId,"body":"$body","author":{"login":"reviewer-1","name":"Reviewer"},"authorAssociation":"$authorAssociation","createdAt":"2026-09-22T00:00:00Z","path":"$path","line":$line}]} }],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]
+    [{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"$threadId","isResolved":$resolved,"comments":{"nodes":[{"id":"$commentId","databaseId":$databaseId,"body":"$body","author":{"login":"$authorLogin","name":"Reviewer"},"authorAssociation":"$authorAssociation","createdAt":"2026-09-22T00:00:00Z","path":"$path","line":$line}]} }],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]
     """
         .trimIndent()
 

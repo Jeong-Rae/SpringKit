@@ -1373,7 +1373,7 @@ private fun GithubComment.toDomainComment(
     return null
   }
   val actorId = author?.login?.ifBlank { null } ?: "github-comment-$commentId"
-  val actorKind = classifyCommentAuthor(author, authorAssociation, humanActorIds)
+  val actorKind = classifyCommentAuthor(author, authorAssociation, body, humanActorIds)
   val createdAt =
       createdAt?.let { value ->
         runCatching { Instant.parse(value).toEpochMilli() }.getOrDefault(0)
@@ -1389,15 +1389,16 @@ private fun GithubComment.toDomainComment(
 }
 
 /*
- * GitHub 작성자 메타데이터와 사람 계정 허용 목록으로 주석 작성자를 분류합니다. 사람 연관 관계가 있거나 허용 목록에 든 계정은 HUMAN으로, 그 외 계정은 AGENT로
- * 처리합니다. 본문 표시 문구는 분류에 사용하지 않습니다.
+ * `[Agent]` 본문 표식은 GitHub 작성자 메타데이터보다 우선합니다. 표식이 없으면 사람 계정 허용 목록과 GitHub 작성자 연관 관계로 분류합니다.
  */
 private fun classifyCommentAuthor(
     author: GithubUser?,
     authorAssociation: String?,
+    body: String,
     humanActorIds: Set<String> = emptySet(),
 ): io.springkit.workflow.domain.ActorKind =
     when {
+      body.trimStart().startsWith("[Agent]") -> io.springkit.workflow.domain.ActorKind.AGENT
       author?.login?.let { login -> humanActorIds.any { it.equals(login, ignoreCase = true) } } ==
           true -> io.springkit.workflow.domain.ActorKind.HUMAN
       authorAssociation.equals("BOT", ignoreCase = true) ->
