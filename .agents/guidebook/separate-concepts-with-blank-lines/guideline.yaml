@@ -1,0 +1,43 @@
+id: separate-concepts-with-blank-lines
+scope:
+  repositories:
+    - "*"
+  languages:
+    - "*"
+when:
+  - file_changed
+match:
+  any: []
+content: |
+  # 서로 다른 개념을 빈 행으로 구분하기
+
+  연관된 코드와 처리 단계의 경계를 쉽게 파악할 수 있게 합니다.
+
+  ## 작성 지침
+
+  같은 개념을 다루는 코드는 빈 행 없이 붙여 둡니다. 처리 단계나 의미가 달라지는 지점에는 빈 행을 둡니다.
+
+  ## Do Not 예시
+
+  ```kotlin
+  fun chargeCommission(trade: Trade) {
+      val commission = calculateCommission(trade)
+
+      val charge = CommissionCharge(trade.id, commission) // Do Not: 같은 단계에 불필요한 빈 행
+      account.chargeCommission(charge) // Do Not: 부과 단계 앞에 빈 행 누락
+      eventPublisher.publish(CommissionCharged(charge)) // Do Not: 발행 단계 앞에 빈 행 누락
+  }
+  ```
+
+  ## Do 예시
+
+  ```kotlin
+  fun chargeCommission(trade: Trade) {
+      val commission = calculateCommission(trade)
+      val charge = CommissionCharge(trade.id, commission) // Do: 같은 단계는 붙여 배치
+
+      account.chargeCommission(charge) // Do: 부과 단계를 빈 행으로 구분
+
+      eventPublisher.publish(CommissionCharged(charge)) // Do: 발행 단계를 빈 행으로 구분
+  }
+  ```
