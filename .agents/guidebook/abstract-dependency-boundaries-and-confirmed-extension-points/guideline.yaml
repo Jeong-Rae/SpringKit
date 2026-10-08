@@ -9,11 +9,7 @@ when:
 match:
   any:
     - regex:
-        pattern: '(?m)^[ \t]*(?:(?:public|internal|protected|private|expect|actual|sealed|fun)[ \t]+)*interface[ \t]+(?:[\p{L}_][\p{L}\p{N}_]*|`[^`\r\n]+`)(?=[ \t<:{\r\n]|$)'
-    - regex:
-        pattern: '(?m)^[ \t]*(?:(?:public|internal|protected|private|expect|actual|override|suspend|inline|infix|operator|tailrec|external)[ \t]+)*(?:abstract|open|sealed)[ \t]+(?:(?:override|suspend|inline|infix|operator|tailrec|external|actual|expect)[ \t]+)*(?:class|fun|val|var)[ \t]+(?:[\p{L}_][\p{L}\p{N}_]*|`[^`\r\n]+`)(?=[ \t<:(={\r\n]|$)'
-    - regex:
-        pattern: '(?m)^[ \t]*(?:(?:public|internal|protected|private|open|abstract|sealed|data|inner|value|actual|expect|final|enum)[ \t]+)*(?:class|object)[ \t]+(?:[\p{L}_][\p{L}\p{N}_]*|`[^`\r\n]+`)(?:[ \t]*<[^{}\r\n]+>)?(?:\s*\((?:[^(){}]|\([^(){}]*\))*\))?\s*:\s*(?:[\p{L}_][\p{L}\p{N}_]*|`[^`\r\n]+`)'
+        pattern: '\b(?:interface|abstract|open|sealed|override|by)\b|:\s*[\p{L}_`]'
 content: |
   # 의존성 경계와 확인된 확장 지점만 추상화하기
 
