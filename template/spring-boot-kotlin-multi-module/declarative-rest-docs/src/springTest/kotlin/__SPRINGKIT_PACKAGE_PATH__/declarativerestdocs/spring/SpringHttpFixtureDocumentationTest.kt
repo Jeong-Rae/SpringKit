@@ -2,11 +2,9 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyDsl
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.DeclarativeRestDocsTest
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
 
 @SpringBootTest(classes = [SpringFixtureApplication::class])
 class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
@@ -150,55 +148,6 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
       }
       responseHeader {
         header(HttpHeaders.ALLOW, "허용 HTTP 메서드", sample = "GET,HEAD,PUT,PATCH,DELETE,OPTIONS")
-      }
-    }
-  }
-
-  @Disabled("내부 API 정책상 form-urlencoded 요청을 지원하지 않습니다.")
-  @Test
-  fun createSession() {
-    documentation("create-session") {
-      summary = "세션 생성"
-      description = "form-urlencoded 요청으로 세션을 생성합니다."
-      tags("sessions")
-      requestLine("post", "/api/sessions")
-      requestHeader {
-        header(
-            HttpHeaders.CONTENT_TYPE,
-            "form-urlencoded 요청 Content-Type",
-            sample = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
-        )
-      }
-      responseHeader {
-        header(HttpHeaders.SET_COOKIE, "생성된 세션 쿠키", sample = "SESSION=session-token")
-      }
-      responseBody {
-        field("memberId", "회원 식별자", sample = 1L)
-        field("rememberMe", "로그인 유지 여부", sample = true)
-      }
-    }
-  }
-
-  @Disabled("내부 API 정책상 multipart 요청을 지원하지 않습니다.")
-  @Test
-  fun uploadAvatar() {
-    documentation("upload-avatar") {
-      summary = "회원 아바타 업로드"
-      description = "multipart 요청으로 JSON metadata와 이미지 파일을 업로드합니다."
-      tags("members")
-      requestLine("post", "/api/members/{memberId}/avatar") {
-        pathVariable("memberId", "회원 식별자", sample = 1L)
-      }
-      requestHeader {
-        header(
-            HttpHeaders.CONTENT_TYPE,
-            "multipart 요청 Content-Type",
-            sample = MediaType.MULTIPART_FORM_DATA_VALUE,
-        )
-      }
-      responseBody {
-        field("memberId", "회원 식별자", sample = 1L)
-        field("filename", "업로드 파일 이름", sample = "avatar.png")
       }
     }
   }

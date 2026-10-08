@@ -2,8 +2,6 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType
-import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -16,9 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestMethod
 import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.multipart.MultipartFile
 
 @RestController
 class HttpFixtureController {
@@ -100,42 +96,6 @@ class HttpFixtureController {
     return ResponseEntity.noContent().build()
   }
 
-  @PostMapping(
-      "/api/sessions",
-      consumes = [MediaType.APPLICATION_FORM_URLENCODED_VALUE],
-  )
-  fun createSession(
-      @RequestParam username: String,
-      @RequestParam password: String,
-      @RequestParam rememberMe: Boolean,
-  ): ResponseEntity<SessionResponse> {
-    check(username == "jane")
-    check(password == "secret")
-
-    val sessionCookie =
-        ResponseCookie.from("SESSION", "session-token").httpOnly(true).path("/").build().toString()
-
-    return ResponseEntity.ok()
-        .header(HttpHeaders.SET_COOKIE, sessionCookie)
-        .body(SessionResponse(memberId = 1, rememberMe = rememberMe))
-  }
-
-  @PostMapping(
-      "/api/members/{memberId}/avatar",
-      consumes = [MediaType.MULTIPART_FORM_DATA_VALUE],
-  )
-  fun uploadAvatar(
-      @PathVariable memberId: Long,
-      @RequestPart("metadata") metadata: Map<String, Any>,
-      @RequestPart("file") file: MultipartFile,
-  ): AvatarResponse {
-    check(metadata["public"] == true)
-    check(metadata["crop"] is Map<*, *>)
-    check(file.originalFilename == "avatar.png")
-    check(file.contentType == MediaType.IMAGE_PNG_VALUE)
-    return AvatarResponse(memberId = memberId, filename = requireNotNull(file.originalFilename))
-  }
-
   private fun member(
       id: Long,
       name: String,
@@ -189,14 +149,4 @@ data class MemberProfile(
 data class MemberPatchResponse(
     val id: Long,
     val name: String,
-)
-
-data class SessionResponse(
-    val memberId: Long,
-    val rememberMe: Boolean,
-)
-
-data class AvatarResponse(
-    val memberId: Long,
-    val filename: String,
 )
