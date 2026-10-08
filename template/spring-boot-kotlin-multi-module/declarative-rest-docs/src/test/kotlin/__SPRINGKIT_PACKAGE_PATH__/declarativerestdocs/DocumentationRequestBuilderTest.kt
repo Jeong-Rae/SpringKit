@@ -1,5 +1,6 @@
 package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.springframework.mock.web.MockServletContext
@@ -20,6 +21,7 @@ class DocumentationRequestBuilderTest :
                   pathVariable("userId", "사용자 식별자", sample = "user-123")
                   queryParameter("dryRun", "검증 여부", sample = false)
                   queryParameter("tag", "사용자 태그", sample = listOf("spring", "java"))
+                  queryParameter("rating", "평점", sample = arrayOf(1, 2))
                 }
                 requestHeader {
                   header("X-Request-Id", "요청 식별자", sample = "request-123")
@@ -37,12 +39,27 @@ class DocumentationRequestBuilderTest :
           request.method shouldBe "POST"
           request.requestURI shouldBe "/users/user-123"
           request.getParameter("dryRun") shouldBe "false"
-          request.getParameterValues("tag").toList() shouldBe listOf("spring", "java")
+          requireNotNull(request.getParameterValues("tag")).toList() shouldBe
+              listOf("spring", "java")
+          requireNotNull(request.getParameterValues("rating")).toList() shouldBe listOf("1", "2")
           request.getHeader("X-Request-Id") shouldBe "request-123"
           request.contentType shouldBe "application/json"
           body.at("/name").stringValue() shouldBe "Alice"
           body.at("/profile/nickname").stringValue() shouldBe "ally"
           body.at("/members/0/id").stringValue() shouldBe "member-1"
+        }
+
+        test("반복 query sample의 null 원소를 거부합니다") {
+          val documentation =
+              documentationDefinition("invalid-query") {
+                summary = "잘못된 질의 값"
+                description = "null 원소가 있는 질의 값을 거부합니다."
+                requestLine("get", "/users") {
+                  queryParameter("tag", "사용자 태그", sample = listOf("spring", null))
+                }
+              }
+
+          shouldThrow<IllegalArgumentException> { requestBuilder.build(documentation) }
         }
 
         test("Content-Type header를 실제 JSON 요청에 반영합니다") {

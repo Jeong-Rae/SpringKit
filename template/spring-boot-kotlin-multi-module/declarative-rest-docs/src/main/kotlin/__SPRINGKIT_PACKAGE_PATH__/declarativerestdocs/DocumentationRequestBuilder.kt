@@ -19,7 +19,11 @@ internal class DocumentationRequestBuilder(private val objectMapper: ObjectMappe
       request.header(header.key, requestValue(header.sample))
     }
     documentation.requestBody.fields.takeIf(List<Field>::isNotEmpty)?.let { fields ->
-      if (documentation.requestHeaders.headers.none { it.key.equals("Content-Type", ignoreCase = true) }) {
+      if (
+          documentation.requestHeaders.headers.none {
+            it.key.equals("Content-Type", ignoreCase = true)
+          }
+      ) {
         request.contentType(MediaType.APPLICATION_JSON)
       }
       request.content(objectMapper.writeValueAsString(requestBody(fields)))
@@ -30,10 +34,17 @@ internal class DocumentationRequestBuilder(private val objectMapper: ObjectMappe
 
   private fun requestValues(sample: Sample): Array<String> =
       when (val value = sample.value) {
-        is Collection<*> -> value.map(::requestValue).toTypedArray()
-        is Array<*> -> value.map(::requestValue).toTypedArray()
+        is Collection<*> -> queryValues(value)
+        is Array<*> -> queryValues(value.asIterable())
         else -> arrayOf(requestValue(value))
       }
+
+  private fun queryValues(values: Iterable<*>): Array<String> =
+      values
+          .map { value ->
+            requestValue(requireNotNull(value) { "query parameter sample에는 null 원소를 사용할 수 없습니다." })
+          }
+          .toTypedArray()
 
   private fun requestValue(value: Any): String {
     val serialized = objectMapper.writeValueAsString(value)
