@@ -17,7 +17,9 @@ java {
 
 dependencyManagement {
   imports {
-    mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES) {
+      bomProperty("kotlin.version", "2.2.21")
+    }
   }
 }
 
@@ -50,8 +52,12 @@ tasks.withType<Test> {
 
 val springFixtureSnippets = layout.buildDirectory.dir("generated-snippets/spring-fixtures")
 val springFixtureGenerated = layout.projectDirectory.dir("fixtures/spring-restdocs/generated")
-val springFixtureGeneratedOpenApiJson = springFixtureGenerated.dir("openapi/json")
-val springFixtureGeneratedOpenApiYaml = springFixtureGenerated.dir("openapi/yaml")
+val springFixtureGeneratedOpenApiJson =
+    layout.buildDirectory.dir("api-spec/spring-fixtures/generated/json")
+val springFixtureGeneratedOpenApiYaml =
+    layout.buildDirectory.dir("api-spec/spring-fixtures/generated/yaml")
+val springFixtureOpenApiJsonOutput = springFixtureGenerated.file("openapi/json/openapi3.json")
+val springFixtureOpenApiYamlOutput = springFixtureGenerated.file("openapi/yaml/openapi3.yaml")
 val springTestSourceSet = sourceSets.create("springTest")
 
 kotlin.target.compilations
@@ -94,7 +100,7 @@ val springTest =
       classpath = springTestSourceSet.runtimeClasspath
       outputs.dir(springFixtureSnippets)
       systemProperty(
-          "springkit.spring-fixture.snippets",
+          "springkit.restdocs.snippets",
           springFixtureSnippets.get().asFile.absolutePath,
       )
       dependsOn(cleanSpringFixtureSnippets)
@@ -107,6 +113,13 @@ val compilerRepeatSnippets = compilerContractSnippets.map { it.dir("compiler-rep
 val manualBaselineSnippets = compilerContractSnippets.map { it.dir("manual") }
 val compilerOpenApiDocument = layout.buildDirectory.file("api-spec/openapi3.yaml")
 val compilerRepeatOpenApiDocument = layout.buildDirectory.file("api-spec-repeat/openapi3.yaml")
+val compilerOpenApiGeneratedDocument =
+    layout.buildDirectory.file("api-spec/generated/openapi3.yaml")
+val compilerRepeatOpenApiGeneratedDocument =
+    layout.buildDirectory.file("api-spec-repeat/generated/openapi3.yaml")
+val compilerOpenApiSupplementJson = layout.buildDirectory.file("api-spec/supplement/openapi3.json")
+val compilerRepeatOpenApiSupplementJson =
+    layout.buildDirectory.file("api-spec-repeat/supplement/openapi3.json")
 val compilerOpenApiTestSourceSet = sourceSets.create("compilerOpenApiTest")
 
 kotlin.target.compilations
@@ -167,7 +180,7 @@ val compilerRepeatOpenApi3 =
     tasks.register<com.epages.restdocs.apispec.gradle.OpenApi3Task>("compilerRepeatOpenApi3") {
       applyExtension(openApi3Extension)
       snippetsDirectory = compilerRepeatSnippets.get().asFile.path
-      outputDirectory = layout.buildDirectory.dir("api-spec-repeat").get().asFile.path
+      outputDirectory = layout.buildDirectory.dir("api-spec-repeat/generated").get().asFile.path
     }
 
 val springFixtureOpenApiJson =
@@ -176,12 +189,12 @@ val springFixtureOpenApiJson =
       group = "verification"
       applyExtension(openApi3Extension)
       snippetsDirectory = springFixtureSnippets.get().asFile.path
-      outputDirectory = springFixtureGeneratedOpenApiJson.asFile.path
+      outputDirectory = springFixtureGeneratedOpenApiJson.get().asFile.path
       outputFileNamePrefix = "openapi3"
       format = "json"
       dependsOn(springTest)
       doFirst {
-        springFixtureGeneratedOpenApiJson.asFile.mkdirs()
+        springFixtureGeneratedOpenApiJson.get().asFile.mkdirs()
       }
     }
 
@@ -191,14 +204,93 @@ val springFixtureOpenApiYaml =
       group = "verification"
       applyExtension(openApi3Extension)
       snippetsDirectory = springFixtureSnippets.get().asFile.path
-      outputDirectory = springFixtureGeneratedOpenApiYaml.asFile.path
+      outputDirectory = springFixtureGeneratedOpenApiYaml.get().asFile.path
       outputFileNamePrefix = "openapi3"
       format = "yaml"
       dependsOn(springTest)
       doFirst {
-        springFixtureGeneratedOpenApiYaml.asFile.mkdirs()
+        springFixtureGeneratedOpenApiYaml.get().asFile.mkdirs()
       }
     }
+
+val openApi3Supplement =
+    tasks.register<JavaExec>("openApi3Supplement") {
+      description = "기본 compiler OpenAPI 산출물에서 raw/multipart 본문 표현을 보완합니다."
+      group = "verification"
+      dependsOn("openapi3", tasks.named("testClasses"))
+      classpath = sourceSets.test.get().runtimeClasspath
+      mainClass.set(
+          "__SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestBodyOpenApiSupplementTestKt"
+      )
+      args(
+          compilerOpenApiSnippets.get().asFile.absolutePath,
+          compilerOpenApiGeneratedDocument.get().asFile.absolutePath,
+          compilerOpenApiGeneratedDocument.get().asFile.absolutePath,
+          compilerOpenApiSupplementJson.get().asFile.absolutePath,
+          compilerOpenApiDocument.get().asFile.absolutePath,
+      )
+      inputs.dir(compilerOpenApiSnippets)
+      inputs.file(compilerOpenApiGeneratedDocument)
+      outputs.files(compilerOpenApiSupplementJson, compilerOpenApiDocument)
+    }
+
+val compilerRepeatOpenApi3Supplement =
+    tasks.register<JavaExec>("compilerRepeatOpenApi3Supplement") {
+      description = "반복 생성 compiler OpenAPI에서 raw/multipart 본문 표현을 보완합니다."
+      group = "verification"
+      dependsOn(compilerRepeatOpenApi3, tasks.named("testClasses"))
+      classpath = sourceSets.test.get().runtimeClasspath
+      mainClass.set(
+          "__SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestBodyOpenApiSupplementTestKt"
+      )
+      args(
+          compilerRepeatSnippets.get().asFile.absolutePath,
+          compilerRepeatOpenApiGeneratedDocument.get().asFile.absolutePath,
+          compilerRepeatOpenApiGeneratedDocument.get().asFile.absolutePath,
+          compilerRepeatOpenApiSupplementJson.get().asFile.absolutePath,
+          compilerRepeatOpenApiDocument.get().asFile.absolutePath,
+      )
+      inputs.dir(compilerRepeatSnippets)
+      inputs.file(compilerRepeatOpenApiGeneratedDocument)
+      outputs.files(compilerRepeatOpenApiSupplementJson, compilerRepeatOpenApiDocument)
+    }
+
+afterEvaluate {
+  tasks.named<com.epages.restdocs.apispec.gradle.OpenApi3Task>("openapi3") {
+    outputDirectory = layout.buildDirectory.dir("api-spec/generated").get().asFile.path
+    finalizedBy(openApi3Supplement)
+  }
+}
+
+compilerRepeatOpenApi3.configure { finalizedBy(compilerRepeatOpenApi3Supplement) }
+
+val springFixtureOpenApiSupplement =
+    tasks.register<JavaExec>("springFixtureOpenApiSupplement") {
+      description = "생성된 Spring fixture OpenAPI에서 raw/multipart 본문 표현을 보완합니다."
+      group = "verification"
+      dependsOn(springFixtureOpenApiJson, springFixtureOpenApiYaml, tasks.named("testClasses"))
+      classpath = sourceSets.test.get().runtimeClasspath
+      mainClass.set(
+          "__SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.RequestBodyOpenApiSupplementTestKt"
+      )
+      args(
+          springFixtureSnippets.get().asFile.absolutePath,
+          springFixtureGeneratedOpenApiJson.get().file("openapi3.json").asFile.absolutePath,
+          springFixtureGeneratedOpenApiYaml.get().file("openapi3.yaml").asFile.absolutePath,
+          springFixtureOpenApiJsonOutput.asFile.absolutePath,
+          springFixtureOpenApiYamlOutput.asFile.absolutePath,
+      )
+      inputs.dir(springFixtureSnippets)
+      inputs.files(
+          springFixtureGeneratedOpenApiJson.get().file("openapi3.json"),
+          springFixtureGeneratedOpenApiYaml.get().file("openapi3.yaml"),
+      )
+      outputs.files(springFixtureOpenApiJsonOutput, springFixtureOpenApiYamlOutput)
+    }
+
+springFixtureOpenApiJson.configure { finalizedBy(springFixtureOpenApiSupplement) }
+
+springFixtureOpenApiYaml.configure { finalizedBy(springFixtureOpenApiSupplement) }
 
 tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach {
   dependsOn(compilerOpenApiTest)
@@ -208,6 +300,10 @@ tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>().configureEach 
 }
 
 val openApiTestSourceSet = sourceSets.create("openApiTest")
+
+openApiTestSourceSet.compileClasspath += sourceSets.main.get().output
+
+openApiTestSourceSet.runtimeClasspath += sourceSets.main.get().output
 
 configurations.named(openApiTestSourceSet.implementationConfigurationName) {
   extendsFrom(configurations.testImplementation.get())
@@ -223,8 +319,18 @@ val openApiTest =
       group = "verification"
       testClassesDirs = openApiTestSourceSet.output.classesDirs
       classpath = openApiTestSourceSet.runtimeClasspath
-      dependsOn(tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>())
-      inputs.files(compilerOpenApiDocument, compilerRepeatOpenApiDocument)
+      dependsOn(
+          tasks.withType<com.epages.restdocs.apispec.gradle.OpenApi3Task>(),
+          springFixtureOpenApiSupplement,
+          openApi3Supplement,
+          compilerRepeatOpenApi3Supplement,
+      )
+      inputs.files(
+          compilerOpenApiDocument,
+          compilerRepeatOpenApiDocument,
+          springFixtureOpenApiJsonOutput,
+          springFixtureOpenApiYamlOutput,
+      )
       useJUnitPlatform()
     }
 
@@ -232,6 +338,7 @@ tasks.named("build") {
   dependsOn(
       springFixtureOpenApiJson,
       springFixtureOpenApiYaml,
+      springFixtureOpenApiSupplement,
       openApiTest,
   )
 }

@@ -6,6 +6,8 @@ plugins {
   id("com.epages.restdocs-api-spec")
 }
 
+extra["kotlin.version"] = "2.2.21"
+
 base {
   archivesName = "__SPRINGKIT_ARTIFACT__"
 }

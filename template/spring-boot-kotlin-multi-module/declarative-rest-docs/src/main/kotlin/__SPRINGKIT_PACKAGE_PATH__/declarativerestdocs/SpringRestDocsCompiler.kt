@@ -20,7 +20,8 @@ class SpringRestDocsCompiler(
   fun compile(documentation: Documentation): CompiledDocumentation {
     val requestLine = requestLineCompiler.compile(documentation.requestLine)
     val requestHeaders = headerCompiler.compile(documentation.requestHeaders)
-    val requestBody = bodyCompiler.compile(documentation.requestBody)
+    val requestBody =
+        bodyCompiler.compileRequest(documentation.requestBody, documentation.requestHeaders)
     val responseHeaders = headerCompiler.compile(documentation.responseHeaders)
     val responseBody = bodyCompiler.compile(documentation.responseBody)
 

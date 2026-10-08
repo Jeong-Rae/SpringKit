@@ -87,6 +87,12 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 Spotless의 기준 Git ref는 `-PspotlessRatchetFrom` 또는 `SPOTLESS_RATCHET_FROM`으로 지정합니다. 둘 다 지정하지 않으면 `HEAD`를 사용합니다. PR CI에서는 병합 대상 브랜치의 base SHA를 `SPOTLESS_RATCHET_FROM`으로 전달해 `spotlessCheck`를 실행합니다.
 
+# Declarative REST Docs 작성 규칙
+
+- [Must] `sample`에는 `null`을 사용하지 않아야 합니다. `null` 전달이 API 의미에 필요하면 `sample`로 표현하지 않고 해당 의미를 나타내는 다른 API 메서드 또는 엔드포인트로 설계해야 합니다.
+- [Must] 필드 또는 키가 생략될 수 있는 계약은 `optional = true`로 표현해야 합니다.
+- [Must] `optional = true`인 요소도 `sample`에는 정상 처리되는 대표 값을 명시해야 합니다. `optional`은 값의 부재 가능성만 나타내며 `null` sample을 허용하는 의미로 사용하지 않습니다.
+
 # 주요 디렉터리
 
 아직 작성하지 않았습니다.
