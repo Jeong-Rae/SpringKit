@@ -6,13 +6,15 @@ plugins {
   id("com.epages.restdocs-api-spec")
 }
 
+extra["kotlin.version"] = "2.2.21"
+
 base {
   archivesName = "__SPRINGKIT_ARTIFACT__"
 }
 
 java {
   toolchain {
-    languageVersion = JavaLanguageVersion.of(21)
+    languageVersion = JavaLanguageVersion.of(24)
   }
 }
 

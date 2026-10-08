@@ -1,9 +1,12 @@
 ---
 name: writing-guide
-description: >
-  Apply consistent Korean writing conventions to responses and authored text,
-  including technical documents, commit messages, and pull request
-  descriptions. Use whenever writing, editing, or reviewing Korean prose.
+description: >-
+  These writing guidelines apply whenever producing any text-based content or responding in conversation.
+
+  This document defines the project-wide voice and tone to ensure consistency across all communication. Regardless of whether the content is intended for internal or external use, this document must always be reviewed and followed before writing.
+
+  Its methodology applies to all forms of written communication, including commits, pull requests, comments, technical documentation, emails, and agent chats.
+license: MIT
 metadata:
   internal: true
 ---
@@ -12,6 +15,11 @@ metadata:
 
 Write for the reader's immediate goal. State the result or main point first,
 then add only the context needed to understand or act on it.
+
+Before writing, editing, or reviewing text-based content or responding in
+conversation, read
+[references/document-style.md](references/document-style.md). Apply the rules
+that match the language and format of the finished text.
 
 ## Shared Principles
 
@@ -48,12 +56,6 @@ defaults. Preserve mandatory formats and authorization boundaries defined in
 Lead with the outcome. Use concise paragraphs and the minimum formatting needed
 for comprehension. Report blockers with the evidence and the next required
 decision.
-
-### Technical Documents
-
-Before writing, editing, or reviewing a technical document, read
-[references/document-style.md](references/document-style.md). Apply its format
-and content checks to the finished document.
 
 ### Commits and Pull Requests
 

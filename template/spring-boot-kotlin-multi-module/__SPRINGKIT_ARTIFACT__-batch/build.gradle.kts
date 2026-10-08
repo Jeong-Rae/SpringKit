@@ -11,13 +11,15 @@ base {
 
 java {
   toolchain {
-    languageVersion = JavaLanguageVersion.of(21)
+    languageVersion = JavaLanguageVersion.of(24)
   }
 }
 
 dependencyManagement {
   imports {
-    mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES) {
+      bomProperty("kotlin.version", "2.2.21")
+    }
   }
 }
 

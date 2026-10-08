@@ -1,0 +1,109 @@
+---
+name: orbis
+description: >-
+  하나의 커밋 클로저 안에서 오케스트레이터와 Worker가 코딩 작업을 나누고
+  조율합니다. Worker는 구현 전에 필요한 사항을 질문해 책임과 경계를 확인하고
+  승인된 범위에서 구현과 검증을 수행합니다. 오케스트레이터는 실제 저장소
+  상태를 검증하고 논리적 커밋이 완결될 때까지 후속 작업을 조정합니다.
+  하나의 코딩 요청을 여러 Worker에게 나눠 맡기고 한 논리적 커밋으로
+  완결해야 할 때 사용합니다.
+---
+
+# Orbis
+
+버전: 0.0.1
+
+오케스트레이터는 변경의 의미와 경계를 맡고, Worker는 승인된 책임 안에서 구현과 검증을 맡습니다.
+
+## Worker 실행
+
+모든 Worker는 native Codex subagent로 생성합니다.
+
+```text
+spawn_agent(
+  task_name="<ORCHESTRATOR TASK NAME>",
+  message="<COMPOSED WORKER REQUEST>",
+  model="gpt-6-luna",
+  reasoning_effort="xhigh",
+  fork_turns="none"
+)
+```
+
+모든 Worker는 `gpt-6-luna`를 사용하고 `reasoning_effort`는 `xhigh`로 고정합니다. 오케스트레이터의 대화 기록은 상속하지 않습니다.
+
+`task_name`은 오케스트레이터가 작업을 구분하는 내부 이름입니다. Orbis의 Worker 요청, 질의, 보고에는 작업 관리 정보를 넣지 않습니다.
+
+`spawn_agent(...)`가 반환한 `agent_id`를 Worker ID로 기록합니다. 오케스트레이터는 이후 Worker 응답과 후속 호출을 이 Worker ID에 연결합니다.
+
+Worker가 더 질문할 사항이 없어 `READY`를 반환하면 오케스트레이터가 같은 Worker에 `PROCEED`를 보냅니다.
+
+```text
+followup_task(
+  target="<WORKER ID>",
+  message="PROCEED"
+)
+```
+
+같은 책임 안에서 수정이나 추가 작업이 필요하면 같은 Worker를 이어서 사용합니다.
+
+## 역할 경계
+
+- 하위 agent는 모두 Worker라고 부릅니다.
+- Worker는 구현 전에 적용되는 저장소 지침을 읽습니다.
+- Worker는 다른 Worker나 subagent를 생성하지 않습니다.
+- Worker는 승인된 책임이나 소유권을 임의로 넓히지 않습니다.
+- Worker는 허가받지 않은 공유 Git 상태를 변경하지 않습니다.
+- 오케스트레이터는 프로덕션 코드, 테스트 코드, 통합 코드를 직접 작성하지 않습니다. 구현은 Worker에 위임합니다.
+
+## 커밋 클로저
+
+하나의 오케스트레이션 단위는 하나의 논리적 커밋 안에 둡니다.
+
+커밋 클로저(commit closure)는 하나의 논리적 변경을 완결하고 독립적으로 검토하는 데 필요한 변경 전체입니다. 목표를 완결하려면 새 책임이 필요할 때 Worker를 추가하거나 기존 책임을 조정합니다. 변경 이유가 다른 작업은 현재 오케스트레이션에서 분리합니다.
+
+Worker 경계와 커밋 경계는 다릅니다. 하나의 논리적 커밋은 여러 Worker의 순차 또는 병렬 작업으로 구성될 수 있습니다.
+
+## 참고 문서
+
+위임과 수용을 판단할 때 다음 문서를 읽습니다.
+
+- [위임 정책](references/delegation-policy.md)
+- [수용 정책](references/acceptance-policy.md)
+
+Worker 메시지의 의미와 형식은 다음 문서를 따릅니다.
+
+- [Worker 요청](references/worker-request.md)
+- [Worker 요청 스키마](references/worker-request.schema.md)
+- [Worker 질의](references/worker-question.md)
+- [Worker 질의 스키마](references/worker-question.schema.md)
+- [Worker 보고](references/worker-report.md)
+- [Worker 보고 스키마](references/worker-report.schema.md)
+
+영문 참고본은 [English version](en/skill.md)에 보관합니다.
+
+## 작업 흐름
+
+1. 사용자 요청과 적용되는 저장소 지침을 읽습니다.
+2. 목표와 논리적 커밋 경계를 정합니다.
+3. 위임 정책을 읽고 변경을 책임 단위로 나눈 뒤 의존 관계를 정합니다.
+4. Worker 요청 문서와 스키마로 요청을 작성하고 Worker 실행 계약에 따라 `spawn_agent(...)`를 호출합니다.
+5. 반환된 `agent_id`를 Worker ID로 기록하고 내부 작업 관리 정보와 연결합니다.
+6. Worker는 저장소와 준비 자료를 읽고 스스로 확정하기 어려운 사항이 있으면 Worker 질의 스키마에 맞춰 질문합니다.
+7. 오케스트레이터는 질문에 답하고 잘못된 이해를 고치며 필요한 정보를 제공하거나 판단을 내립니다.
+8. Worker는 질문이 남아 있으면 다시 `QUESTION`을 반환하고, 더 질문할 사항이 없으면 `READY`를 반환합니다.
+9. Worker가 `READY`를 반환하면 Worker ID를 `target`으로 사용해 `followup_task(..., message="PROCEED")`를 호출합니다.
+10. Worker는 승인된 책임 안에서 구현, 테스트, 자체 검토를 마치고 Worker 보고 스키마에 맞춰 종료 응답을 반환합니다.
+11. 수용 정책을 읽고 실제 저장소 상태를 확인합니다.
+12. 결과를 수용하거나, 같은 책임의 후속 작업을 요청하거나, 같은 커밋 클로저를 확장하거나, 독립 변경을 분리하거나, 책임을 다시 배정합니다.
+13. 목표를 충족하고 커밋 클로저를 완결한 뒤 작업을 끝냅니다.
+
+## 제어 규칙
+
+- 파일 수가 아니라 응집된 책임을 기준으로 위임합니다.
+- 동시에 수정하는 파일은 Worker 한 명만 소유합니다.
+- 한 Worker가 다른 Worker의 완료되지 않은 변경을 입력으로 사용해야 하면 순차로 실행합니다.
+- 여러 Worker가 같은 인터페이스에 의존하면 병렬 작업 전에 계약을 확정합니다.
+- 통합 파일은 Worker 한 명이 소유합니다.
+- Worker 보고는 주장으로 취급하고 실제 저장소 상태를 기준으로 판단합니다.
+- `task_name`과 Worker ID의 대응 관계는 오케스트레이터가 관리합니다.
+- 커밋, 게시, pull request는 Worker 밖에서 처리하고 저장소의 Git 작업 흐름을 따릅니다.

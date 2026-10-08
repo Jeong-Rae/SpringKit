@@ -80,11 +80,12 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 - [Must] `spotlessApply`, `test`, `build` 순으로 실행해야 합니다. `check`는 별도로 실행하지 않습니다.
 
 ```sh
-./gradlew spotlessApply # 전체 파일에 기계적 포맷을 적용합니다.
+./gradlew spotlessApply # HEAD 이후 변경된 파일에 기계적 포맷을 적용합니다.
 ./gradlew test --tests "com.example.mypackage.*" # Task 범위의 패키지 테스트를 실행합니다.
 ./gradlew build # clean 없이 증분 빌드를 실행합니다.
 ```
 
+Spotless의 기준 Git ref는 `-PspotlessRatchetFrom` 또는 `SPOTLESS_RATCHET_FROM`으로 지정합니다. 둘 다 지정하지 않으면 `HEAD`를 사용합니다. PR CI에서는 병합 대상 브랜치의 base SHA를 `SPOTLESS_RATCHET_FROM`으로 전달해 `spotlessCheck`를 실행합니다.
 
 # Declarative REST Docs 작성 규칙
 
@@ -98,5 +99,5 @@ kotlin scripts/git/git-workflow.main.kts finish TASK_ID
 
 # 전문 스킬
 
-- `$writing-guide`를 사용해야 합니다. 기술 문서를 작성, 수정, 검토할 때는 스킬이 정한 문서 작성 기준도 적용해야 합니다.
+- `$writing-guide`를 사용해야 합니다. 텍스트 기반 콘텐츠와 대화 응답을 작성, 수정, 검토할 때 스킬이 정한 글쓰기 기준을 적용해야 합니다.
 - `$create-pr`: 작업을 검증하고 커밋한 뒤 초안 PR을 생성할 때 사용할 수 있습니다.
