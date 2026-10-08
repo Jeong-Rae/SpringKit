@@ -377,10 +377,158 @@
           }
         }
       }
+    },
+    "/api/assets/{assetId}/content" : {
+      "put" : {
+        "tags" : [ "assets" ],
+        "summary" : "원본 파일 업로드",
+        "description" : "바이너리 요청 본문을 그대로 저장합니다.",
+        "operationId" : "upload-raw-content",
+        "parameters" : [ {
+          "name" : "assetId",
+          "in" : "path",
+          "description" : "파일 식별자",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/octet-stream" : {
+              "schema" : {
+                "type" : "string",
+                "format" : "binary"
+              }
+            }
+          },
+          "required" : true,
+          "description" : "원본 파일의 모든 바이트"
+        },
+        "responses" : {
+          "200" : {
+            "description" : "200",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/api-assets-assetId-content-300841535"
+                },
+                "examples" : {
+                  "upload-raw-content" : {
+                    "value" : "{\"assetId\":\"asset-7\",\"size\":4}"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/members/{memberId}/avatar" : {
+      "post" : {
+        "tags" : [ "images", "members" ],
+        "summary" : "회원 프로필 이미지 업로드",
+        "description" : "회원의 프로필 이미지를 multipart 요청으로 업로드합니다.",
+        "operationId" : "upload-avatar",
+        "parameters" : [ {
+          "name" : "memberId",
+          "in" : "path",
+          "description" : "회원 식별자",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }, {
+          "name" : "Content-Type",
+          "in" : "header",
+          "description" : "multipart 요청 Content-Type",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          },
+          "example" : "multipart/form-data"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "200",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/api-members-memberId-avatar251906244"
+                },
+                "examples" : {
+                  "upload-avatar" : {
+                    "value" : "{\"memberId\":1,\"filename\":\"file\",\"caption\":\"프로필 이미지\",\"priority\":2}"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody" : {
+          "required" : true,
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "type" : "object",
+                "properties" : {
+                  "file" : {
+                    "type" : "string",
+                    "format" : "binary",
+                    "description" : "업로드할 이미지 파일"
+                  },
+                  "caption" : {
+                    "type" : "string",
+                    "description" : "이미지 설명"
+                  },
+                  "priority" : {
+                    "type" : "integer",
+                    "description" : "이미지 표시 순서"
+                  },
+                  "metadata" : {
+                    "type" : "object",
+                    "description" : "이미지 자르기 및 공개 설정"
+                  }
+                },
+                "required" : [ "file", "caption", "priority", "metadata" ]
+              },
+              "encoding" : {
+                "file" : {
+                  "contentType" : "application/octet-stream"
+                },
+                "caption" : {
+                  "contentType" : "text/plain;charset=UTF-8"
+                },
+                "priority" : {
+                  "contentType" : "application/json"
+                },
+                "metadata" : {
+                  "contentType" : "application/json"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components" : {
     "schemas" : {
+      "api-assets-assetId-content-300841535" : {
+        "required" : [ "assetId", "size" ],
+        "type" : "object",
+        "properties" : {
+          "size" : {
+            "type" : "number",
+            "description" : "저장한 바이트 수"
+          },
+          "assetId" : {
+            "type" : "string",
+            "description" : "파일 식별자"
+          }
+        }
+      },
       "api-members-memberId-620114854" : {
         "required" : [ "name" ],
         "type" : "object",
@@ -390,6 +538,31 @@
             "description" : "변경할 회원 이름"
           }
         }
+      },
+      "api-members-memberId-avatar251906244" : {
+        "required" : [ "caption", "filename", "memberId", "priority" ],
+        "type" : "object",
+        "properties" : {
+          "filename" : {
+            "type" : "string",
+            "description" : "업로드 파일 이름"
+          },
+          "caption" : {
+            "type" : "string",
+            "description" : "이미지 설명"
+          },
+          "priority" : {
+            "type" : "number",
+            "description" : "이미지 표시 순서"
+          },
+          "memberId" : {
+            "type" : "number",
+            "description" : "회원 식별자"
+          }
+        }
+      },
+      "api-assets-assetId-content-33084672" : {
+        "type" : "object"
       },
       "api-members-1079907891" : {
         "required" : [ "active", "email", "name" ],

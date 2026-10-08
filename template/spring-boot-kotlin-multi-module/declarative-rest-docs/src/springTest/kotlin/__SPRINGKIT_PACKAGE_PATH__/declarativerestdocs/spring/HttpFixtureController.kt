@@ -2,6 +2,7 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -14,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestMethod
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 
 @RestController
 class HttpFixtureController {
@@ -90,6 +93,39 @@ class HttpFixtureController {
     return MemberPatchResponse(id = memberId, name = "Jane Smith")
   }
 
+  @PostMapping(
+      "/api/members/{memberId}/avatar",
+      consumes = [MediaType.MULTIPART_FORM_DATA_VALUE],
+  )
+  fun uploadAvatar(
+      @PathVariable memberId: Long,
+      @RequestPart("file") file: MultipartFile,
+      @RequestPart("caption") caption: String,
+      @RequestPart("priority") priority: Int,
+      @RequestPart("metadata") metadata: Map<String, Any>,
+  ): AvatarUploadResponse {
+    check(file.originalFilename == "file")
+    check(file.contentType == MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    check(file.bytes.contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)))
+    check(caption == "프로필 이미지")
+    check(priority == 2)
+    check(metadata["crop"] == "square")
+    check(metadata["public"] == true)
+    return AvatarUploadResponse(memberId, file.originalFilename.orEmpty(), caption, priority)
+  }
+
+  @PutMapping(
+      "/api/assets/{assetId}/content",
+      consumes = [MediaType.APPLICATION_OCTET_STREAM_VALUE],
+  )
+  fun uploadRawContent(
+      @PathVariable assetId: String,
+      @RequestBody bytes: ByteArray,
+  ): RawUploadResponse {
+    check(bytes.contentEquals(byteArrayOf(0, 1, 2, 0xff.toByte())))
+    return RawUploadResponse(assetId, bytes.size)
+  }
+
   @DeleteMapping("/api/members/{memberId}")
   fun deleteMember(@PathVariable memberId: Long): ResponseEntity<Void> {
     check(memberId > 0)
@@ -149,4 +185,16 @@ data class MemberProfile(
 data class MemberPatchResponse(
     val id: Long,
     val name: String,
+)
+
+data class AvatarUploadResponse(
+    val memberId: Long,
+    val filename: String,
+    val caption: String,
+    val priority: Int,
+)
+
+data class RawUploadResponse(
+    val assetId: String,
+    val size: Int,
 )

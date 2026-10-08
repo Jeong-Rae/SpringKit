@@ -2,9 +2,15 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.BodyDsl
 import __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.DeclarativeRestDocsTest
+import java.nio.file.Files
+import java.nio.file.Path
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import tools.jackson.databind.ObjectMapper
 
 @SpringBootTest(classes = [SpringFixtureApplication::class])
 class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
@@ -111,6 +117,68 @@ class SpringHttpFixtureDocumentationTest : DeclarativeRestDocsTest() {
         field("name", "회원 이름", sample = "Jane Smith")
       }
     }
+  }
+
+  @Test
+  fun uploadAvatar() {
+    documentation("upload-avatar") {
+      summary = "회원 프로필 이미지 업로드"
+      description = "회원의 프로필 이미지를 multipart 요청으로 업로드합니다."
+      tags("members", "images")
+      requestLine("post", "/api/members/{memberId}/avatar") {
+        pathVariable("memberId", "회원 식별자", sample = 1L)
+      }
+      requestHeader {
+        header(
+            HttpHeaders.CONTENT_TYPE,
+            "multipart 요청 Content-Type",
+            sample = MediaType.MULTIPART_FORM_DATA_VALUE,
+        )
+      }
+      requestBody {
+        field("file", "업로드할 이미지 파일", sample = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47))
+        field("caption", "이미지 설명", sample = "프로필 이미지")
+        field("priority", "이미지 표시 순서", sample = 2)
+        field("metadata", "이미지 자르기 및 공개 설정", sample = mapOf("crop" to "square", "public" to true))
+      }
+      responseBody {
+        field("memberId", "회원 식별자", sample = 1L)
+        field("filename", "업로드 파일 이름", sample = "file")
+        field("caption", "이미지 설명", sample = "프로필 이미지")
+        field("priority", "이미지 표시 순서", sample = 2)
+      }
+    }
+    val snippets = Path.of(requireNotNull(System.getProperty("springkit.restdocs.snippets")))
+    assertTrue(
+        Files.readString(snippets.resolve("upload-avatar/request-parts.adoc")).contains("file")
+    )
+    val resource = ObjectMapper().readTree(snippets.resolve("upload-avatar/resource.json").toFile())
+    assertEquals(
+        listOf("file", "caption", "priority", "metadata"),
+        resource.at("/request/requestFields").values().map { it.get("path").stringValue() },
+    )
+  }
+
+  @Test
+  fun uploadRawContent() {
+    documentation("upload-raw-content") {
+      summary = "원본 파일 업로드"
+      description = "바이너리 요청 본문을 그대로 저장합니다."
+      tags("assets")
+      requestLine("put", "/api/assets/{assetId}/content") {
+        pathVariable("assetId", "파일 식별자", sample = "asset-7")
+      }
+      requestBody {
+        field("payload", "원본 파일의 모든 바이트", sample = byteArrayOf(0, 1, 2, 0xff.toByte()))
+      }
+      responseBody {
+        field("assetId", "파일 식별자", sample = "asset-7")
+        field("size", "저장한 바이트 수", sample = 4)
+      }
+    }
+    val snippets = Path.of(requireNotNull(System.getProperty("springkit.restdocs.snippets")))
+    val rawSnippet = snippets.resolve("upload-raw-content/request-body.adoc")
+    assertTrue(Files.readString(rawSnippet).contains("원본 파일의 모든 바이트"))
   }
 
   @Test
