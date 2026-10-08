@@ -111,7 +111,7 @@ val payment = PaymentFixture.requested(amount = 10_000L)
 
 ## When
 
-When은 SUT에 하나의 핵심 행동을 수행합니다. 하나의 Scenario에서는 하나의 behavior를 검증합니다.
+When은 SUT에 하나의 핵심 행동을 수행합니다. 하나의 Scenario에서는 하나의 행동을 검증합니다.
 
 예:
 
@@ -146,7 +146,7 @@ payment.status shouldBe PaymentStatus.APPROVED
 
 ## 경계값 검증
 
-코드나 명세에서 입력값을 기준으로 동작이 달라지면 3-value BVA(Boundary Value Analysis)를 적용합니다.
+코드나 명세에서 입력값을 기준으로 동작이 달라지면 3-value BVA(Boundary Value Analysis, 경계값 분석)를 적용합니다.
 
 각 경계값에서 바로 아래 값, 경계값, 바로 위 값을 확인합니다.
 
