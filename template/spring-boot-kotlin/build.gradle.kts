@@ -6,6 +6,8 @@ plugins {
   id("com.diffplug.spotless") version "8.10.2"
 }
 
+extra["kotlin.version"] = "2.2.21"
+
 group = "__SPRINGKIT_GROUP__"
 
 version = "0.0.1-SNAPSHOT"

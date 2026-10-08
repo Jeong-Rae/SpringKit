@@ -12,7 +12,9 @@ java {
 
 dependencyManagement {
   imports {
-    mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES) {
+      bomProperty("kotlin.version", "2.2.21")
+    }
   }
 }
 
