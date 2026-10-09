@@ -1,68 +1,102 @@
 # 테스트 작성 기준
 
-테스트명에는 실행 조건과 예상 결과가 함께 드러나야 합니다. Kotlin 테스트는 Kotest로 작성합니다. Feature와 Scenario 이름에도 `$writing-guide`의 한국어 작성 기준을 적용합니다.
+테스트는 검증할 대상에 맞춰 범위를 나눕니다. 각 테스트는 하나의 행동과 예상 결과를 명확하게 확인합니다. 테스트 이름과 설명에는 `$writing-guide`를 적용합니다.
 
 ## 테스트 범위
 
-테스트는 도메인 단위 테스트, API 계약 테스트, 유스케이스 통합 테스트로 나눕니다. 각 테스트는 맡은 범위의 동작을 검증합니다.
-
-| 종류 | 범위 | 검증 내용 |
-| --- | --- | --- |
-| 도메인 단위 테스트 | Domain | 비즈니스 규칙, 상태 변경, 경계값 |
-| API 계약 테스트 | Presentation | HTTP 요청과 응답, 입력 검증, API 명세 |
-| 유스케이스 통합 테스트 | Application → Domain → Infrastructure → DB | 업무 처리, 트랜잭션, 데이터 저장 |
-
 ### 도메인 단위 테스트
 
-도메인 객체의 행동과 규칙을 외부 의존성 없이 검증합니다. 상태 변경과 경계값은 도메인 단위 테스트에서 자세히 확인합니다.
+도메인 객체의 비즈니스 규칙을 단위 테스트로 검증합니다. 상태 변경, 계산, 허용 조건, 경계값을 확인합니다.
+
+예:
+
+```kotlin
+scenario("승인 대기 중인 결제를 승인하면, 결제 상태가 승인으로 변경됩니다.") {
+    val payment = PaymentFixture.requested()
+
+    payment.approve()
+
+    payment.status shouldBe PaymentStatus.APPROVED
+}
+```
 
 ### API 계약 테스트
 
-Presentation에서는 실제 HTTP 요청과 응답이 API 계약에 맞는지 검증합니다. SpringKit의 선언적 REST Docs로 API 계약을 관리하고 문서화합니다. Application은 테스트 대역으로 연결합니다.
+Presentation에서는 HTTP 요청과 응답이 선언된 API 계약에 맞는지 검증합니다. SpringKit의 선언적 REST Docs로 계약을 관리하고 문서화합니다. Application은 테스트 대역으로 연결합니다.
+
+예:
+
+```kotlin
+class PaymentApiDocumentationTest : DeclarativeRestDocsTest() {
+    @Test
+    fun approvePayment() {
+        documentation("approve-payment") {
+            summary = "결제 승인"
+            description = "승인 대기 중인 결제를 승인합니다."
+
+            requestLine("post", "/api/payments/{paymentId}/approve") {
+                pathVariable("paymentId", "결제 식별자", sample = 1L)
+            }
+
+            responseBody {
+                field("status", "결제 상태", sample = "APPROVED")
+            }
+        }
+    }
+}
+```
 
 ### 유스케이스 통합 테스트
 
-Application을 시작점으로 Domain, Infrastructure, 실제 DB까지 연결해 업무 결과를 검증합니다. 같은 유스케이스에 속한 계층은 하나의 통합 테스트에서 확인합니다. 대표적인 성공과 실패 사례로 실제 연결과 데이터 저장을 검증합니다.
+Application에서 시작해 Domain, Infrastructure, 실제 DB까지 연결하여 검증합니다. 유스케이스의 결과와 트랜잭션, 데이터 저장을 대표적인 성공과 실패 사례로 확인합니다.
+
+예:
+
+```kotlin
+scenario("승인 대기 중인 결제를 승인하면, 승인 상태가 DB에 저장됩니다.") {
+    val payment = paymentRepository.save(PaymentFixture.requested())
+
+    paymentApprovalUseCase.approve(payment.id)
+
+    val savedPayment = paymentRepository.findById(payment.id).orElseThrow()
+    savedPayment.status shouldBe PaymentStatus.APPROVED
+}
+```
 
 ### 외부 시스템
 
-우리 서비스가 소유하지 않는 외부 API와 다른 서비스는 Fake 또는 Stub으로 분리합니다. 우리 서비스가 사용하는 DB는 운영 환경과 같은 종류의 테스트 DB로 연결합니다.
+우리 서비스가 소유하지 않는 외부 시스템은 Fake나 Stub으로 분리합니다. 우리 서비스가 사용하는 DB는 운영 환경과 같은 종류의 테스트 DB로 연결합니다.
 
-## 테스트 구조
+예: PG사는 `FakePaymentGateway`로 연결하고, 결제 정보는 테스트 PostgreSQL에 저장합니다.
 
-Kotest의 `FeatureSpec`을 사용합니다. 확인할 기능이나 도메인 행위는 `feature`로 묶고, 각 행동 규칙은 `scenario`로 작성합니다. Scenario 본문은 Given, When, Then 순서로 구성합니다.
+## Feature와 Scenario
+
+### Feature
+
+Kotest의 `FeatureSpec`을 사용합니다. `feature`에는 검증할 기능을 명사구로 작성하고, `scenario`에는 해당 기능의 행동 규칙을 작성합니다.
+
+예:
 
 ```kotlin
 class PaymentApprovalTest :
     FeatureSpec({
         feature("결제 승인") {
             scenario("승인 대기 중인 결제를 승인하면, 결제 상태가 승인으로 변경됩니다.") {
-                // Given
                 val payment = PaymentFixture.requested()
 
-                // When
                 payment.approve()
 
-                // Then
                 payment.status shouldBe PaymentStatus.APPROVED
             }
         }
     })
 ```
 
-Feature 이름은 기능을 식별할 수 있는 명사구로 작성합니다. Scenario는 조건, 행동, 예상 결과를 하나의 완전한 한국어 문장으로 작성합니다.
+### Scenario 이름
 
-## Scenario 이름
+Scenario 이름에는 조건, 행동, 예상 결과를 하나의 완전한 한국어 문장으로 작성합니다. 테스트에서 직접 확인하는 결과를 쉽고 자연스럽게 표현합니다.
 
-Scenario 이름만 읽어도 어떤 조건에서 어떤 행동을 했을 때 어떤 결과가 발생하는지 알 수 있어야 합니다.
-
-기본 문장 구조는 다음과 같습니다.
-
-```text
-[조건]에서 [행동]하면, [결과]가 발생합니다.
-```
-
-Scenario 문자열도 일반 문장으로 보고 `$writing-guide`를 적용합니다. 도메인에서 관찰할 수 있는 결과를 쉽고 직접적인 말로 표현합니다.
+Scenario 문자열에도 `$writing-guide`를 적용하고, 코드 식별자와 도메인 용어를 일관되게 사용합니다.
 
 예:
 
@@ -70,152 +104,87 @@ Scenario 문자열도 일반 문장으로 보고 `$writing-guide`를 적용합�
 승인 대기 중인 결제를 승인하면, 결제 상태가 승인으로 변경됩니다.
 승인된 결제를 다시 승인하면, 결제 승인 요청이 거부됩니다.
 결제 금액이 최소 결제 금액 이상이면, 결제할 수 있습니다.
-결제 금액이 최소 결제 금액보다 작으면, 결제할 수 없습니다.
-결제가 취소되면, 결제 금액이 환불됩니다.
 ```
 
-Scenario 이름에는 다음 기준을 적용합니다.
+## SUT와 실행 단계
 
-- 조건과 예상 결과가 드러나게 작성합니다.
-- 행동이 있는 경우 조건, 행동, 예상 결과가 모두 드러나게 작성합니다.
-- 테스트에서 직접 확인하는 결과를 작성합니다.
-- Scenario 하나에는 하나의 핵심 행동 규칙과 하나의 예상 결과를 작성합니다.
-- 하나의 결과를 확인하기 위한 여러 assertion은 같은 Scenario에서 검증할 수 있습니다.
-- 코드 식별자는 원문을 유지합니다.
-- 도메인에서 같은 개념에는 같은 용어를 사용합니다.
-- 조건절과 결과절의 관계가 바로 읽히도록 문장을 구성합니다.
-- 뜻이 달라지지 않는 단어는 제거합니다.
+### SUT
 
-## SUT
+각 Scenario는 하나의 SUT(System Under Test, 테스트 대상)를 중심으로 작성합니다. SUT는 검증할 행동을 수행하는 객체이며, 변수에는 도메인에 맞는 이름을 사용합니다.
 
-각 Scenario는 하나의 SUT(System Under Test, 테스트 대상)를 기준으로 작성합니다. SUT는 Scenario에서 행동을 수행하고 결과를 확인하는 중심 객체입니다.
+예: 다음 Scenario의 SUT는 `payment`입니다.
 
-Given에서 SUT와 행동에 필요한 상태를 준비합니다. 변수 이름에는 실제 도메인 이름을 사용하여 어떤 객체를 테스트하는지 바로 알 수 있게 작성합니다.
+```kotlin
+scenario("승인된 결제를 취소하면, 결제 상태가 취소로 변경됩니다.") {
+    val payment = PaymentFixture.approved()
+
+    payment.cancel()
+
+    payment.status shouldBe PaymentStatus.CANCELLED
+}
+```
+
+### Given, When, Then
+
+Scenario 본문은 준비(Given), 실행(When), 검증(Then) 순서로 작성합니다. 세 부분은 빈 줄로 구분합니다.
+
+Given에서는 행동에 필요한 초기 상태를 준비하고, 결과에 영향을 주는 값은 Fixture 호출부에 명시합니다. When에서는 SUT에 하나의 핵심 행동을 수행합니다. Then에서는 그 행동의 관찰 가능한 결과를 확인합니다.
 
 예:
 
 ```kotlin
-// Given
-val payment = PaymentFixture.requested()
+scenario("승인 대기 중인 결제를 승인하면, 결제가 승인됩니다.") {
+    val payment = PaymentFixture.requested(amount = 10_000L)
+
+    payment.approve()
+
+    payment.status shouldBe PaymentStatus.APPROVED
+    payment.approvedAt shouldNotBe null
+}
 ```
 
-위 Scenario의 SUT는 `payment`입니다. When에서는 `payment`에 행동을 수행하고, Then에서는 그 행동으로 달라진 `payment`의 상태나 반환 결과를 확인합니다.
+### 오류 검증
 
-여러 객체가 필요한 경우에도 Scenario에서 검증하는 중심 SUT를 하나로 정합니다.
-
-```kotlin
-// Given
-val payment = PaymentFixture.requested(amount = 10_000L)
-val account = AccountFixture.availableBalance(20_000L)
-
-// When
-payment.approve(account)
-
-// Then
-payment.status shouldBe PaymentStatus.APPROVED
-```
-
-## Given
-
-Given은 행동을 수행하기 전에 이미 성립한 조건과 상태를 구성합니다.
-
-Scenario 결과에 영향을 주는 초기 상태가 테스트 본문에 드러나게 작성합니다.
+행동이 거부되는 경우에는 호출자가 받는 예외를 검증합니다.
 
 예:
 
 ```kotlin
-// Given
-val payment = PaymentFixture.requested()
-```
+scenario("승인된 결제를 다시 승인하면, 결제 승인 요청이 거부됩니다.") {
+    val payment = PaymentFixture.approved()
 
-Scenario에서 중요한 값은 호출부에 드러냅니다.
-
-```kotlin
-// Given
-val payment = PaymentFixture.requested(amount = 10_000L)
-```
-
-## When
-
-When은 SUT에 하나의 핵심 행동을 수행합니다. 하나의 Scenario에서는 하나의 행동을 검증합니다.
-
-예:
-
-```kotlin
-// When
-payment.approve()
-```
-
-하나의 행동으로 여러 상태가 함께 바뀌는 경우에는 Then에서 같은 행동의 결과로 함께 검증할 수 있습니다.
-
-```kotlin
-// When
-payment.approve()
-
-// Then
-payment.status shouldBe PaymentStatus.APPROVED
-payment.approvedAt shouldNotBe null
-```
-
-## Then
-
-Then은 When 이후 외부에서 관찰할 수 있는 결과를 검증합니다.
-
-예:
-
-```kotlin
-// Then
-payment.status shouldBe PaymentStatus.APPROVED
-```
-
-상태, 반환값, 오류처럼 호출자가 관찰할 수 있는 계약을 검증합니다.
-
-## 경계값 검증
-
-코드나 명세에서 입력값을 기준으로 동작이 달라지면 3-value BVA(Boundary Value Analysis, 경계값 분석)를 적용합니다.
-
-각 경계값에서 바로 아래 값, 경계값, 바로 위 값을 확인합니다.
-
-예: 최소 결제 금액이 `100원`이면 `99원`, `100원`, `101원`을 확인합니다.
-
-같은 행동 규칙을 여러 값으로 검증할 때는 FeatureSpec의 `withScenarios`를 사용합니다. 각 데이터가 생성하는 Scenario 이름에도 `$writing-guide`를 적용하고 실제 결과를 직접 표현합니다.
-
-```kotlin
-feature("최소 결제 금액") {
-    val policy = PaymentPolicy(minimumAmount = 100L)
-
-    withScenarios(
-        nameFn = { (amount, expected) ->
-            val result = if (expected) "결제할 수 있습니다." else "결제할 수 없습니다."
-            "결제 금액이 ${amount}원이면, $result"
-        },
-        99L to false,
-        100L to true,
-        101L to true,
-    ) { (amount, expected) ->
-        // When
-        val actual = policy.canPay(amount)
-
-        // Then
-        actual shouldBe expected
+    shouldThrow<PaymentAlreadyApprovedException> {
+        payment.approve()
     }
 }
 ```
 
-유효한 범위에 최솟값과 최댓값이 모두 있으면 각 경계에 3-value BVA를 적용합니다.
+## 경계값과 입력 조합
 
-예: 결제 금액의 유효 범위가 `100원 이상 1,000원 이하`이면 `99원`, `100원`, `101원`, `999원`, `1,000원`, `1,001원`을 확인합니다.
+### 3-value BVA
+
+입력값에 따라 동작이 달라지면 3-value BVA(Boundary Value Analysis, 경계값 분석)를 적용합니다. 각 경계에서 바로 아래 값, 경계값, 바로 위 값을 확인합니다.
+
+예: 결제 가능 금액이 `100원 이상 1,000원 이하`인 경우
+
+| 경계 | 확인할 값 |
+| --- | --- |
+| 최소 금액 | 99원, 100원, 101원 |
+| 최대 금액 | 999원, 1,000원, 1,001원 |
+
+### 데이터 기반 테스트
+
+같은 행동 규칙을 여러 입력으로 검증할 때는 `withScenarios`를 사용합니다. 각 입력에 대한 Scenario 이름에도 조건과 예상 결과가 드러나야 합니다. 행동 규칙이 달라지면 별도의 Scenario로 작성합니다.
+
+예:
 
 ```kotlin
-feature("결제 금액 범위") {
-    val policy = PaymentPolicy(
-        minimumAmount = 100L,
-        maximumAmount = 1_000L,
-    )
-
+feature("결제 가능 금액") {
     withScenarios(
         nameFn = { (amount, expected) ->
-            val result = if (expected) "결제할 수 있습니다." else "결제할 수 없습니다."
+            val result =
+                if (expected) "결제할 수 있습니다."
+                else "결제할 수 없습니다."
             "결제 금액이 ${amount}원이면, $result"
         },
         99L to false,
@@ -225,13 +194,14 @@ feature("결제 금액 범위") {
         1_000L to true,
         1_001L to false,
     ) { (amount, expected) ->
-        // When
+        val policy = PaymentPolicy(
+            minimumAmount = 100L,
+            maximumAmount = 1_000L,
+        )
+
         val actual = policy.canPay(amount)
 
-        // Then
         actual shouldBe expected
     }
 }
 ```
-
-같은 행동 규칙을 여러 타입이나 입력 조합으로 확인할 때도 `withScenarios`를 사용합니다. 입력에 따라 검증하는 행동 규칙이 달라지면 별도의 Scenario로 작성합니다.
