@@ -11,7 +11,7 @@
 예:
 
 ```kotlin
-scenario("승인 대기 중인 결제를 승인하면, 결제 상태가 승인으로 변경됩니다.") {
+scenario("승인 대기 중인 결제를 승인하면, 결제 상태가 승인이 됩니다.") {
     val payment = PaymentFixture.requested()
 
     payment.approve()
@@ -53,7 +53,7 @@ Application에서 시작해 Domain, Infrastructure, 실제 DB까지 연결하여
 예:
 
 ```kotlin
-scenario("승인 대기 중인 결제를 승인하면, 승인 상태가 DB에 저장됩니다.") {
+scenario("승인 대기 중인 결제를 승인하면, 승인된 결제가 DB에 저장됩니다.") {
     val payment = paymentRepository.save(PaymentFixture.requested())
 
     paymentApprovalUseCase.approve(payment.id)
@@ -81,7 +81,7 @@ Kotest의 `FeatureSpec`을 사용합니다. `feature`에는 검증할 기능을 
 class PaymentApprovalTest :
     FeatureSpec({
         feature("결제 승인") {
-            scenario("승인 대기 중인 결제를 승인하면, 결제 상태가 승인으로 변경됩니다.") {
+            scenario("승인 대기 중인 결제를 승인하면, 결제 상태가 승인이 됩니다.") {
                 val payment = PaymentFixture.requested()
 
                 payment.approve()
@@ -101,7 +101,7 @@ Scenario 문자열에도 `$writing-guide`를 적용하고, 코드 식별자와 �
 예:
 
 ```text
-승인 대기 중인 결제를 승인하면, 결제 상태가 승인으로 변경됩니다.
+승인 대기 중인 결제를 승인하면, 결제 상태가 승인이 됩니다.
 승인된 결제를 다시 승인하면, 결제 승인 요청이 거부됩니다.
 결제 금액이 최소 결제 금액 이상이면, 결제할 수 있습니다.
 ```
@@ -115,7 +115,7 @@ Scenario 문자열에도 `$writing-guide`를 적용하고, 코드 식별자와 �
 예: 다음 Scenario의 SUT는 `payment`입니다.
 
 ```kotlin
-scenario("승인된 결제를 취소하면, 결제 상태가 취소로 변경됩니다.") {
+scenario("승인된 결제를 취소하면, 결제가 취소됩니다.") {
     val payment = PaymentFixture.approved()
 
     payment.cancel()
