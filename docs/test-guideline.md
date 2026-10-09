@@ -58,12 +58,12 @@ class PaymentApiDocumentationTest : DeclarativeRestDocsTest() {
 
 ### 유스케이스 통합 테스트
 
-Application에서 시작해 Domain, Infrastructure, 실제 DB까지 연결하여 검증합니다. 유스케이스의 결과와 트랜잭션, 데이터 저장을 대표적인 성공과 실패 사례로 확인합니다.
+Application에서 시작해 Domain, Infrastructure, 실제 데이터베이스까지 연결하여 검증합니다. 유스케이스의 결과와 트랜잭션, 데이터 저장을 대표적인 성공과 실패 사례로 확인합니다.
 
 예:
 
 ```kotlin
-scenario("승인 대기 중인 결제를 승인하면, 승인된 결제가 DB에 저장됩니다.") {
+scenario("승인 대기 중인 결제를 승인하면, 승인된 결제가 데이터베이스에 저장됩니다.") {
     val payment = paymentRepository.save(PaymentFixture.requested())
 
     paymentApprovalUseCase.approve(payment.id)
@@ -75,9 +75,9 @@ scenario("승인 대기 중인 결제를 승인하면, 승인된 결제가 DB에
 
 ### 외부 시스템
 
-우리 서비스가 소유하지 않는 외부 시스템은 Fake나 Stub으로 분리합니다. 우리 서비스가 사용하는 DB는 운영 환경과 같은 종류의 테스트 DB로 연결합니다.
+우리 서비스가 소유하지 않는 외부 시스템은 Fake나 Stub으로 분리합니다. 우리 서비스가 사용하는 데이터베이스는 운영 환경과 같은 종류의 테스트 데이터베이스로 연결합니다.
 
-예: PG사는 `FakePaymentGateway`로 연결하고, 결제 정보는 테스트 PostgreSQL에 저장합니다.
+예: PG사는 `FakePaymentGateway`로 연결하고, 결제 정보는 테스트 데이터베이스에 저장합니다.
 
 ## Feature와 Scenario
 
