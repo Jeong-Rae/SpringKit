@@ -1,11 +1,9 @@
 # Agent Guidebook
 
-Agent Guidebook POC를 구현하기 위한 Kotlin 단일 모듈 프로젝트입니다.
-현재는 패키지 구조와 Gradle·Kotest 설정을 제공합니다.
-
-요구사항은 [POC 문서](../docs/agent-guidebook-poc.md)와
+Agent Guidebook은 변경된 Kotlin 파일과 프로젝트 지침을 검색해 관련 지침의
+ID와 본문을 반환하는 Kotlin 라이브러리입니다. 요구사항은
+[검색 계약](../docs/agent-guidebook-search-contract.md), [POC 문서](../docs/agent-guidebook-poc.md),
 [기술 노트](../docs/agent-guidebook-poc-technical-notes.md)를 따릅니다.
-빌드 설정은 `template/spring-boot-kotlin-multi-module`을 참고합니다.
 
 ## 패키지
 
@@ -14,15 +12,35 @@ Agent Guidebook POC를 구현하기 위한 Kotlin 단일 모듈 프로젝트입�
 | 패키지 | 책임 |
 | --- | --- |
 | `models` | 공개 요청, 응답과 값 객체 |
-| `services` | `present(request)` 등의 공개 행위 |
+| `services` | 지침 검색 등의 공개 행위 |
 | `client` | `AgentGuidebookClient` 진입점과 의존성 구성 |
 | `core` | Scope Filtering, Regex Matching |
-| `storage` | YAML, 파일 시스템, Git, SQLite |
+| `storage` | YAML, 파일 시스템, Git |
 | `errors` | 호출자가 처리할 오류 모델 |
-| `codex` | PostToolUse, additionalContext Adapter |
+| `codex` | PostToolUse, additionalContext 변환 |
 
-패키지별 `package-info.kt`에는 책임을 기록합니다. 검색 API, 저장소와
-Codex Adapter 구현은 후속 작업에서 추가합니다.
+패키지별 `package-info.kt`에는 책임을 기록합니다. 공개 검색 API는 다음과 같이
+호출합니다.
+
+```kotlin
+import com.springkit.agentguidebook.models.GuidelineSearchRequest
+import com.springkit.agentguidebook.services.GuidelineSearchService
+import java.nio.file.Path
+
+val matches =
+    GuidelineSearchService().search(
+        GuidelineSearchRequest(
+            cwd = Path.of("/workspace/backend-order"),
+            filepaths = listOf(Path.of("/workspace/backend-order/src/OrderService.kt")),
+        )
+    )
+```
+
+검색은 `.kt`와 `.kts` 파일만 읽고, `cwd/.agents/guides` 아래의 `guideline.yaml`을
+상대 경로 사전순으로 평가합니다. YAML 지침의 저장소, 언어, `file_changed` 이벤트와
+정규식 조건을 모두 만족한 지침을 ID와 UTF-8 본문으로 반환합니다. Kotlin 대상 파일이나
+지침 후보가 없으면 저장소 `origin` 없이 빈 목록을 반환합니다. 둘 다 있을 때는
+`git remote get-url origin`으로 저장소 범위를 확인합니다.
 
 ## 검증
 
