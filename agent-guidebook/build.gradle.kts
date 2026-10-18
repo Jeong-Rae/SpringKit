@@ -24,6 +24,7 @@ kotlin {
 }
 
 dependencies {
+  implementation("org.xerial:sqlite-jdbc:3.53.4.0")
   implementation("org.yaml:snakeyaml:2.6")
 
   testImplementation("io.kotest:kotest-assertions-core:6.2.4")
@@ -33,6 +34,7 @@ dependencies {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  systemProperty("agentGuidebook.testRuntimeClasspath", sourceSets["test"].runtimeClasspath.asPath)
 }
 
 spotless {
