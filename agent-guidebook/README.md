@@ -45,6 +45,27 @@ val matches =
 지침 후보가 없으면 저장소 `origin` 없이 빈 목록을 반환합니다. 둘 다 있을 때는
 `git remote get-url origin`으로 저장소 범위를 확인합니다.
 
+## Codex PostToolUse Hook
+
+`hooks/post-tool-use.sh`는 Codex가 보낸 Hook stdin을 단일 실행 파일에 그대로 전달합니다. 실행 파일의 stdout, stderr, 종료 코드와 Codex 호출 cwd를 보존합니다. wrapper는 Hook JSON을 읽거나 변환하지 않으며 Kotlin 검색 앱과 연결되어 있지 않습니다. 실행 앱은 Hook 응답 JSON을 stdout에 직접 써야 합니다.
+
+실행 파일은 `AGENT_GUIDEBOOK_APP_EXECUTABLE` 환경 변수에 절대 경로로 지정하고, Codex 프로세스가 그 환경을 상속하도록 시작합니다.
+
+```sh
+export AGENT_GUIDEBOOK_APP_EXECUTABLE="/absolute/path/to/agent-guidebook-app"
+codex
+```
+
+환경 변수 값은 실행 파일 경로 하나입니다. 공백이 있는 경로도 따옴표로 감싸 전체 경로를 전달합니다. 인자나 셸 명령 문자열은 넣지 않습니다. wrapper가 해당 경로를 따옴표로 실행하므로 `$()`나 역따옴표 같은 셸 문자가 실행되지 않습니다.
+
+Codex 설정에 `PostToolUse` command hook을 등록하고, wrapper의 절대 경로를 지정합니다. [예제 설정](hooks/hooks.example.json)은 matcher를 `^apply_patch$`로 제한합니다. JSON의 `command` 값은 셸 명령 문자열이므로, 공백이 있는 wrapper 경로는 JSON 문자열 내부에서 다시 따옴표로 감싸야 합니다. 예제의 checkout 경로는 실제 위치로 바꾸고, 프로젝트 설정을 쓸 때는 Codex에서 해당 `.codex/` 계층을 신뢰해야 합니다.
+
+실제 Hook probe에서는 Codex CLI inline 설정을 검증했습니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 별도 runtime 검증 전까지 미확인입니다.
+
+검증 단계와 실제 run4 payload, canary 결과는 [Hook 검증 기록](../docs/agent-guidebook-hook-verification.md)에서 확인할 수 있습니다.
+
+환경 변수나 앱 경로가 잘못되면 wrapper는 한국어 진단을 stderr에 쓰고 종료 코드 64, 127 또는 126을 반환합니다. 유효한 앱이 실행되면 앱이 반환한 종료 코드를 그대로 전달합니다. 기본 테스트와 실행 방법은 아래 [검증](#검증) 절을 따릅니다.
+
 ## 검증
 
 Java 25 toolchain을 사용합니다. Kotlin 소스와 Gradle 스크립트는

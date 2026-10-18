@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/with spaces/SpringKit/agent-guidebook/hooks/post-tool-use.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
