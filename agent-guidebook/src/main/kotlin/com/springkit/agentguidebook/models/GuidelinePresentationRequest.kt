@@ -7,5 +7,6 @@ class GuidelinePresentationRequest(
     val cwd: Path,
     filepaths: Collection<Path>,
 ) {
-  val filepaths: List<Path> = throw NotImplementedError("Presentation 요청의 파일 경로 복사는 아직 구현되지 않았습니다.")
+  val filepaths: List<Path>
+    get() = throw NotImplementedError("Presentation 요청의 파일 경로 복사는 아직 구현되지 않았습니다.")
 }
