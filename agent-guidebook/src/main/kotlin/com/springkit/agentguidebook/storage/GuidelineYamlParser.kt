@@ -80,16 +80,8 @@ internal class GuidelineYamlParser {
 
     val repositories = strings(requiredValue(fields, "repositories", "scope"), "scope.repositories")
     val languages = strings(requiredValue(fields, "languages", "scope"), "scope.languages")
-    validateNonBlankValues(repositories, "scope.repositories")
-    validateNonBlankValues(languages, "scope.languages")
 
     return Scope(repositories, languages)
-  }
-
-  private fun validateNonBlankValues(values: List<String>, location: String) {
-    if (values.any(String::isBlank)) {
-      throw GuidelineLoadException("지침 목록 값은 비어 있을 수 없습니다: $location")
-    }
   }
 
   private fun parsePatterns(value: Any?): List<String> {
