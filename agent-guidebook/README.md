@@ -12,29 +12,32 @@ ID와 본문을 반환하는 Kotlin 라이브러리입니다. 요구사항은
 | 패키지 | 책임 |
 | --- | --- |
 | `models` | 공개 요청, 응답과 값 객체 |
-| `services` | 지침 검색 등의 공개 행위 |
-| `client` | `AgentGuidebookClient` 진입점과 의존성 구성 |
-| `core` | Scope Filtering, Regex Matching |
-| `storage` | YAML, 파일 시스템, Git |
+| `services` | 검색 조율과 `GuidelineSearchInputReader` 읽기 경계 |
+| `client` | 공개 `GuidelineSearchFactory`와 실제 입력 경계 조립 |
+| `core` | 적용 범위, 정규식 일치, 지침 검색 도메인 규칙 |
+| `storage` | 파일 시스템, YAML, Git 입력 어댑터 |
 | `errors` | 호출자가 처리할 오류 모델 |
 | `codex` | PostToolUse, additionalContext 변환 |
 
-패키지별 `package-info.kt`에는 책임을 기록합니다. 공개 검색 API는 다음과 같이
-호출합니다.
+패키지별 `package-info.kt`에는 책임을 기록합니다. 실제 프로젝트 파일을 검색할 때는
+파일 시스템 입력을 조립하는 팩토리로 서비스를 생성합니다.
 
 ```kotlin
+import com.springkit.agentguidebook.client.GuidelineSearchFactory
 import com.springkit.agentguidebook.models.GuidelineSearchRequest
-import com.springkit.agentguidebook.services.GuidelineSearchService
 import java.nio.file.Path
 
 val matches =
-    GuidelineSearchService().search(
+    GuidelineSearchFactory.fileSystem().search(
         GuidelineSearchRequest(
             cwd = Path.of("/workspace/backend-order"),
             filepaths = listOf(Path.of("/workspace/backend-order/src/OrderService.kt")),
         )
     )
 ```
+
+`GuidelineSearchService`는 `GuidelineSearchInputReader`에 입력 읽기를 위임합니다. 테스트에서는
+메모리 기반 입력 경계를 주입해 실제 파일 시스템과 Git 없이 검색 흐름을 확인할 수 있습니다.
 
 검색은 `.kt`와 `.kts` 파일만 읽고, `cwd/.agents/guides` 아래의 `guideline.yaml`을
 상대 경로 사전순으로 평가합니다. YAML 지침의 저장소, 언어, `file_changed` 이벤트와
