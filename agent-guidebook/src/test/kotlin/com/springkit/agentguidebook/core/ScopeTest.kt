@@ -225,6 +225,61 @@ class ScopeTest :
         }
       }
 
+      feature("공백 범위 조건 거부") {
+        withScenarios(
+            nameFn = { it.name },
+            listOf(
+                InvalidScopeScenario(
+                    name = "저장소 조건에 빈 문자열이 포함된 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf(""),
+                    languages = listOf("kotlin"),
+                ),
+                InvalidScopeScenario(
+                    name = "공백으로만 이루어진 저장소 조건을 포함한 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf(" "),
+                    languages = listOf("kotlin"),
+                ),
+                InvalidScopeScenario(
+                    name = "줄바꿈으로만 이루어진 저장소 조건을 포함한 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf("\n"),
+                    languages = listOf("kotlin"),
+                ),
+                InvalidScopeScenario(
+                    name = "유효한 저장소 조건과 공백 조건이 함께 있는 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf("acme/backend-order", " "),
+                    languages = listOf("kotlin"),
+                ),
+                InvalidScopeScenario(
+                    name = "언어 조건에 빈 문자열이 포함된 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf("acme/backend-order"),
+                    languages = listOf(""),
+                ),
+                InvalidScopeScenario(
+                    name = "공백으로만 이루어진 언어 조건을 포함한 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf("acme/backend-order"),
+                    languages = listOf(" "),
+                ),
+                InvalidScopeScenario(
+                    name = "줄바꿈으로만 이루어진 언어 조건을 포함한 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf("acme/backend-order"),
+                    languages = listOf("\n"),
+                ),
+                InvalidScopeScenario(
+                    name = "유효한 언어 조건과 공백 조건이 함께 있는 Scope를 생성하면, 생성이 거부됩니다.",
+                    repositories = listOf("acme/backend-order"),
+                    languages = listOf("kotlin", "\n"),
+                ),
+            ),
+        ) { scenario ->
+          val repositories = scenario.repositories
+          val languages = scenario.languages
+
+          shouldThrow<IllegalArgumentException> {
+            Scope(repositories, languages)
+          }
+        }
+      }
+
       feature("범위 컬렉션 불변성") {
         scenario("생성에 사용한 저장소 목록을 비우면, 범위에 저장된 조건은 유지됩니다.") {
           val suppliedRepositories = mutableListOf("acme/backend-order")
@@ -299,6 +354,12 @@ private data class CombinedScopeScenario(
 )
 
 private data class EmptyScopeScenario(
+    val name: String,
+    val repositories: List<String>,
+    val languages: List<String>,
+)
+
+private data class InvalidScopeScenario(
     val name: String,
     val repositories: List<String>,
     val languages: List<String>,

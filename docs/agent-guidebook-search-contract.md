@@ -43,6 +43,8 @@ data class SourceFile(
 
 Core 검색은 파일별 `language`와 공통 `repository`, `event`로 지침 적용 여부를 확인한 뒤 해당 소스 코드 내용의 관련성을 평가합니다. 결과는 입력 지침 순서를 따르며, 여러 파일에서 같은 지침이 일치해도 ID당 한 번 반환합니다.
 
+`Scope`를 생성할 때 저장소 또는 언어 조건 항목이 빈 문자열이거나 공백으로만 이루어져 있으면 `IllegalArgumentException`이 발생합니다. 유효한 값과 공백 조건이 함께 있어도 생성이 거부됩니다. 조건 목록 자체가 비어 있는 것은 유효하며, 해당 범위는 일치하지 않습니다.
+
 ## 검색 규칙
 
 - 지침은 `cwd/.agents/guides` 아래에서 `guideline.yaml`을 재귀적으로 찾습니다.
