@@ -1,7 +1,10 @@
 package com.springkit.agentguidebook.services
 
 import com.springkit.agentguidebook.core.MatchedGuideline
+import com.springkit.agentguidebook.core.Presentation
+import com.springkit.agentguidebook.core.PresentationSession
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
+import com.springkit.agentguidebook.models.GuidelineSearchRequest
 import java.time.Clock
 
 /**
@@ -19,6 +22,33 @@ class GuidelinePresentationService(
    *
    * 반환은 Presentation 이력 commit이 성공한 뒤에만 완료됩니다.
    */
-  fun present(request: GuidelinePresentationRequest): List<MatchedGuideline> =
-      throw NotImplementedError("Guideline Presentation 동작은 아직 구현되지 않았습니다.")
+  fun present(request: GuidelinePresentationRequest): List<MatchedGuideline> {
+    val matchedGuidelines =
+        guidelineSearchService.search(GuidelineSearchRequest(request.cwd, request.filepaths))
+    val hasMatchedGuidelines = matchedGuidelines.isNotEmpty()
+
+    if (!hasMatchedGuidelines) {
+      return emptyList()
+    }
+
+    return presentationRepository.inImmediateTransaction { transaction ->
+      val history = transaction.presentations(request.sessionId)
+      val session = PresentationSession(request.sessionId, history)
+      val newGuidelines = session.notPresented(matchedGuidelines)
+      val hasNewGuidelines = newGuidelines.isNotEmpty()
+
+      if (!hasNewGuidelines) {
+        return@inImmediateTransaction emptyList()
+      }
+
+      val presentedAt = clock.instant()
+      val presentations = newGuidelines.map { guideline ->
+        Presentation(request.sessionId, guideline.id, presentedAt)
+      }
+
+      session.record(presentations)
+      transaction.record(presentations)
+      newGuidelines
+    }
+  }
 }
