@@ -12,7 +12,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** 프로젝트 파일에서 관련 지침을 검색하는 공개 API입니다. */
-class GuidelineSearchService {
+class GuidelineSearchService(
+    @Suppress("UNUSED_PARAMETER") inputReader: GuidelineSearchInputReader
+) {
   private val sourceFileReader = SourceFileReader()
   private val guidelineReader = GuidelineReader()
   private val repositoryIdentityReader = RepositoryIdentityReader()

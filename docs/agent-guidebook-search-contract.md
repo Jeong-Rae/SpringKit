@@ -5,8 +5,12 @@ Agent Guidebook은 변경된 Kotlin 소스와 프로젝트의 지침 파일을 �
 ## 공개 서비스 API
 
 ```kotlin
-class GuidelineSearchService {
+class GuidelineSearchService(inputReader: GuidelineSearchInputReader) {
     fun search(request: GuidelineSearchRequest): List<MatchedGuideline>
+}
+
+object GuidelineSearchFactory {
+    fun fileSystem(): GuidelineSearchService
 }
 
 class GuidelineSearchRequest(
@@ -21,6 +25,21 @@ data class MatchedGuideline(
 ```
 
 `cwd`와 각 `filepath`는 절대 경로입니다. 요청은 생성 시 전달받은 파일 경로 목록의 복사본을 보유합니다. 결과는 지침 ID와 UTF-8 본문을 보존합니다.
+
+`GuidelineSearchService`는 무인자 생성자를 제공하지 않습니다. 인메모리 입력 등 별도 읽기 경계를 사용하는 경우 `GuidelineSearchInputReader`를 생성자에 전달하고, 실제 파일 시스템을 사용하는 경우 `GuidelineSearchFactory.fileSystem().search(request)`로 호출합니다.
+
+## 외부 읽기 경계
+
+```kotlin
+interface GuidelineSearchInputReader {
+    fun validateWorkingDirectory(cwd: Path)
+    fun readKotlinSources(filepaths: Collection<Path>): List<SourceFile>
+    fun readGuidelines(root: Path): List<Guideline>
+    fun readRepositoryIdentity(cwd: Path): RepositoryIdentity
+}
+```
+
+서비스는 경로의 절대성을 확인하고 정규화한 뒤, 동일한 파일 경로를 한 번만 읽도록 정리합니다. 이어서 읽기 경계를 통해 작업 디렉터리를 확인하고 소스, 지침, 저장소 식별자를 차례로 읽습니다. 소스나 지침이 비어 있으면 이후 입력을 요구하지 않고 빈 결과를 반환합니다. Core 검색은 이 경계에 의존하지 않습니다.
 
 ## Core API
 
