@@ -5,70 +5,57 @@ import com.springkit.agentguidebook.models.RepositoryIdentity
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
-import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.util.Locale
+import org.eclipse.jgit.lib.Repository
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.eclipse.jgit.transport.URIish
+import org.eclipse.jgit.transport.UrlConfig
 
-/** Git 저장소의 `origin` 주소를 정규화된 소유자와 저장소 이름으로 변환합니다. */
+/**
+ * Git 저장소의 origin 설정을 읽어 정규화된 소유자와 저장소 이름으로 변환합니다.
+ *
+ * JGit으로 현재 경로의 저장소를 탐색하고 origin의 첫 주소만 사용합니다.
+ */
 internal class RepositoryIdentityReader {
 
-  /** `git remote get-url origin` 결과에서 저장소 식별자를 읽습니다. */
-  fun read(cwd: Path): RepositoryIdentity = normalizeOrigin(readOrigin(cwd))
-
-  private fun readOrigin(cwd: Path): String {
-    val process =
-        try {
-          ProcessBuilder("git", "-C", cwd.toString(), "remote", "get-url", "origin")
-              .redirectErrorStream(true)
-              .start()
-        } catch (exception: IOException) {
-          throw RepositoryIdentityUnavailableException("저장소 origin을 확인할 수 없습니다.", exception)
-        } catch (exception: SecurityException) {
-          throw RepositoryIdentityUnavailableException("저장소 origin을 확인할 수 없습니다.", exception)
-        }
-
-    val output =
-        try {
-          process.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-        } catch (exception: IOException) {
-          process.destroyForcibly()
-          throw RepositoryIdentityUnavailableException("저장소 origin을 읽을 수 없습니다.", exception)
-        }
-
-    val exitCode =
-        try {
-          process.waitFor()
-        } catch (exception: InterruptedException) {
-          Thread.currentThread().interrupt()
-          process.destroyForcibly()
-          throw RepositoryIdentityUnavailableException("저장소 origin 조회가 중단되었습니다.", exception)
-        }
-
-    if (exitCode != 0) {
-      val cause = IllegalStateException("Git origin 조회가 실패했습니다: ${output.trim()}")
-      throw RepositoryIdentityUnavailableException("저장소 origin을 확인할 수 없습니다.", cause)
-    }
-
-    if (output.isBlank()) {
-      val cause = IllegalArgumentException("git remote get-url origin 결과가 비어 있습니다.")
-      throw RepositoryIdentityUnavailableException("저장소 origin 주소가 비어 있습니다.", cause)
-    }
-
-    return output.trim()
-  }
-
-  private fun normalizeOrigin(origin: String): RepositoryIdentity =
+  /**
+   * 지정한 작업 경로의 Git 저장소에서 origin 식별자를 읽습니다.
+   *
+   * 저장소, 설정 또는 주소를 확인할 수 없으면 원인을 보존한 예외를 전달합니다.
+   */
+  fun read(cwd: Path): RepositoryIdentity =
       try {
-        val (owner, repository) = originComponents(origin)
-        RepositoryIdentity(owner, repository.removeSuffix(".git"))
+        val repository = FileRepositoryBuilder().setMustExist(true).findGitDir(cwd.toFile()).build()
+        repository.use {
+          val origin = readOrigin(it)
+          val (owner, name) = originComponents(origin)
+          RepositoryIdentity(owner, name.removeSuffix(".git"))
+        }
+      } catch (exception: IOException) {
+        throw RepositoryIdentityUnavailableException("저장소 origin을 확인할 수 없습니다.", exception)
+      } catch (exception: SecurityException) {
+        throw RepositoryIdentityUnavailableException("저장소 origin을 확인할 수 없습니다.", exception)
       } catch (exception: URISyntaxException) {
         throw RepositoryIdentityUnavailableException("저장소 origin 주소를 정규화할 수 없습니다.", exception)
       } catch (exception: IllegalArgumentException) {
         throw RepositoryIdentityUnavailableException("저장소 origin 주소를 정규화할 수 없습니다.", exception)
       }
 
+  private fun readOrigin(repository: Repository): String {
+    val configuredOrigin =
+        repository.config.getStringList("remote", "origin", "url").firstOrNull()
+            ?: throw IllegalArgumentException("Git origin 조회가 실패했습니다: origin URL이 없습니다.")
+    val rewrittenOrigin = UrlConfig(repository.config).replace(configuredOrigin).trim()
+    require(rewrittenOrigin.isNotBlank()) { "저장소 origin 주소가 비어 있습니다." }
+
+    return rewrittenOrigin
+  }
+
   private fun originComponents(origin: String): Pair<String, String> {
-    if (origin.contains(URI_SEPARATOR)) {
+    val isUri = origin.contains("://")
+
+    if (isUri) {
       return uriComponents(origin)
     }
 
@@ -78,14 +65,19 @@ internal class RepositoryIdentityReader {
   private fun uriComponents(origin: String): Pair<String, String> {
     val uri = URI(origin)
     val scheme = uri.scheme?.lowercase(Locale.ROOT)
+    val isSupportedScheme = scheme == "https" || scheme == "ssh"
 
-    if (scheme != HTTPS_SCHEME && scheme != SSH_SCHEME) {
+    if (!isSupportedScheme) {
       throw IllegalArgumentException("HTTPS 또는 SSH origin만 지원합니다.")
     }
-    if (uri.host.isNullOrBlank()) {
+
+    val hasValidHost = !uri.host.isNullOrBlank()
+    if (!hasValidHost) {
       throw IllegalArgumentException("origin 호스트가 비어 있습니다.")
     }
-    if (uri.rawQuery != null || uri.rawFragment != null) {
+
+    val hasQueryOrFragment = uri.rawQuery != null || uri.rawFragment != null
+    if (hasQueryOrFragment) {
       throw IllegalArgumentException("origin에 쿼리나 fragment를 지정할 수 없습니다.")
     }
 
@@ -93,9 +85,21 @@ internal class RepositoryIdentityReader {
   }
 
   private fun scpComponents(origin: String): Pair<String, String> {
-    val match =
-        SCP_ORIGIN.matchEntire(origin) ?: throw IllegalArgumentException("SSH origin 형식이 아닙니다.")
-    return ownerAndRepository(match.groupValues[1])
+    val uriish = URIish(origin)
+    val host = uriish.host.orEmpty()
+    val path = uriish.path
+    val hasUnsupportedAuthority = host.any { character ->
+      character == '/' || character == ':' || character.isWhitespace()
+    }
+    val hasUnsupportedPassword = uriish.pass != null
+    val hasWhitespace = origin.any(Char::isWhitespace)
+    val isScpAddress = uriish.scheme == null && host.isNotBlank() && !path.isNullOrEmpty()
+
+    if (!isScpAddress || hasUnsupportedAuthority || hasUnsupportedPassword || hasWhitespace) {
+      throw IllegalArgumentException("SSH origin 형식이 아닙니다.")
+    }
+
+    return ownerAndRepository(path)
   }
 
   private fun ownerAndRepository(path: String?): Pair<String, String> {
@@ -106,12 +110,5 @@ internal class RepositoryIdentityReader {
     }
 
     return parts[0] to parts[1]
-  }
-
-  private companion object {
-    const val URI_SEPARATOR = "://"
-    const val HTTPS_SCHEME = "https"
-    const val SSH_SCHEME = "ssh"
-    val SCP_ORIGIN = Regex("^(?:[^@/:\\s]+@)?[^/:\\s]+:(.+)$")
   }
 }

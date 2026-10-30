@@ -75,7 +75,10 @@ Session별 제공 이력의 검증 단계와 결과는
 상대 경로 사전순으로 평가합니다. YAML 지침의 저장소, 언어, `file_changed` 이벤트와
 정규식 조건을 모두 만족한 지침을 ID와 UTF-8 본문으로 반환합니다. Kotlin 대상 파일이나
 지침 후보가 없으면 저장소 `origin` 없이 빈 목록을 반환합니다. 둘 다 있을 때는
-`git remote get-url origin`으로 저장소 범위를 확인합니다.
+JGit 7.8.0으로 현재 경로부터 상위 Git 저장소를 찾아 첫 `origin` URL을 읽고
+`url.*.insteadOf` 재작성을 적용합니다. 원격 네트워크 작업이나 설정 변경은 하지 않습니다.
+JGit의 시스템 설정 탐색은 환경에 따라 Git 프로세스를 실행할 수 있습니다. 지원 주소와
+예외 계약, 구현 한계는 [입출력 라이브러리 검토](../docs/agent-guidebook-io-library-review.md)에서 확인할 수 있습니다.
 
 ## Codex PostToolUse Hook
 

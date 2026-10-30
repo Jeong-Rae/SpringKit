@@ -2,7 +2,7 @@
 
 검토 기준: 2026년 10월 30일, `agent-guidebook` 현재 검색 계약
 
-이 문서는 구현 전 중간보고입니다. 이번 단계에서는 검색 통합 테스트에 기존 동작을 고정하는 시나리오를 추가했으며 프로덕션 코드는 수정하지 않았습니다.
+이 문서는 구현 전 분석과 적용 결과를 기록합니다. 중간보고 시점에는 프로덕션 코드를 변경하지 않았습니다.
 
 ## 결정 요약
 
@@ -64,10 +64,18 @@ JGit 구성은 읽기 전용 저장소 설정만 조회해야 합니다. 원격 
 
 Jackson YAML과 Kotlin module의 DTO 매핑은 필드 경로 검증을 줄일 수 있습니다. 다만 agent-guidebook에는 해당 의존성이 없으며, DTO뿐 아니라 중복 키, 알 수 없는 필드, scalar coercion, null 원소와 필수값을 엄격히 제한하는 설정이 필요합니다. 안전한 YAML 태그 처리와 기존 `GuidelineLoadException` 원인 보존도 별도로 확인해야 합니다. 기존 엄격한 계약을 유지하면서 DTO와 설정을 더한 전체 부담이 줄어든다는 근거가 없으므로 SnakeYAML을 유지합니다. [현재 YAML 파서](../agent-guidebook/src/main/kotlin/com/springkit/agentguidebook/storage/GuidelineYamlParser.kt)
 
-## 다음 단계
+## 중간보고 시점의 계획
 
 1. 추가한 테스트를 검토하고 별도 커밋으로 마칩니다.
-2. 별도 승인을 받은 뒤 `RepositoryIdentityReader`에 JGit을 적용하고 두 엄격 UTF-8 읽기를 `Files.readString`으로 단순화합니다.
+2. 계약 테스트를 먼저 커밋·게시한 뒤 `RepositoryIdentityReader`에 JGit을 적용하고 두 엄격 UTF-8 읽기를 `Files.readString`으로 단순화합니다.
 3. 프로덕션 변경 뒤 검색 및 Presentation 검증으로 외부 계약을 확인합니다.
 
-이번 단계의 `spotlessApply`, 지정 검색 통합 테스트, 증분 `build`가 모두 통과했습니다. 프로덕션 변경은 다음 단계에서 별도 승인 후 진행합니다.
+중간보고 이후 위 계획을 진행했습니다. 실제 적용 결과와 구현 후 재검증은 아래에 기록합니다.
+
+## 실제 적용 결과
+
+`RepositoryIdentityReader`는 JGit 7.8.0으로 저장소를 탐색하고 매 조회마다 `Repository`를 열고 닫습니다. 첫 `origin` URL에 `UrlConfig.replace`를 적용하며 뒤의 URL은 파싱하지 않습니다. HTTPS와 SSH 주소는 기존 `java.net.URI` 검증과 경로 추출을 유지하고, SCP 주소만 `URIish`로 파싱합니다. 검색 통합 시나리오는 기존 CLI 기준과 JGit 구현 후 모두 통과했습니다.
+
+JGit의 시스템 설정 탐색은 환경에 따라 Git 프로세스를 실행할 수 있습니다. 변경은 직접 origin 조회 프로세스를 제거하지만, JGit 내부를 포함한 프로세스 실행 전체를 제거하지 않습니다.
+
+소스와 YAML은 `Files.readString(path, UTF_8)`으로 읽습니다. 잘못된 UTF-8은 기존 각 경계의 예외와 디코딩 원인을 유지합니다. 전체 검색 및 Presentation 검증도 통과했습니다.
