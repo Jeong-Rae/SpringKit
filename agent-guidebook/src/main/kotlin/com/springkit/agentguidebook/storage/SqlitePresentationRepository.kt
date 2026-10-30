@@ -13,11 +13,22 @@ import com.springkit.agentguidebook.services.PresentationTransaction
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.sql.Connection
-import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.DateTimeException
 import java.time.Instant
+import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.DatabaseConfig
+import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.dao.id.CompositeID
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.exceptions.ExposedSQLException
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.SchemaUtils
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.sqlite.SQLiteConfig
+import org.sqlite.SQLiteErrorCode
 
 /**
  * SQLite 파일에 Session별 Presentation 이력을 저장하는 저장소입니다.
@@ -31,38 +42,22 @@ class SqlitePresentationRepository(private val databasePath: Path) : Presentatio
    * 커밋이 성공한 뒤에만 callback 결과를 반환합니다.
    */
   override fun <T> inImmediateTransaction(operation: (PresentationTransaction) -> T): T {
-    val normalizedDatabasePath = normalizeDatabasePath()
-    createDatabaseDirectory(normalizedDatabasePath)
-    val connection = openConnection(normalizedDatabasePath)
+    val normalizedDatabasePath = prepareDatabasePath()
+    val connectionFailures = PresentationConnectionRegistration()
+    val database = createDatabase(normalizedDatabasePath, connectionFailures)
 
-    return try {
-      connection.use { openedConnection ->
-        executeImmediateTransaction(openedConnection, operation)
-      }
-    } catch (failure: SqliteOperationFailure) {
-      val storageFailure = storageException(failure.sqlException)
-      failure.suppressed.forEach(storageFailure::addSuppressed)
-      throw storageFailure
-    } catch (failure: CallbackFailure) {
-      failure.suppressed.forEach(failure.callbackFailure::addSuppressed)
-      throw failure.callbackFailure
-    } catch (failure: SQLException) {
-      throw storageException(failure)
+    try {
+      return executeTransaction(database, connectionFailures, operation)
+    } finally {
+      TransactionManager.closeAndUnregister(database)
     }
   }
 
-  private fun normalizeDatabasePath(): Path =
-      try {
-        databasePath.toAbsolutePath().normalize()
-      } catch (failure: SecurityException) {
-        throw PresentationStorageUnavailableException(cause = failure)
-      }
-
-  private fun createDatabaseDirectory(normalizedDatabasePath: Path) {
-    val parent = normalizedDatabasePath.parent ?: return
-
+  private fun prepareDatabasePath(): Path {
     try {
-      Files.createDirectories(parent)
+      val normalizedPath = databasePath.toAbsolutePath().normalize()
+      normalizedPath.parent?.let { Files.createDirectories(it) }
+      return normalizedPath
     } catch (failure: IOException) {
       throw PresentationStorageUnavailableException(cause = failure)
     } catch (failure: SecurityException) {
@@ -70,205 +65,206 @@ class SqlitePresentationRepository(private val databasePath: Path) : Presentatio
     }
   }
 
-  private fun openConnection(normalizedDatabasePath: Path): Connection =
-      try {
-        DriverManager.getConnection("jdbc:sqlite:$normalizedDatabasePath")
-      } catch (failure: SQLException) {
-        throw storageException(failure)
-      }
-
-  private fun <T> executeImmediateTransaction(
-      connection: Connection,
-      operation: (PresentationTransaction) -> T,
-  ): T {
-    var isTransactionStarted = false
-
-    try {
-      executeStatement(connection, "PRAGMA busy_timeout = $BUSY_TIMEOUT_MILLISECONDS")
-      executeStatement(connection, "BEGIN IMMEDIATE")
-      isTransactionStarted = true
-      initializeSchema(connection)
-
-      val result = executeCallback(connection, operation)
-
-      executeStatement(connection, "COMMIT")
-      isTransactionStarted = false
-      return result
-    } catch (failure: Throwable) {
-      if (isTransactionStarted) {
-        rollback(connection, failure)
-      }
-
-      throw failure
-    }
-  }
-
-  private fun initializeSchema(connection: Connection) {
-    executeStatement(
-        connection,
-        """
-        CREATE TABLE IF NOT EXISTS presentation (
-            session_id TEXT NOT NULL,
-            guideline_id TEXT NOT NULL,
-            presented_at TEXT NOT NULL,
-            PRIMARY KEY (session_id, guideline_id)
-        )
-        """
-            .trimIndent(),
-    )
-  }
-
-  private fun <T> executeCallback(
-      connection: Connection,
-      operation: (PresentationTransaction) -> T,
-  ): T {
-    val transaction =
-        object : PresentationTransaction {
-          override fun presentations(sessionId: SessionId): List<Presentation> =
-              readPresentations(connection, sessionId)
-
-          override fun record(presentations: Collection<Presentation>) {
-            recordPresentations(connection, presentations)
-          }
+  private fun createDatabase(
+      normalizedDatabasePath: Path,
+      failures: PresentationConnectionRegistration,
+  ): Database {
+    val sqliteConfig =
+        SQLiteConfig().apply {
+          setBusyTimeout(BUSY_TIMEOUT_MILLISECONDS)
+          setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE)
         }
 
     return try {
-      operation(transaction)
-    } catch (failure: SqliteOperationFailure) {
-      throw failure
-    } catch (failure: Throwable) {
-      throw CallbackFailure(failure)
+      Database.connect(
+          getNewConnection = {
+            sqliteConfig.createConnection("jdbc:sqlite:$normalizedDatabasePath")
+          },
+          databaseConfig =
+              DatabaseConfig {
+                defaultMaxAttempts = 1
+                defaultMinRetryDelay = 0L
+                defaultMaxRetryDelay = 0L
+              },
+          connectionAutoRegistration = failures,
+      )
+    } catch (failure: SQLException) {
+      throw storageException(sqlCause(failure))
     }
   }
 
-  private fun readPresentations(connection: Connection, sessionId: SessionId): List<Presentation> {
-    val presentations = mutableListOf<Presentation>()
-    val guidelineIds = mutableSetOf<GuidelineId>()
+  private fun <T> executeTransaction(
+      database: Database,
+      connectionFailures: PresentationConnectionRegistration,
+      operation: (PresentationTransaction) -> T,
+  ): T {
+    var storageSqlFailure: SQLException? = null
+    var callbackSqlFailure: SQLException? = null
+
+    fun <R> storageCall(action: () -> R): R =
+        try {
+          action()
+        } catch (failure: SQLException) {
+          storageSqlFailure = failure
+          throw failure
+        }
 
     try {
-      connection.prepareStatement(SELECT_PRESENTATIONS_FOR_SESSION).use { statement ->
-        statement.setString(1, sessionId.value)
-        statement.executeQuery().use { resultSet ->
-          while (resultSet.next()) {
-            val storedSessionId =
-                parseStoredValue(
-                    "Session ID",
-                    readRequiredText(resultSet, "session_id"),
-                ) { value ->
-                  SessionId(value)
-                }
-            val storedGuidelineId =
-                parseStoredValue(
-                    "Guideline ID",
-                    readRequiredText(resultSet, "guideline_id"),
-                ) { value ->
-                  GuidelineId(value)
-                }
-            val presentedAt = parseStoredTimestamp(readRequiredText(resultSet, "presented_at"))
+      val result =
+          transaction(db = database) {
+            maxAttempts = 1
+            storageCall { SchemaUtils.create(PresentationTable) }
+            val presentationTransaction =
+                object : PresentationTransaction {
+                  override fun presentations(sessionId: SessionId): List<Presentation> =
+                      storageCall {
+                        readPresentations(sessionId)
+                      }
 
-            val isDuplicateGuideline = !guidelineIds.add(storedGuidelineId)
-
-            if (isDuplicateGuideline) {
-              val cause = IllegalStateException("같은 Session에 Guideline ID가 중복 저장되어 있습니다.")
-              throw corruptDatabase("Presentation 이력이 중복되었습니다.", cause)
+                  override fun record(presentations: Collection<Presentation>) {
+                    storageCall { recordPresentations(presentations) }
+                  }
+                }
+            try {
+              operation(presentationTransaction)
+            } catch (failure: SQLException) {
+              val isStorageSqlFailure = failure === storageSqlFailure
+              if (!isStorageSqlFailure) callbackSqlFailure = failure
+              throw failure
             }
-
-            presentations.add(Presentation(storedSessionId, storedGuidelineId, presentedAt))
           }
+      connectionFailures.closeFailure?.let { throw storageException(it) }
+      return result
+    } catch (failure: Throwable) {
+      val rollbackFailure = connectionFailures.rollbackFailure
+      if (rollbackFailure != null) {
+        throw rollbackException(
+            originalFailure(failure, callbackSqlFailure),
+            rollbackFailure,
+            connectionFailures.closeFailure,
+        )
+      }
+
+      val closeFailure = connectionFailures.closeFailure
+      val isStorageSqlFailure = failure is SQLException && failure !== callbackSqlFailure
+      if (isStorageSqlFailure) {
+        val sqlCause = sqlCause(failure)
+        throw storageException(sqlCause).also {
+          if (sqlCause !== closeFailure) addSuppressed(it, closeFailure)
         }
       }
-    } catch (failure: PresentationDatabaseCorruptException) {
+      addSuppressed(failure, closeFailure)
       throw failure
-    } catch (failure: SQLException) {
-      throw SqliteOperationFailure(failure)
+    }
+  }
+
+  private fun readPresentations(sessionId: SessionId): List<Presentation> {
+    val presentations =
+        PresentationTable.selectAll()
+            .where { PresentationTable.sessionId eq sessionId.value }
+            .map(::restorePresentation)
+
+    val guidelineIds = presentations.map { it.guidelineId }
+    val hasDuplicateGuidelineIds = guidelineIds.distinct().size != presentations.size
+    if (hasDuplicateGuidelineIds) {
+      val cause = IllegalStateException("같은 Session에 Guideline ID가 중복 저장되어 있습니다.")
+      throw corruptDatabase("Presentation 이력이 중복되었습니다.", cause)
     }
 
     return presentations
   }
 
-  private fun readRequiredText(resultSet: java.sql.ResultSet, columnName: String): String =
-      resultSet.getString(columnName)
+  private fun restorePresentation(row: ResultRow): Presentation {
+    val sessionId =
+        try {
+          SessionId(requiredValue(row, PresentationTable.sessionId).value)
+        } catch (failure: IllegalArgumentException) {
+          throw corruptDatabase("Presentation 저장 행의 Session ID 값이 올바르지 않습니다.", failure)
+        }
+    val guidelineId =
+        try {
+          GuidelineId(requiredValue(row, PresentationTable.guidelineId).value)
+        } catch (failure: IllegalArgumentException) {
+          throw corruptDatabase("Presentation 저장 행의 Guideline ID 값이 올바르지 않습니다.", failure)
+        }
+    val presentedAt =
+        try {
+          Instant.parse(requiredValue(row, PresentationTable.presentedAt))
+        } catch (failure: DateTimeException) {
+          throw corruptDatabase("Presentation 저장 행의 시각이 올바르지 않습니다.", failure)
+        }
+
+    return Presentation(sessionId, guidelineId, presentedAt)
+  }
+
+  private fun recordPresentations(presentations: Collection<Presentation>) {
+    for (presentation in presentations) {
+      PresentationRow.new(compositeId(presentation.sessionId, presentation.guidelineId)) {
+        presentedAt = presentation.presentedAt.toString()
+      }
+    }
+  }
+
+  private fun compositeId(sessionId: SessionId, guidelineId: GuidelineId): CompositeID =
+      CompositeID {
+        it[PresentationTable.sessionId] = sessionId.value
+        it[PresentationTable.guidelineId] = guidelineId.value
+      }
+
+  private fun <T : Any> requiredValue(row: ResultRow, column: Column<T>): T =
+      row.getOrNull(column)
           ?: throw corruptDatabase(
-              "Presentation 저장 행의 $columnName 값이 없습니다.",
+              "Presentation 저장 행의 ${column.name} 값이 없습니다.",
               IllegalStateException("저장 값은 비어 있을 수 없습니다."),
           )
 
-  private fun <T> parseStoredValue(
-      label: String,
-      value: String,
-      parse: (String) -> T,
-  ): T =
-      try {
-        parse(value)
-      } catch (failure: IllegalArgumentException) {
-        throw corruptDatabase("Presentation 저장 행의 $label 값이 올바르지 않습니다.", failure)
-      }
-
-  private fun parseStoredTimestamp(value: String): Instant =
-      try {
-        Instant.parse(value)
-      } catch (failure: DateTimeException) {
-        throw corruptDatabase("Presentation 저장 행의 시각이 올바르지 않습니다.", failure)
-      }
-
-  private fun recordPresentations(connection: Connection, presentations: Collection<Presentation>) {
-    try {
-      connection.prepareStatement(INSERT_PRESENTATION).use { statement ->
-        for (presentation in presentations) {
-          statement.setString(1, presentation.sessionId.value)
-          statement.setString(2, presentation.guidelineId.value)
-          statement.setString(3, presentation.presentedAt.toString())
-          statement.executeUpdate()
-        }
-      }
-    } catch (failure: SQLException) {
-      throw SqliteOperationFailure(failure)
-    }
-  }
-
-  private fun executeStatement(connection: Connection, sql: String) {
-    try {
-      connection.createStatement().use { statement -> statement.execute(sql) }
-    } catch (failure: SQLException) {
-      throw SqliteOperationFailure(failure)
-    }
-  }
-
-  private fun rollback(connection: Connection, failure: Throwable) {
-    try {
-      executeStatement(connection, "ROLLBACK")
-    } catch (rollbackFailure: SqliteOperationFailure) {
-      val originalFailure =
-          when (failure) {
-            is SqliteOperationFailure -> failure.sqlException
-            is CallbackFailure -> failure.callbackFailure
-            else -> failure
-          }
-      val rollbackException =
-          PresentationTransactionRollbackException(
-              message = "Presentation 트랜잭션 실패 후 rollback도 실패했습니다.",
-              cause = originalFailure,
-          )
-      rollbackException.addSuppressed(rollbackFailure.sqlException)
-      throw rollbackException
-    }
-  }
-
   private fun storageException(failure: SQLException): PresentationStorageException {
-    val primaryResultCode = failure.errorCode and PRIMARY_RESULT_CODE_MASK
+    val primaryResultCode =
+        SQLiteErrorCode.getErrorCode(failure.errorCode and PRIMARY_RESULT_CODE_MASK)
 
     return when (primaryResultCode) {
-      SQLITE_BUSY,
-      SQLITE_LOCKED -> RetryablePresentationStorageException(cause = failure)
-      SQLITE_CORRUPT,
-      SQLITE_NOTADB -> corruptDatabase("Presentation 데이터베이스를 읽을 수 없습니다.", failure)
-      SQLITE_PERM,
-      SQLITE_READONLY,
-      SQLITE_IOERR,
-      SQLITE_FULL,
-      SQLITE_CANTOPEN -> PresentationStorageUnavailableException(cause = failure)
+      SQLiteErrorCode.SQLITE_BUSY,
+      SQLiteErrorCode.SQLITE_LOCKED -> RetryablePresentationStorageException(cause = failure)
+      SQLiteErrorCode.SQLITE_CORRUPT,
+      SQLiteErrorCode.SQLITE_NOTADB -> corruptDatabase("Presentation 데이터베이스를 읽을 수 없습니다.", failure)
+      SQLiteErrorCode.SQLITE_PERM,
+      SQLiteErrorCode.SQLITE_READONLY,
+      SQLiteErrorCode.SQLITE_IOERR,
+      SQLiteErrorCode.SQLITE_FULL,
+      SQLiteErrorCode.SQLITE_CANTOPEN -> PresentationStorageUnavailableException(cause = failure)
       else -> PresentationStorageException(cause = failure)
     }
+  }
+
+  private fun sqlCause(failure: SQLException): SQLException =
+      (failure as? ExposedSQLException)?.cause as? SQLException ?: failure
+
+  private fun originalFailure(
+      failure: Throwable,
+      callbackSqlFailure: SQLException?,
+  ): Throwable =
+      if (failure is SQLException && failure !== callbackSqlFailure) sqlCause(failure) else failure
+
+  private fun rollbackException(
+      originalFailure: Throwable,
+      rollbackFailure: SQLException,
+      closeFailure: SQLException?,
+  ): PresentationTransactionRollbackException {
+    val rollbackException =
+        PresentationTransactionRollbackException(
+            message = "Presentation 트랜잭션 실패 후 rollback도 실패했습니다.",
+            cause = originalFailure,
+        )
+    rollbackException.addSuppressed(rollbackFailure)
+    closeFailure?.takeIf { it !== rollbackFailure }?.let(rollbackException::addSuppressed)
+    return rollbackException
+  }
+
+  private fun addSuppressed(failure: Throwable, suppressed: Throwable?) {
+    if (suppressed == null) return
+    val isSameFailure = failure === suppressed
+    val isAlreadyCause = failure.cause === suppressed
+    if (!isSameFailure && !isAlreadyCause) failure.addSuppressed(suppressed)
   }
 
   private fun corruptDatabase(
@@ -276,26 +272,8 @@ class SqlitePresentationRepository(private val databasePath: Path) : Presentatio
       cause: Throwable,
   ): PresentationDatabaseCorruptException = PresentationDatabaseCorruptException(message, cause)
 
-  private class SqliteOperationFailure(val sqlException: SQLException) :
-      RuntimeException(sqlException)
-
-  private class CallbackFailure(val callbackFailure: Throwable) : RuntimeException(callbackFailure)
-
   private companion object {
     const val BUSY_TIMEOUT_MILLISECONDS = 1_000
     const val PRIMARY_RESULT_CODE_MASK = 0xFF
-    const val SQLITE_BUSY = 5
-    const val SQLITE_LOCKED = 6
-    const val SQLITE_PERM = 3
-    const val SQLITE_READONLY = 8
-    const val SQLITE_IOERR = 10
-    const val SQLITE_CORRUPT = 11
-    const val SQLITE_FULL = 13
-    const val SQLITE_CANTOPEN = 14
-    const val SQLITE_NOTADB = 26
-    const val SELECT_PRESENTATIONS_FOR_SESSION =
-        "SELECT session_id, guideline_id, presented_at FROM presentation WHERE session_id = ? ORDER BY rowid"
-    const val INSERT_PRESENTATION =
-        "INSERT INTO presentation(session_id, guideline_id, presented_at) VALUES (?, ?, ?)"
   }
 }

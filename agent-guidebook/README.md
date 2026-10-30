@@ -63,6 +63,9 @@ Session ID와 Guideline ID 조합으로 저장되므로 본문이 바뀌어도 �
 `present`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
 Commit 후 반환 전에 프로세스가 끝나면 다음 요청은 저장된 ID를 제외합니다. 수신 확인이나 재전송은 하지 않습니다.
 SQLite 잠금은 최대 1,000ms 대기하며, 그 뒤에도 잠금이 유지되면 재시도 가능한 저장소 예외를 전달합니다.
+이력 저장은 Exposed 1.6.0의 `core`, `jdbc`, `dao` API와 SQLite JDBC 3.53.4.0 driver를 사용합니다.
+직접 SQL 없이 `CompositeEntity.new`로 저장하고 typed Table DSL 조회 결과를 transaction 안에서 도메인 `Presentation`으로 복원합니다. 구현 판단과 실패 경계는
+[SQLite 저장소 라이브러리 검토](../docs/agent-guidebook-sqlite-library-review.md)에서 확인할 수 있습니다.
 
 이 Kotlin API는 기존 Codex Hook이나 운영 CLI와 연결되어 있지 않습니다.
 Session별 제공 이력의 검증 단계와 결과는

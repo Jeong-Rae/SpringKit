@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS presentation (
 
 저장 행을 Session, Guideline, 시각 값으로 재구성하지 못하거나 잘못된 중복 이력을 읽으면 `PresentationDatabaseCorruptException`으로 변환합니다. 도메인 또는 Application callback 자체에서 발생한 오류는 rollback한 뒤 기존 예외 타입과 원인을 그대로 전달합니다. 저장 오류 타입으로 덮지 않습니다.
 
-영속성은 SQLite JDBC만 사용합니다. 현재 빌드 단계의 구현 의존성은 `org.xerial:sqlite-jdbc:3.53.4.0`으로 고정할 수 있습니다. ORM, TTL, 세션 테이블, 별도 캐시, 자동 삭제, 별도의 DB 설정 API는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
+영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc`, `dao` API를 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. 어댑터 내부의 복합 키 테이블과 DAO Entity는 기존 3컬럼 SQLite 스키마를 표현하며 도메인 `Presentation`을 대체하지 않습니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제, 별도의 DB 설정 API는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
 
 ## 실패 계약
 
