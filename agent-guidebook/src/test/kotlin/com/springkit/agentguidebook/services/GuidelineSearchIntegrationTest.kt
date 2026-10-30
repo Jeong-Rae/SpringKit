@@ -183,6 +183,141 @@ class GuidelineSearchIntegrationTest :
         }
       }
 
+      feature("Git 저장소 검색 경계") {
+        scenario("저장소 하위 경로를 cwd로 검색하면, 상위 저장소의 origin으로 지침을 찾습니다.") {
+          withProject { repositoryRoot ->
+            val cwd = Files.createDirectories(repositoryRoot.resolve("modules/order"))
+            writeGuideline(
+                cwd,
+                "repository/guideline.yaml",
+                guidelineYaml(
+                    id = "repository-rule",
+                    repositories = listOf("acme/backend-order"),
+                    patterns = listOf("OrderService"),
+                ),
+            )
+            val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
+
+            val matches =
+                GuidelineSearchFactory.fileSystem()
+                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+
+            matches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
+          }
+        }
+
+        scenario("linked worktree에서 Kotlin 파일을 검색하면, 공통 저장소의 origin으로 지침을 찾습니다.") {
+          withProject { repositoryRoot ->
+            writeSource(repositoryRoot, "README.md", "테스트 저장소")
+            runGit(repositoryRoot, "add", "README.md")
+            runGit(
+                repositoryRoot,
+                "-c",
+                "user.name=Guidebook Test",
+                "-c",
+                "user.email=guidebook@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "테스트 저장소 초기화",
+            )
+            val linkedWorktree =
+                repositoryRoot.resolveSibling("${repositoryRoot.fileName}-linked-worktree")
+
+            try {
+              runGit(
+                  repositoryRoot,
+                  "worktree",
+                  "add",
+                  "--detach",
+                  "--quiet",
+                  linkedWorktree.toString(),
+                  "HEAD",
+              )
+              writeGuideline(
+                  linkedWorktree,
+                  "repository/guideline.yaml",
+                  guidelineYaml(
+                      id = "repository-rule",
+                      repositories = listOf("acme/backend-order"),
+                      patterns = listOf("OrderService"),
+                  ),
+              )
+              val filepath =
+                  writeSource(linkedWorktree, "src/OrderService.kt", "class OrderService")
+
+              val matches =
+                  GuidelineSearchFactory.fileSystem()
+                      .search(
+                          GuidelineSearchRequest(
+                              cwd = linkedWorktree,
+                              filepaths = listOf(filepath),
+                          )
+                      )
+
+              matches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
+            } finally {
+              if (Files.exists(linkedWorktree)) {
+                runGit(repositoryRoot, "worktree", "remove", "--force", linkedWorktree.toString())
+                deleteTree(linkedWorktree)
+              }
+            }
+          }
+        }
+
+        scenario("origin에 insteadOf 규칙이 있으면, 변환된 저장소 경로의 지침을 찾습니다.") {
+          withProject(origin = "git@alias:backend-order.git") { cwd ->
+            runGit(
+                cwd,
+                "config",
+                "--local",
+                "url.ssh://host/acme/.insteadOf",
+                "git@alias:",
+            )
+            writeGuideline(
+                cwd,
+                "repository/guideline.yaml",
+                guidelineYaml(
+                    id = "repository-rule",
+                    repositories = listOf("acme/backend-order"),
+                    patterns = listOf("OrderService"),
+                ),
+            )
+            val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
+
+            val matches =
+                GuidelineSearchFactory.fileSystem()
+                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+
+            matches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
+          }
+        }
+
+        scenario("origin URL이 여러 개이면, 첫 URL의 저장소 지침을 찾습니다.") {
+          withProject(origin = "git@host:acme/first-repository.git") { cwd ->
+            runGit(cwd, "remote", "set-url", "--add", "origin", "ssh://host/%zz")
+            writeGuideline(
+                cwd,
+                "repository/guideline.yaml",
+                guidelineYaml(
+                    id = "first-repository-rule",
+                    repositories = listOf("acme/first-repository"),
+                    patterns = listOf("OrderService"),
+                ),
+            )
+            val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
+
+            val matches =
+                GuidelineSearchFactory.fileSystem()
+                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+
+            matches.map { it.id } shouldBe listOf(GuidelineId("first-repository-rule"))
+          }
+        }
+      }
+
       feature("변경된 소스 재검색") {
         scenario("같은 서비스로 변경된 소스를 다시 검색하면, 현재 내용에 맞는 지침을 반환합니다.") {
           withProject { cwd ->
@@ -574,6 +709,23 @@ class GuidelineSearchIntegrationTest :
           }
         }
 
+        scenario("잘못된 UTF-8이 포함된 지침을 검색하면, 지침 로딩 오류가 디코딩 원인을 보존합니다.") {
+          withProject { cwd ->
+            val guidelinePath = cwd.resolve(".agents/guides/rules/guideline.yaml")
+            Files.createDirectories(guidelinePath.parent)
+            Files.write(guidelinePath, byteArrayOf(0xC3.toByte(), 0x28))
+            val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
+
+            val exception =
+                shouldThrow<GuidelineLoadException> {
+                  GuidelineSearchFactory.fileSystem()
+                      .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                }
+
+            (exception.cause is java.nio.charset.CharacterCodingException) shouldBe true
+          }
+        }
+
         scenario("저장소 범위에 공백 항목이 있는 지침을 검색하면, 생성 오류 원인을 보존합니다.") {
           withProject { cwd ->
             writeGuideline(
@@ -605,6 +757,14 @@ class GuidelineSearchIntegrationTest :
                 OriginScenario(
                     name = "origin을 정규화할 수 없는 프로젝트에서 지침을 검색하면, 저장소 식별이 거부됩니다.",
                     origin = "not-a-repository-url",
+                ),
+                OriginScenario(
+                    name = "HTTPS origin에 query가 있으면, 저장소 식별이 거부됩니다.",
+                    origin = "https://host/acme/backend-order.git?ref=main",
+                ),
+                OriginScenario(
+                    name = "SSH URL origin에 fragment가 있으면, 저장소 식별이 거부됩니다.",
+                    origin = "ssh://git@host/acme/backend-order.git#main",
                 ),
             ),
         ) { scenario ->
