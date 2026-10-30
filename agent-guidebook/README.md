@@ -99,7 +99,6 @@ Codex 설정에 `PostToolUse` command hook을 등록하고, wrapper의 절대 �
 
 Java 25 toolchain을 사용합니다. Kotlin 소스와 Gradle 스크립트는
 Spotless의 ktfmt로 포맷합니다. Kotest는 JUnit Platform에서 실행합니다.
-`BuildConfigurationTest`는 테스트가 Java 25에서 실행되는지 확인합니다.
 
 `agent-guidebook` 디렉터리에서 다음 순서로 실행합니다.
 
