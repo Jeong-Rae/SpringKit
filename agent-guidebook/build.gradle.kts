@@ -27,7 +27,6 @@ dependencies {
   implementation("org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r")
   implementation("org.jetbrains.exposed:exposed-core:1.6.0")
   implementation("org.jetbrains.exposed:exposed-jdbc:1.6.0")
-  implementation("org.jetbrains.exposed:exposed-dao:1.6.0")
   implementation("org.xerial:sqlite-jdbc:3.53.4.0")
   implementation("org.yaml:snakeyaml:2.6")
 

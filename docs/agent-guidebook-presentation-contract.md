@@ -137,11 +137,13 @@ CREATE TABLE IF NOT EXISTS presentation (
 
 `presented_at`은 `Clock`의 `Instant`를 UTC 기준 RFC 3339 형식으로 저장합니다. UTC 표기는 `Z`를 사용합니다. 한 요청에서 새로 반환할 Guideline은 한 번 얻은 `clock.instant()` 값을 공유합니다.
 
-각 트랜잭션 연결은 SQLite driver 설정으로 busy timeout 1,000ms와 `IMMEDIATE` transaction mode를 적용합니다. Exposed transaction의 최대 시도 횟수는 1회이며 자동 재시도 지연은 0입니다. UnitOfWork가 이력 조회 전에 `IMMEDIATE` transaction을 시작하여 읽기와 기록 사이에 다른 연결이 같은 Session 상태를 변경하지 못하게 합니다. ID당 단일 행은 기본 키가 보장합니다. 두 번째 또는 이후 행에서 SQL 오류가 나면 같은 transaction의 모든 앞선 변경을 rollback합니다.
+각 트랜잭션 연결은 SQLite driver 설정으로 busy timeout 1,000ms와 `IMMEDIATE` transaction mode를 적용합니다. Config는 `DatabaseConfig.defaultMaxAttempts`를 1로 설정하고 자동 재시도 지연을 0으로 둡니다. UnitOfWork가 이력 조회 전에 `IMMEDIATE` transaction을 시작하여 읽기와 기록 사이에 다른 연결이 같은 Session 상태를 변경하지 못하게 합니다. ID당 단일 행은 기본 키가 보장합니다. 두 번째 또는 이후 행에서 SQL 오류가 나면 같은 callback 작업의 모든 앞선 변경을 rollback합니다.
 
 저장 행을 Session, Guideline, 시각 값으로 재구성하지 못하거나 잘못된 중복 이력을 읽으면 `PresentationDatabaseCorruptException`으로 변환합니다. 도메인 또는 Application callback 자체에서 발생한 오류는 rollback한 뒤 기존 예외 타입과 원인을 그대로 전달합니다. callback이 직접 던진 `SQLException`은 원래 객체를 유지합니다. 저장 오류 타입으로 덮지 않습니다. Repository SQL 실패와 callback SQL 실패는 Exposed transaction-local metadata에서 원본 실패 객체를 구분해 공개 오류를 분류합니다. rollback 실패 시 `PresentationTransactionRollbackException`의 cause에는 원래 SQL 오류를, suppressed에는 rollback 실패를 보존합니다.
 
-영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc`, `dao` API를 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. UnitOfWork가 callback 전에 현재 transaction block에서 `SqlitePresentationConfig.initializeSchema()`를 호출하며, Config는 내부에서 `SchemaUtils.create(PresentationTable)`을 수행합니다. `create()`의 내부 commit으로 user data가 초기화된 뒤 UnitOfWork context를 등록합니다. 이력 조회와 기록은 그 이후 callback transaction 안에서 함께 commit 또는 rollback됩니다. 어댑터 내부의 복합 키 테이블과 DAO Entity는 기존 3컬럼 SQLite 스키마를 표현하며 도메인 `Presentation`을 대체하지 않습니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
+영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc` typed DSL을 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. `PresentationTable`은 세 `TEXT NOT NULL` 열과 `(session_id, guideline_id)` 복합 기본 키를 정의하는 일반 `Table`입니다. Repository는 `selectAll`로 기존 행을 읽고 기본 중복 거부 동작을 갖는 `Table.insert`를 행마다 실행해 기록합니다. 문자열 행은 transaction 안에서 도메인 `Presentation`으로 복원하며 별도 ORM Entity는 두지 않습니다.
+
+UnitOfWork가 callback 전에 현재 Exposed transaction block에서 `SqlitePresentationConfig.initializeSchema()`를 호출하고, Config는 내부에서 `SchemaUtils.create(PresentationTable)`을 수행합니다. `create()`가 현재 transaction을 내부 commit하고 user data를 비운 뒤 UnitOfWork context를 등록합니다. 따라서 스키마 준비는 callback rollback으로 되돌아가지 않으며, 이후 이력 조회와 기록은 callback 범위에서 함께 commit 또는 rollback됩니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
 
 ## 실패 계약
 

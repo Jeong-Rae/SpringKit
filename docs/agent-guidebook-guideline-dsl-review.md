@@ -1,10 +1,10 @@
-# Agent Guidebook 검토 및 DSL 전환 계획
+# Agent Guidebook 검토 및 DSL 전환 결과
 
 ## 검토 목적과 범위
 
-이 문서는 기존 Agent Guidebook 계약을 보존하면서 코드 가이드 준수 항목과 Presentation 영속성의 Exposed DAO 제거를 순서대로 진행하기 위한 중간 검토 결과입니다. 현재 동작, 실패 원인, 외부에서 관찰되는 부작용을 기준으로 계약 단계와 구현 단계를 분리합니다.
+이 문서는 기존 Agent Guidebook 계약을 보존하며 코드 가이드 정리와 Presentation 영속성의 Exposed typed DSL 전환 결과를 기록합니다. 현재 동작, 실패 원인, 외부에서 관찰되는 부작용을 기준으로 책임과 경계를 설명합니다.
 
-Spotless 설정 검토 결과는 이번 작업에서 제외합니다. 포맷터, ratchet, Spotless 관련 설정은 변경하지 않습니다. 작업 중 발견된 README 문구 수정과 일곱 `package-info.kt` 삭제는 기존 사용자 변경으로 보존합니다.
+Spotless 설정과 포매터 동작은 변경하지 않았습니다.
 
 ## 유지할 책임과 계약
 
@@ -22,15 +22,15 @@ Spotless 설정 검토 결과는 이번 작업에서 제외합니다. 포맷터,
 
 ### 문서화와 조건 의도
 
-- 검수에서 발견된 한 줄 KDoc을 의미 있는 다중 줄 KDoc으로 정리합니다. 공개 생성자와 함수에는 실제 계약에 필요한 `@param`, `@property`, `@return`, `@throws`만 사용하고 본문을 반복해 형식만 늘리지 않습니다. 모든 주석과 예외 설명은 한국어로 작성합니다.
-- 검색 서비스의 절대 경로 검사 및 빈 소스·빈 지침 판단, Core 검색의 기존 ID 판단과 매칭 호출, YAML 필수 키 존재 판단은 이름 있는 Boolean 조건으로 표현합니다. `GuidelineReader`는 중복 ID인지 먼저 조회하고, 중복이면 기존 오류를 던진 뒤 새 ID를 등록하는 순서로 검증과 변경을 구분합니다. 단순 null 비교와 명확한 상태 비교는 별도 변수로 감싸지 않습니다.
-- `GuidelineReader.readRootAttributes`가 `NoSuchFileException`에서 `null`을 반환하는 것은 지침 루트 부재를 빈 검색 결과로 취급하는 현재 계약을 위한 내부 표현입니다. helper는 루트 부재를 검색 결과로 결정하지 않으며, 이를 소비하는 `read`가 빈 결과 의미를 맡습니다. 다른 I/O 또는 권한 실패는 기존 `GuidelineLoadException`으로 전달합니다. 이 근거를 helper의 다중 줄 KDoc에 명시하고 동작이나 반환 모델은 바꾸지 않습니다.
-- `read`의 같은 수준 하위 작업인 `readRootAttributes`, `findGuidelineFiles`, `validateUniqueIds`를 먼저 배치하고, `findGuidelineFiles`의 하위 함수인 `relativePath`는 그 다음에 둡니다. 후보 정렬과 검증 동작은 바꾸지 않습니다.
-- Presentation 통합 테스트의 `createSecondInsertFailureTrigger(..., rollback: Boolean)`은 ABORT trigger 생성과 ROLLBACK trigger 생성 함수로 분리합니다. 기존 rollback assertion, 원인과 suppressed 보존 검증은 그대로 둡니다. 테스트의 직접 SQL은 관찰자 및 오류 fixture에만 유지하고 production SQL 문자열은 추가하지 않습니다.
+- 검수에서 발견된 한 줄 KDoc은 의미 있는 한국어 다중 줄 계약으로 정리했습니다. 공개 생성자와 함수에는 해당 계약에 필요한 `@param`, `@property`, `@return`, `@throws`를 설명하고, 같은 의미를 본문과 태그에서 반복하지 않습니다.
+- 검색 서비스의 절대 경로 및 빈 결과 조건, Core 검색의 기존 ID와 소스 매칭, YAML 필수 키 판단은 이름 있는 Boolean 조건으로 표현합니다. `GuidelineReader`는 중복 ID를 먼저 조회하고 중복이면 거부한 뒤 ID를 등록해 검증과 변경을 구분합니다. 단순 null 비교와 명확한 상태 비교는 직접 유지합니다.
+- `GuidelineReader.readRootAttributes`는 `NoSuchFileException`에서 `null`을 반환합니다. 프로젝트에 지침 루트가 없는 경우 빈 결과로 처리하는 계약이 있으며, 이 helper는 루트 속성 조회만 담당하므로 목록을 구성하는 `read`가 부재를 빈 목록으로 해석합니다. 다른 I/O 또는 권한 실패는 기존 `GuidelineLoadException`으로 전달합니다. KDoc은 이 배경과 책임을 설명하며 반환 모델과 동작은 유지합니다.
+- `read`의 같은 수준 하위 작업인 `readRootAttributes`, `findGuidelineFiles`, `validateUniqueIds`를 먼저 배치하고 `findGuidelineFiles`의 하위 함수인 `relativePath`를 그 아래로 옮겼습니다. 후보 정렬과 검증 동작은 같습니다.
+- Presentation 통합 테스트의 trigger fixture를 ABORT 생성과 ROLLBACK 생성 함수로 나눴습니다. 기존 실패·rollback 원인·suppressed assertions를 보존했으며 테스트 전용 SQL은 관찰자와 오류 fixture에만 남아 있습니다.
 
 ### 저장소 식별자 협력
 
-`Scope`가 `context.repository.owner`와 `repository`를 직접 조합하는 현재 협력은 정규화 표현을 알고 있는 `RepositoryIdentity`로 이동합니다. `RepositoryIdentity.qualifiedName(): String`을 추가하고, `Scope`는 전달된 identity의 행동으로 패턴을 평가합니다.
+`Scope`가 `context.repository.owner`와 `repository`를 직접 조합하던 책임을 `RepositoryIdentity`로 이동했습니다. `qualifiedName(): String`은 정규화된 구성값을 `owner/repository` 형식으로 그대로 반환하고, `Scope`는 이 행동으로 기존 패턴을 평가합니다.
 
 | 계약 항목 | 내용 |
 | --- | --- |
@@ -42,35 +42,35 @@ Spotless 설정 검토 결과는 이번 작업에서 제외합니다. 포맷터,
 | 부작용 | 외부 I/O나 다른 상태 변경이 없습니다. |
 | 예시 | `RepositoryIdentity("acme", "backend-order")`는 `acme/backend-order`, `RepositoryIdentity("조직.+", "서비스(표준)")`는 `조직.+/서비스(표준)`을 반환합니다. |
 
-ASCII, 한글, 정규식 메타문자 등 실제 구성 값을 변형 없이 보존하는 `withScenarios` 계약으로 이 출력을 검증합니다. 이 변경은 검색 결과, 이벤트 의미, 언어 처리, 저장소 패턴의 와일드카드 의미를 바꾸지 않습니다.
+ASCII, 한글, 정규식 메타문자 등 구성값 보존을 `withScenarios` 계약으로 확인합니다. 이 변경은 검색 결과, 이벤트 의미, 언어 처리, 저장소 패턴의 와일드카드 의미를 바꾸지 않습니다.
 
 ### Exposed typed DSL
 
-SQLite의 테이블 스키마는 `presentation` 테이블의 세 `TEXT NOT NULL` 열과 `(session_id, guideline_id)` 기본 키로 유지합니다. `PresentationTable`은 일반 Exposed `Table`로 두고, 이력 읽기는 현재 typed DSL을 유지합니다. 기록은 typed `Table.insert`로 행별 즉시 수행하며 기본 중복 거부 동작을 유지합니다. INSERT 무시·대체 동작이나 bulk 정책을 새로 도입하지 않습니다. 도메인 `Presentation`으로의 행 변환과 손상 데이터 검증은 Repository 책임입니다.
+SQLite의 `presentation` 스키마는 세 `TEXT NOT NULL` 열과 `(session_id, guideline_id)` 기본 키를 유지합니다. `PresentationTable`은 일반 Exposed `Table`이며 이력 읽기는 typed DSL `selectAll`을, 기록은 행별 `Table.insert`를 사용합니다. 기본 삽입은 중복을 거부합니다. INSERT 무시·대체 동작이나 bulk 정책은 도입하지 않았습니다. 문자열 행의 도메인 `Presentation` 복원과 손상 데이터 검증은 Repository 책임입니다.
 
-`CompositeIdTable`, `CompositeEntity`, `PresentationRow`, `CompositeID`, `EntityID`와 DAO 전용 코드를 제거하고 `exposed-dao` 의존성 한 줄만 제거합니다. `exposed-core`와 `exposed-jdbc`, SQLite JDBC, Java 도구 체인은 유지합니다. Config와 UnitOfWork의 연결 수명·스키마 초기화·오류 경계는 기존 구조를 유지하며 변경 목적에 필요한 조정만 합니다. DSL 실행 오류가 callback 실패와 구별되어야 하는 현재 transaction-local 오류 추적 계약도 보존합니다.
+`CompositeIdTable`, `CompositeEntity`, `PresentationRow`, `CompositeID`, `EntityID`와 `exposed-dao` 의존성을 제거했습니다. `exposed-core`, `exposed-jdbc`, SQLite JDBC, Java 도구 체인과 Config·UnitOfWork의 연결 수명·스키마 초기화·오류 경계는 유지합니다. Repository SQL 실패와 callback 실패를 가르는 transaction-local 오류 추적도 그대로 사용합니다.
 
-## 순차 진행
+## 적용 순서와 유지한 실패 경계
 
 ### A. 계약 테스트 단계
 
-먼저 `RepositoryIdentity.qualifiedName()`의 공개 계약 테스트를 추가하고 구현은 한국어 설명이 있는 컴파일 가능한 `NotImplementedError` stub으로 둡니다. 기존 Scope·검색 계약 테스트는 재사용하고, 신규 표현값 조합은 `withScenarios`로 검증합니다. 테스트는 컴파일된 뒤 stub에서 의도적으로 실패해야 합니다.
+`RepositoryIdentity.qualifiedName()` 공개 계약은 컴파일 가능한 `NotImplementedError` stub으로 먼저 고정했습니다. stub에서 의도된 RED를 확인한 계약 테스트를 먼저 커밋·게시한 뒤 실제 메서드와 `Scope` 협력을 구현했습니다. 계약에는 ASCII, 한글, 메타문자를 포함한 구성값의 원형 보존을 포함합니다.
 
-기존 `PresentationTest`의 두 업무 시나리오를 책임이 맞는 `PresentationSessionTest` feature로 옮기고 원래 assertion과 시나리오 의미를 보존합니다. Presentation 테스트 fixture의 trigger 선택 플래그도 분리 함수로 바꿉니다. 테스트 의미를 약화하거나 관련 없는 구현을 추가하지 않습니다.
+`PresentationTest`의 두 업무 시나리오를 조회와 기록이라는 `PresentationSessionTest`의 책임 feature로 옮겼습니다. 원래 assertion과 시나리오 의미는 보존했습니다.
 
-같은 Session과 Guideline ID의 기록이 시각이 달라도 거부되는 시나리오는 Session 기록 feature로 이동합니다. 같은 Guideline ID를 다른 Session에서 제공할 수 있는 시나리오는 Session 미제공 조회 feature로 이동합니다. 테스트 파일 삭제는 동일 assertion을 책임에 맞는 기존 테스트 파일로 옮긴 뒤에만 수행합니다.
-
-이 단계에서는 계약 테스트, 최소 stub 및 지정 문서만 수정합니다. `spotlessApply` 뒤 신규 값 객체 계약 테스트를 실행해 컴파일 성공과 stub에 의한 의도된 RED를 확인합니다. 테스트 계약을 먼저 커밋·게시한 다음 실제 구현 단계로 진행합니다. 이 단계에서는 실제 구현과 DSL 변경을 하지 않습니다.
+같은 Session ID와 Guideline ID의 기록이 다른 시각이어도 거부되는 시나리오는 기록 feature에, 같은 Guideline ID를 다른 Session에서 제공하는 시나리오는 미제공 조회 feature에 배치했습니다. 기존 SQLite 계약 테스트와 trigger SQL assertion은 그대로 유지합니다.
 
 ### B. RepositoryIdentity와 가이드 준수 구현
 
-계약 테스트 단계 뒤 `qualifiedName()`을 구현하고 `Scope`가 해당 행동을 사용하도록 변경합니다. 같은 구현 단계에서 지정된 KDoc, 조건 의도, nullable 해석 문서, BFO 순서를 반영합니다. Core 검색·Presentation 동작과 기존 검색 계약은 바꾸지 않습니다. 관련 값 객체, 검색, Scope 테스트로 확인하고 별도 커밋합니다.
+`qualifiedName()`을 구현하고 `Scope`가 해당 행동을 사용하도록 변경했습니다. KDoc, 조건 의도, nullable 해석 문서와 BFO 순서를 반영했으며 Core 검색·Presentation 동작과 검색 계약은 바꾸지 않았습니다.
 
-### C. DAO 제거와 typed DSL 구현
+### C. typed DSL 적용
 
-B 단계 다음에 일반 `Table` 기반으로 스키마와 Repository 쓰기를 전환하고 DAO 타입 및 의존성 한 줄을 제거합니다. SQLite 스키마, 행 복원, commit 전에 결과를 반환하지 않는 동작, rollback과 예외 원인 보존, 활성 범위 제한, 동시 및 독립 JVM 계약을 기존 통합 테스트로 확인합니다. 기존 assertions와 fixtures의 의미를 바꾸지 않고 별도 검증·커밋합니다.
+Repository를 일반 `Table` 기반 typed DSL로 전환하고 DAO 타입과 의존성을 제거했습니다. 기존 SQLite 스키마와 행 복원, commit 전 결과 미반환, rollback·예외 원인 보존, 활성 범위 제한, 동시·독립 JVM 계약은 유지합니다.
 
-각 구현 단계는 프로젝트 순서인 `spotlessApply` → 범위 테스트 → 증분 `build`를 따릅니다. 설정 값 그대로 읽기, 설정 객체 기동, 프레임워크 구동만을 확인하는 테스트는 추가하지 않습니다. 도메인 단위 테스트는 실제 파일 시스템이나 DB에 접근하지 않고, Application/영속성 통합 테스트는 기존 테스트 기준에 따라 관찰 가능한 결과와 부작용을 확인합니다.
+검증은 기존 도메인·Application·SQLite 계약 테스트로 수행합니다. 도메인 단위 테스트는 실제 파일 시스템이나 DB에 접근하지 않고, Application/영속성 통합 테스트는 외부에서 관찰되는 결과와 부작용을 확인합니다. 설정 값 조회나 프레임워크 기동만을 위한 테스트는 추가하지 않습니다.
+
+유지하는 위험 계약은 중간 행 삽입 실패의 전체 rollback, SQLite trigger의 자동 rollback 뒤 명시 rollback 실패 원인 보존, callback 직접 `SQLException` 객체 동일성, UnitOfWork 밖과 중첩 범위 거부, 동시·독립 JVM 중복 방지, 재시작 뒤 기록 유지, 손상 행의 typed 오류 전달입니다.
 
 ## 변경 금지 경계
 
@@ -78,5 +78,3 @@ B 단계 다음에 일반 `Table` 기반으로 스키마와 Repository 쓰기를
 - Core의 Presentation 행위 및 검색·Scope 공개 동작을 변경하지 않습니다.
 - 새로운 Core 도메인 개념, 일반 Registry, 범용 프레임워크, legacy 호환 API를 추가하지 않습니다.
 - 검증을 통과시키려고 기존 assertion을 제거하거나 약화하지 않습니다.
-- 사용자 변경인 `agent-guidebook/README.md` 문구와 일곱 `package-info.kt` 삭제를 수정하거나 복원하지 않습니다.
-- 계약 테스트, 책임 정리, DAO 제거 순서를 바꾸지 않습니다.

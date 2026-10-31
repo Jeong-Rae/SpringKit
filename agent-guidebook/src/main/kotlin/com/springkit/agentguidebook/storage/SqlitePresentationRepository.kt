@@ -10,12 +10,12 @@ import java.time.DateTimeException
 import java.time.Instant
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ResultRow
-import org.jetbrains.exposed.v1.core.dao.id.CompositeID
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 /**
- * Exposed typed query와 DAO로 Presentation 이력을 저장합니다.
+ * Exposed typed DSL로 Presentation 이력을 조회하고 기록합니다.
  *
  * 조회와 기록은 주입받은 UnitOfWork의 활성 transaction에서만 수행합니다.
  */
@@ -39,7 +39,7 @@ class SqlitePresentationRepository(
   }
 
   /**
-   * 새 Presentation 이력을 Exposed DAO로 기록합니다.
+   * 새 Presentation 이력을 typed Table insert로 기록합니다.
    *
    * transaction의 commit과 SQL 오류 분류는 UnitOfWork가 맡습니다.
    */
@@ -48,8 +48,10 @@ class SqlitePresentationRepository(
 
     storageCall(context) {
       for (presentation in presentations) {
-        PresentationRow.new(compositeId(presentation.sessionId, presentation.guidelineId)) {
-          presentedAt = presentation.presentedAt.toString()
+        PresentationTable.insert {
+          it[PresentationTable.sessionId] = presentation.sessionId.value
+          it[PresentationTable.guidelineId] = presentation.guidelineId.value
+          it[PresentationTable.presentedAt] = presentation.presentedAt.toString()
         }
       }
     }
@@ -78,13 +80,13 @@ class SqlitePresentationRepository(
   private fun restorePresentation(row: ResultRow): Presentation {
     val sessionId =
         try {
-          SessionId(requiredValue(row, PresentationTable.sessionId).value)
+          SessionId(requiredValue(row, PresentationTable.sessionId))
         } catch (failure: IllegalArgumentException) {
           throw corruptDatabase("Presentation 저장 행의 Session ID 값이 올바르지 않습니다.", failure)
         }
     val guidelineId =
         try {
-          GuidelineId(requiredValue(row, PresentationTable.guidelineId).value)
+          GuidelineId(requiredValue(row, PresentationTable.guidelineId))
         } catch (failure: IllegalArgumentException) {
           throw corruptDatabase("Presentation 저장 행의 Guideline ID 값이 올바르지 않습니다.", failure)
         }
@@ -97,12 +99,6 @@ class SqlitePresentationRepository(
 
     return Presentation(sessionId, guidelineId, presentedAt)
   }
-
-  private fun compositeId(sessionId: SessionId, guidelineId: GuidelineId): CompositeID =
-      CompositeID {
-        it[PresentationTable.sessionId] = sessionId.value
-        it[PresentationTable.guidelineId] = guidelineId.value
-      }
 
   private fun <T : Any> requiredValue(
       row: ResultRow,
