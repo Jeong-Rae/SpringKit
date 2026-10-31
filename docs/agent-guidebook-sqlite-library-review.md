@@ -2,6 +2,8 @@
 
 이 문서는 저장 adapter의 ORM 교체 범위와 중요한 오류 경계, 적용 결과를 정리합니다. 비즈니스 행위와 도메인·포트 계약은 변경하지 않았습니다.
 
+현재 Config, UnitOfWork와 Repository의 책임 분리는 [영속성 경계 검토](agent-guidebook-unit-of-work-review.md)를 기준으로 합니다. 이 문서의 당시 adapter 경계 설명은 Exposed 전환 기록으로 읽습니다.
+
 ## 결정
 
 Exposed 1.6.0의 `core`, `jdbc`, `dao`를 사용하고 SQLite JDBC 3.53.4.0은 유지합니다. Exposed 모듈 POM은 Maven Central에 게시되어 있으며 Kotlin 2.3.21 프로젝트에서 컴파일과 빌드를 완료해 호환성을 확인했습니다.

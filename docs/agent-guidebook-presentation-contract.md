@@ -79,9 +79,9 @@ interface UnitOfWork {
 
 `UnitOfWork.execute`는 callback을 실행하고 성공 시 commit한 뒤에만 결과를 반환합니다. callback 또는 commit 실패는 전체 rollback을 시도합니다. 같은 Database의 암묵적 중첩 transaction은 부모 transaction을 재사용할 수 있으므로, 현재 Exposed transaction이 하나라도 활성 상태면 같은 UnitOfWork 또는 다른 UnitOfWork의 중첩 `execute`를 `IllegalStateException`으로 거부합니다. 중첩 또는 propagation 정책은 제공하지 않습니다.
 
-SQLite 경로, 연결 설정과 스키마 초기화는 `config.SqlitePresentationConfig(databasePath: Path)`가 맡습니다. 기본 DB 경로는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`이며 통합 테스트는 임시 경로를 전달합니다. Config 생성자는 경로 정규화, 디렉터리 생성, DB 연결 또는 스키마 초기화를 하지 않습니다. UnitOfWork가 중첩 경계를 확인한 뒤 실행 시점에 호출하는 내부 `openDatabase(connectionRegistration): Database`가 경로를 정규화하고 상위 디렉터리를 준비해 SQLite driver 설정, connection factory와 Exposed 설정을 적용한 새 Exposed `Database` 객체를 반환합니다. 경로 준비 실패는 Config가 기존 환경 오류로 변환합니다. connection factory는 실제 `Connection`을 열지 않고 Exposed transaction 시작까지 연결을 지연합니다. `initializeSchema()`는 UnitOfWork가 연 현재 Exposed transaction 안에서 `SchemaUtils.create(PresentationTable)`을 수행합니다.
+SQLite 경로, 연결 설정과 스키마 초기화는 `config.SqlitePresentationConfig(databasePath: Path)`가 맡습니다. 기본 DB 경로는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`이며 통합 테스트는 임시 경로를 전달합니다. Config 생성자는 경로 정규화, 디렉터리 생성, DB 연결 또는 스키마 초기화를 하지 않습니다. UnitOfWork가 중첩 경계를 확인한 뒤 실행 시점에 호출하는 내부 `openDatabase(connectionRegistration): Database`가 경로를 정규화하고 상위 디렉터리를 준비해 SQLite driver 설정, connection factory와 Exposed 설정을 적용한 새 Exposed `Database` 객체를 반환합니다. 경로 준비 실패는 Config가 기존 환경 오류로 변환합니다. connection factory는 실제 `Connection`을 열지 않고 Exposed transaction 시작까지 연결을 지연합니다. UnitOfWork가 연 Exposed transaction block 안에서 `initializeSchema()`가 `SchemaUtils.create(PresentationTable)`을 수행합니다. Exposed의 `create()`는 현재 transaction을 내부 commit하고 user data를 비우므로, UnitOfWork는 스키마 준비 뒤 transaction-local scope context를 등록합니다.
 
-`storage.SqlitePresentationUnitOfWork(config)`는 각 `execute`에서 실행별 연결 실패 수집기를 만들고 `config.openDatabase(connectionRegistration)`으로 받은 Exposed `Database`에서 transaction을 엽니다. transaction callback 전에 `config.initializeSchema()`를 호출합니다. transaction이 끝나면 `finally`에서 Database를 해제합니다. UnitOfWork는 경로, SQLite driver 설정, `PresentationTable` 또는 구체 DDL을 직접 다루지 않고 transaction 경계와 오류 수명을 관리합니다. `storage.SqlitePresentationRepository(unitOfWork)`는 매 호출 때 주입된 UnitOfWork의 현재 transaction-local context를 확인해 소유 경계 안에서 CRUD를 수행합니다. factory는 하나의 UnitOfWork 인스턴스를 만들어 Application과 Repository에 각각 주입합니다. 매 요청의 Database와 실패 상태는 실행별로 분리되어 adapter 객체는 여러 요청에서 재사용할 수 있습니다.
+`storage.SqlitePresentationUnitOfWork(config)`는 각 `execute`에서 실행별 연결 실패 수집기를 만들고 `config.openDatabase(connectionRegistration)`으로 받은 Exposed `Database`에서 transaction을 엽니다. transaction block에서 먼저 `config.initializeSchema()`를 호출하고, Exposed 내부 commit 뒤 transaction-local context를 등록한 다음 callback을 실행합니다. callback의 이력 조회와 기록은 block 종료 시 최종 commit 또는 rollback을 함께 적용합니다. transaction이 끝나면 `finally`에서 Database를 해제합니다. UnitOfWork는 경로, SQLite driver 설정, `PresentationTable` 또는 구체 DDL을 직접 다루지 않고 transaction 경계와 오류 수명을 관리합니다. `storage.SqlitePresentationRepository(unitOfWork)`는 매 호출 때 주입된 UnitOfWork의 현재 transaction-local context를 확인해 소유 경계 안에서 CRUD를 수행합니다. factory는 하나의 UnitOfWork 인스턴스를 만들어 Application과 Repository에 각각 주입합니다. 매 요청의 Database와 실패 상태는 실행별로 분리되어 adapter 객체는 여러 요청에서 재사용할 수 있습니다.
 
 Application은 검색을 트랜잭션 전에 실행합니다. 검색 결과가 비어 있으면 빈 목록을 반환하고 SQLite를 열지 않습니다. 검색 결과가 있으면 아래 동작 전체를 하나의 콜백으로 전달합니다.
 
@@ -124,7 +124,7 @@ return unitOfWork.execute {
 
 ## SQLite 계약
 
-기본 경로는 `Path.of(System.getProperty("user.home"), ".adaptive-guidebook", "adaptive-guidebook.db")`입니다. Config 생성은 경로를 정규화하거나 상위 디렉터리를 만들지 않습니다. 실제 `execute`에서 Config의 `openDatabase`가 상위 디렉터리와 Exposed `Database`를 준비하고, UnitOfWork transaction 안에서 Config의 `initializeSchema()`가 `presentation` 테이블을 초기화합니다. 경로를 검증하는 테스트는 임시 경로를 `-Duser.home`으로 전달한 독립 JVM에서 기본 factory를 호출합니다. 사용자 `HOME` 환경 변수와 실제 사용자 홈을 변경하지 않습니다.
+기본 경로는 `Path.of(System.getProperty("user.home"), ".adaptive-guidebook", "adaptive-guidebook.db")`입니다. Config 생성은 경로를 정규화하거나 상위 디렉터리를 만들지 않습니다. 실제 `execute`에서 Config의 `openDatabase`가 상위 디렉터리와 Exposed `Database`를 준비하고, UnitOfWork transaction block 안에서 Config의 `initializeSchema()`가 `presentation` 테이블을 준비합니다. Exposed `SchemaUtils.create`는 같은 block의 현재 transaction을 내부 commit하고 transaction user data를 초기화합니다. UnitOfWork는 이 호출 뒤 context를 등록하고 Application callback을 실행하므로 이력 조회와 기록은 callback 이후 단일 commit/rollback 경계에서 원자적으로 처리됩니다. 경로를 검증하는 테스트는 임시 경로를 `-Duser.home`으로 전달한 독립 JVM에서 기본 factory를 호출합니다. 사용자 `HOME` 환경 변수와 실제 사용자 홈을 변경하지 않습니다.
 
 ```sql
 CREATE TABLE IF NOT EXISTS presentation (
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS presentation (
 
 저장 행을 Session, Guideline, 시각 값으로 재구성하지 못하거나 잘못된 중복 이력을 읽으면 `PresentationDatabaseCorruptException`으로 변환합니다. 도메인 또는 Application callback 자체에서 발생한 오류는 rollback한 뒤 기존 예외 타입과 원인을 그대로 전달합니다. callback이 직접 던진 `SQLException`은 원래 객체를 유지합니다. 저장 오류 타입으로 덮지 않습니다. Repository SQL 실패와 callback SQL 실패는 Exposed transaction-local metadata에서 원본 실패 객체를 구분해 공개 오류를 분류합니다. rollback 실패 시 `PresentationTransactionRollbackException`의 cause에는 원래 SQL 오류를, suppressed에는 rollback 실패를 보존합니다.
 
-영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc`, `dao` API를 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. UnitOfWork가 callback 전에 현재 transaction 안에서 `SqlitePresentationConfig.initializeSchema()`를 호출하며, Config는 내부에서 `SchemaUtils.create(PresentationTable)`을 수행합니다. 어댑터 내부의 복합 키 테이블과 DAO Entity는 기존 3컬럼 SQLite 스키마를 표현하며 도메인 `Presentation`을 대체하지 않습니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
+영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc`, `dao` API를 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. UnitOfWork가 callback 전에 현재 transaction block에서 `SqlitePresentationConfig.initializeSchema()`를 호출하며, Config는 내부에서 `SchemaUtils.create(PresentationTable)`을 수행합니다. `create()`의 내부 commit으로 user data가 초기화된 뒤 UnitOfWork context를 등록합니다. 이력 조회와 기록은 그 이후 callback transaction 안에서 함께 commit 또는 rollback됩니다. 어댑터 내부의 복합 키 테이블과 DAO Entity는 기존 3컬럼 SQLite 스키마를 표현하며 도메인 `Presentation`을 대체하지 않습니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
 
 ## 실패 계약
 
@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS presentation (
 | DB 경로, 권한, 읽기 전용, 디스크 공간 등 환경 문제 | `PresentationStorageUnavailableException` | 환경을 복구한 뒤 호출합니다. 원인을 보존합니다. |
 | SQLite DB 손상 또는 SQLite DB가 아닌 파일 | `PresentationDatabaseCorruptException` | DB를 복구하거나 백업에서 복원한 뒤 호출합니다. 원인을 보존합니다. |
 | 저장된 Session ID, Guideline ID, 시각 또는 이력이 올바르지 않은 경우 | `PresentationDatabaseCorruptException` | DB를 복구하거나 백업에서 복원한 뒤 호출합니다. 변환 원인을 보존합니다. |
+| 스키마 초기화 실패 | 저장소 예외를 전달하고 callback을 실행하지 않음 | DB 환경을 확인합니다. 성공한 스키마 준비의 내부 commit은 이후 이력 rollback 대상이 아닙니다. |
 | 그 밖의 영속성 실패 | `PresentationStorageException` | 실패 원인을 확인하고 저장소 상태를 점검합니다. 원인을 보존합니다. |
 | transaction 실패 후 rollback 실패 | `PresentationTransactionRollbackException` | DB 상태를 확인합니다. 원래 실패는 cause, rollback 실패는 suppressed 원인으로 보존합니다. |
 | 기존 검색 요청 또는 읽기 실패 | 기존 검색 계약의 예외 | 기존 검색 호출자 계약에 따라 처리합니다. Presentation 행은 기록하지 않습니다. |

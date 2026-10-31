@@ -7,7 +7,7 @@ import org.jetbrains.exposed.v1.jdbc.statements.api.ExposedConnection
 import org.jetbrains.exposed.v1.jdbc.statements.jdbc.JdbcConnectionImpl
 
 /**
- * Exposed JDBC 연결의 rollback과 close 실패를 현재 저장 호출에 보관합니다.
+ * Exposed JDBC 연결의 rollback과 close 실패를 현재 UnitOfWork 실행에 보관합니다.
  *
  * 연결당 한 transaction을 사용하고 나머지 동작은 Exposed 기본 구현에 위임합니다.
  */

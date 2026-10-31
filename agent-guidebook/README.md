@@ -12,6 +12,7 @@ ID와 본문을 반환하고, 요청한 Session에 이미 제공한 지침을 �
 
 | 패키지 | 책임 |
 | --- | --- |
+| `config` | SQLite 경로와 연결 정책, 실행 시 Database 조립 및 transaction 안의 스키마 초기화 |
 | `models` | 공개 요청, 응답과 값 객체 |
 | `services` | 검색 및 Session별 지침 제공 조율과 입력 읽기 경계 |
 | `client` | 공개 검색·지침 제공 factory와 실제 입력 경계 조립 |
@@ -39,6 +40,10 @@ val matches =
 
 `GuidelineSearchService`는 `GuidelineSearchInputReader`에 입력 읽기를 위임합니다. 테스트에서는
 메모리 기반 입력 경계를 주입해 실제 파일 시스템과 Git 없이 검색 흐름을 확인할 수 있습니다.
+
+`PresentationRepository`는 이력 조회·기록을 맡고, `UnitOfWork`가 실행 범위를 관리합니다.
+SQLite 연결 설정과 초기화는 `config`에서 구성합니다. 객체 조립과 실행 범위는
+[영속성 경계 검토](../docs/agent-guidebook-unit-of-work-review.md)에서 확인할 수 있습니다.
 
 Session별로 아직 제공하지 않은 지침을 검색하고 SQLite에 기록하려면 Presentation factory를 사용합니다.
 
