@@ -90,6 +90,38 @@ class RepositoryIdentityTest :
           }
         }
       }
+
+      feature("저장소 식별자의 정규 이름") {
+        withScenarios(
+            nameFn = { it.name },
+            listOf(
+                QualifiedNameScenario(
+                    name = "ASCII 저장소 구성값이면, 입력 표현을 연결해 반환합니다.",
+                    owner = "acme",
+                    repository = "backend-order",
+                    expected = "acme/backend-order",
+                ),
+                QualifiedNameScenario(
+                    name = "한글 저장소 구성값이면, 입력 표현을 보존해 연결합니다.",
+                    owner = "조직",
+                    repository = "결제서비스",
+                    expected = "조직/결제서비스",
+                ),
+                QualifiedNameScenario(
+                    name = "구성값에 정규식 메타문자가 있으면, 메타문자를 그대로 보존합니다.",
+                    owner = "acme.+",
+                    repository = "service(standard)",
+                    expected = "acme.+/service(standard)",
+                ),
+            ),
+        ) { scenario ->
+          val identity = RepositoryIdentity(scenario.owner, scenario.repository)
+
+          val qualifiedName = identity.qualifiedName()
+
+          qualifiedName shouldBe scenario.expected
+        }
+      }
     })
 
 private data class InvalidRepositoryOwnerScenario(
@@ -106,4 +138,11 @@ private data class InvalidRepositoryIdentityScenario(
     val name: String,
     val owner: String,
     val repository: String,
+)
+
+private data class QualifiedNameScenario(
+    val name: String,
+    val owner: String,
+    val repository: String,
+    val expected: String,
 )

@@ -13,4 +13,13 @@ data class RepositoryIdentity(
     require('/' !in owner) { "저장소 소유자에 슬래시를 넣을 수 없습니다." }
     require('/' !in repository) { "저장소 이름에 슬래시를 넣을 수 없습니다." }
   }
+
+  /**
+   * 저장소 식별자를 `owner/repository` 형식으로 반환합니다.
+   *
+   * 두 구성값의 문자열 표현은 변경하지 않습니다.
+   *
+   * @return owner와 repository를 슬래시로 연결한 식별자
+   */
+  fun qualifiedName(): String = throw NotImplementedError("정규화된 저장소 식별자 표현은 구현 단계에서 추가합니다.")
 }
