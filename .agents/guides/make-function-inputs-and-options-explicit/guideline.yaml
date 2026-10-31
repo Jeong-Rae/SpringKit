@@ -1,0 +1,203 @@
+id: make-function-inputs-and-options-explicit
+scope:
+  repositories:
+    - "*"
+  languages:
+    - "*"
+when:
+  - file_changed
+match:
+  any: []
+content: |
+  # 함수 호출에 필요한 입력과 선택 사항 명확히 구성하기
+
+  호출자가 필요한 값을 전달하면서 내부 조건과 구현 세부를 기억할 부담을 줄입니다.
+
+  ## 작성 지침
+
+  첫째, 업무 의미가 있는 객체는 스칼라 값으로 쪼개지 않고 그대로 전달합니다. 호출에 필요한 기존 객체를 조합합니다. 인자 수를 줄이기 위한 중간 전달용 객체를 추가하지 않습니다.
+
+  둘째, 독립적인 선택 기능은 각각 선택할 수 있게 구성합니다. 기능과 업무 목적을 이름에 드러냅니다. 사용하지 않는 기능의 입력을 요구하거나 기능 조합마다 함수를 추가하지 않습니다.
+
+  셋째, 호출에 필요한 핵심 입력만 함수 인자로 받습니다. 발송 설정과 실행은 실행 객체가 관리하며, 필요한 의존성은 객체를 구성할 때 전달합니다. 호출자가 결정할 필요 없는 값은 내부에서 생성하고, 호출마다 달라지는 값은 해당 호출에서 전달합니다.
+
+  넷째, 선택 기능은 기능 단위의 공개 메서드로 설정하고 마지막에 핵심 동작을 호출합니다. 각 기능을 선택할 때 필요한 값만 전달하고 해당 실행 객체에 설정을 보관합니다. 설정을 생략하면 합의된 기본 동작을 수행하도록 구성합니다. 호출자가 내부 구현이나 설정 조합의 주의 사항을 찾아보지 않아도 공개 메서드만으로 사용법을 알 수 있어야 합니다.
+
+  호출만 읽어도 전달하는 객체의 의미와 선택한 기능을 알 수 있는지 확인합니다. 선택 기능이 없는 간단한 호출은 필요한 객체를 직접 전달합니다.
+
+  ## Do Not 예시
+
+  ```kotlin
+  fun deliveryTo(recipientId: String, address: String, title: String, message: String) { ... }
+  deliveryTo(
+      recipient.id,
+      recipient.address, // Do Not: 기존 대상자 객체를 식별자와 주소로 분해
+      notification.title,
+      notification.message, // Do Not: 기존 알림 객체를 제목과 메시지로 분해
+  )
+  ```
+
+  ```kotlin
+  fun deliveryTo(
+      recipient: Recipient,
+      notification: Notification,
+      remindIfUnread: Boolean,
+      interval: Duration?,
+      maxReminders: Int?, // Do Not: 재알림 여부와 설정의 유효한 조합을 호출자가 기억
+      trackRead: Boolean,
+      readTrigger: NotificationEvent?,
+      eventName: String?,
+  ) { ... }
+  deliveryTo(recipient, notification, true, Duration.ofMinutes(10), 2, true, NotificationEvent.OPENED, "notification_read")
+  deliveryTo(recipient, notification, false, null, null, false, null, null) // Do Not: 기본 발송에도 사용하지 않는 기능의 값 전달
+
+  fun sendWithUnreadReminder(recipient: Recipient, notification: Notification, interval: Duration, maxReminders: Int) { ... }
+  fun sendWithReadTracking(recipient: Recipient, notification: Notification, trigger: NotificationEvent, eventName: String) { ... }
+  fun sendWithUnreadReminderAndReadTracking(
+      recipient: Recipient,
+      notification: Notification,
+      interval: Duration,
+      maxReminders: Int,
+      trigger: NotificationEvent,
+      eventName: String,
+  ) { ... } // Do Not: 독립적인 기능의 조합마다 함수 추가
+  sendWithUnreadReminderAndReadTracking(
+      recipient, notification, Duration.ofMinutes(10), 2, NotificationEvent.OPENED, "notification_read",
+  ) // Do Not: 기능 조합에 맞는 별도 함수를 찾아 호출
+  ```
+
+  ```kotlin
+  fun deliveryTo(
+      recipient: Recipient,
+      notification: Notification,
+      deliveryId: UUID, // Do Not: 실행 객체가 부여할 발송 식별자를 호출자에게 요구
+      sender: NotificationSender,
+      repository: NotificationRepository,
+      eventTracker: NotificationEventTracker,
+  ) { ... }
+  deliveryTo(
+      recipient = recipient,
+      notification = notification,
+      deliveryId = UUID.randomUUID(), // Do Not: 호출부에서 내부 식별자 생성 규칙 수행
+      sender = sender,
+      repository = repository,
+      eventTracker = eventTracker, // Do Not: 발송마다 내부 의존성을 모두 전달
+  )
+  ```
+
+  ```kotlin
+  fun deliveryTo(
+      recipient: Recipient,
+      notification: Notification,
+      reservedAt: Instant?, // Do Not: 예약하지 않을 때 null을 넣어야 한다는 규약을 호출자가 기억
+      remindIfUnread: Boolean,
+      interval: Duration?,
+      maxReminders: Int?,
+      trackDeliveryStatus: Boolean,
+      includeAdditionalBody: Boolean,
+      additionalBody: String?,
+      connectDeepLink: Boolean,
+      deepLink: URI?,
+      trackRead: Boolean,
+      readTrigger: NotificationEvent?,
+      eventName: String?,
+  ) { ... }
+
+  deliveryTo(
+      recipient, notification, null, false, null, null, false, false, null, false, null, false, null, null,
+  ) // Do Not: 기본 발송에도 예약과 선택 기능의 미사용 값을 모두 전달
+
+  deliveryTo(
+      recipient = recipient,
+      notification = notification,
+      reservedAt = reservedAt,
+      remindIfUnread = true,
+      interval = Duration.ofMinutes(10),
+      maxReminders = 2,
+      trackDeliveryStatus = true,
+      includeAdditionalBody = true,
+      additionalBody = additionalBody,
+      connectDeepLink = true,
+      deepLink = deepLink,
+      trackRead = true,
+      readTrigger = NotificationEvent.OPENED,
+      eventName = "notification_read",
+  ) // Do Not: 기능 선택과 필요한 값의 관계를 긴 인자 목록에서 확인
+  ```
+
+  ## Do 예시
+
+  ```kotlin
+  // 예시의 기존 업무 객체: 대상자 Recipient, 기본 내용을 가진 알림 Notification
+  // NotificationDelivery의 핵심 발송 동작
+  fun deliveryTo(recipient: Recipient, notification: Notification) { ... }
+  notificationDelivery.deliveryTo(recipient, notification) // Do: 업무 객체를 분해하거나 중간 전달용 객체를 만들지 않고 그대로 조합
+  ```
+
+  ```kotlin
+  // 예시 기획: 미읽음 대상자에게 일정 간격으로 재알림, 지정한 이벤트 발생 시 읽음 기록
+  notificationDelivery
+      .remindIfUnread(interval = Duration.ofMinutes(10), maxReminders = 2) // Do: 재알림 기능을 선택하면서 필요한 값만 전달
+      .trackReadOn(trigger = NotificationEvent.OPENED, eventName = "notification_read") // Do: 읽음 기록을 독립적으로 선택
+      .deliveryTo(recipient, notification) // Do: 선택한 설정으로 발송 수행
+
+  val basicDelivery = NotificationDelivery(sender, repository, eventTracker) // Do: 별도 발송에는 새 실행 객체 사용
+  basicDelivery.deliveryTo(recipient, notification) // Do: 기본 발송에는 기존 대상자와 알림만 전달
+  ```
+
+  ```kotlin
+  class NotificationDelivery(
+      private val sender: NotificationSender,
+      private val repository: NotificationRepository,
+      private val eventTracker: NotificationEventTracker, // Do: 실행 객체가 사용할 의존성을 생성자로 전달
+  ) {
+      private var reservedAt: Instant? = null // Do: 이번 발송의 예약 설정을 실행 객체가 보유
+
+      fun scheduleAt(time: Instant): NotificationDelivery {
+          reservedAt = time
+          return this // Do: 같은 실행 객체에서 기능 설정을 이어 호출
+      }
+
+      fun deliveryTo(recipient: Recipient, notification: Notification) {
+          val deliveryId = UUID.randomUUID() // Do: 실행 객체가 부여할 발송 식별자는 내부 생성
+          ...
+      }
+      ...
+  }
+
+  val notificationDelivery = NotificationDelivery(sender, repository, eventTracker)
+  notificationDelivery.deliveryTo(recipient, notification) // Do: 발송 시 필요한 업무 객체만 전달
+  ```
+
+  ```kotlin
+  val immediateDelivery = NotificationDelivery(sender, repository, eventTracker)
+  immediateDelivery.deliveryTo(recipient, notification) // Do: 설정을 생략하면 예시에서 합의한 즉시 발송 수행
+
+  val scheduledDelivery = NotificationDelivery(sender, repository, eventTracker)
+  scheduledDelivery
+      .scheduleAt(reservedAt) // Do: 예약 발송이 필요할 때만 시각 지정
+      .deliveryTo(recipient, notification) // Do: 지정한 시각에 발송하도록 예약
+
+  val notificationDelivery = NotificationDelivery(sender, repository, eventTracker) // Do: 이번 발송의 설정과 실행을 담당할 객체 구성
+  notificationDelivery
+      .scheduleAt(reservedAt)
+      .remindIfUnread(interval = Duration.ofMinutes(10), maxReminders = 2)
+      .trackDeliveryStatus() // Do: 수신 상태 기록을 읽음 기록과 별도로 선택
+      .withAdditionalBody(additionalBody) // Do: 내용 전달 자체로 추가 본문 사용을 표현
+      .withDeepLink(deepLink) // Do: 연결할 대상만 전달
+      .trackReadOn(trigger = NotificationEvent.OPENED, eventName = "notification_read")
+      .deliveryTo(recipient, notification) // Do: 예약과 선택 기능을 먼저 설정한 뒤 발송 동작 호출
+
+  // 발송 객체의 공개 기능 설정 부분
+  fun remindIfUnread(interval: Duration, maxReminders: Int): NotificationDelivery {
+      require(!interval.isNegative && !interval.isZero)
+      require(maxReminders > 0) // Do: 재알림 기능을 설정할 때 관련 제약 확인
+      ...
+      return this
+  }
+  fun trackReadOn(trigger: NotificationEvent, eventName: String): NotificationDelivery {
+      require(eventName.isNotBlank()) // Do: 읽음 기록 기능에 필요한 설정을 함께 확인
+      ...
+      return this
+  }
+  ```

@@ -1,0 +1,15 @@
+{
+  "session_id": "<SESSION_ID>",
+  "turn_id": "<TURN_ID>",
+  "transcript_path": "<TRANSCRIPT_PATH>",
+  "cwd": "<PROBE_CWD>",
+  "hook_event_name": "PostToolUse",
+  "model": "<MODEL_NAME>",
+  "permission_mode": "bypassPermissions",
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: <PROBE_ROOT>/src/Probe.kt\n@@\n-val probeValue = \"before\"\n+val probeValue = \"after\"\n*** End Patch"
+  },
+  "tool_response": "Exit code: 0\nWall time: 0.1 seconds\nOutput:\nSuccess. Updated the following files:\nM <PROBE_ROOT>/src/Probe.kt\n",
+  "tool_use_id": "<TOOL_USE_ID>"
+}

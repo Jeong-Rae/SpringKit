@@ -1,0 +1,54 @@
+id: include-business-meaning-in-names
+scope:
+  repositories:
+    - "*"
+  languages:
+    - "*"
+when:
+  - file_changed
+match:
+  any: []
+content: |
+  # 이름에 기획과 설계의 업무 의미 담기
+
+  코드의 이름에 업무 의미를 담아 기획과 설계에서 정한 개념과 동작을 그대로 이해할 수 있게 합니다.
+
+  ## 작성 지침
+
+  같은 업무 맥락에서는 기획과 설계에서 정한 용어와 의미를 코드의 이름에도 일치시킵니다. 개발자는 용어를 임의로 해석하거나 다른 의미를 부여하지 않습니다.
+
+  함수를 이해하는 데 업무 목적이나 도메인 규칙을 알아야 한다면 해당 의미를 함수명에 반드시 포함합니다. 계산이나 처리 같은 구현상의 동작만으로 이름을 정하지 않습니다.
+
+  ## Do Not 예시
+
+  ```kotlin
+  // 예시 기획/설계: 미체결 매수 주문 취소, 청약 증거금 환불
+  buyOrder.process() // Do Not: 주문 취소라는 업무 동작이 드러나지 않음
+  subscription.cancel() // Do Not: 증거금 환불을 청약 취소로 임의 해석
+
+  fun hold(account: TradingAccount, order: BuyOrder) { // Do Not: 금액 예약의 업무 목적 누락
+      account.reserveBuyingPower(order.unfilledAmount())
+  }
+
+  // 예시 기획/설계: 청약 증거금에서 배정 대금을 제외한 금액 환불
+  fun calculate(subscription: StockSubscription): Money { // Do Not: 환불액 산정 의미 누락
+      return subscription.depositAmount - subscription.allocatedPurchaseAmount
+  }
+  ```
+
+  ## Do 예시
+
+  ```kotlin
+  // 예시 기획/설계: 미체결 매수 주문 취소, 청약 증거금 환불
+  buyOrder.cancel() // Do: 기획·설계에서 정한 주문 취소 동작을 표현
+  subscription.refund() // Do: 청약 취소와 구분하여 증거금 환불 동작을 표현
+
+  fun reserveBuyingPowerForUnfilledBuyOrder(account: TradingAccount, order: BuyOrder) { // Do: 미체결 매수 대금의 예약 목적 표현
+      account.reserveBuyingPower(order.unfilledAmount())
+  }
+
+  // 예시 기획/설계: 청약 증거금에서 배정 대금을 제외한 금액 환불
+  fun calculateUnallocatedDepositRefund(subscription: StockSubscription): Money { // Do: 미배정 증거금 환불액 산정 의미 표현
+      return subscription.depositAmount - subscription.allocatedPurchaseAmount
+  }
+  ```
