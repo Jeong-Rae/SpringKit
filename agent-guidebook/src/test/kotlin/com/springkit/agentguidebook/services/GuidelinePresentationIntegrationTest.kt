@@ -2,6 +2,7 @@ package com.springkit.agentguidebook.services
 
 import com.springkit.agentguidebook.client.GuidelinePresentationFactory
 import com.springkit.agentguidebook.client.GuidelineSearchFactory
+import com.springkit.agentguidebook.config.SqlitePresentationConfig
 import com.springkit.agentguidebook.core.Presentation
 import com.springkit.agentguidebook.errors.GuidelineLoadException
 import com.springkit.agentguidebook.errors.InvalidSearchRequestException
@@ -14,6 +15,7 @@ import com.springkit.agentguidebook.models.GuidelineId
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
 import com.springkit.agentguidebook.models.SessionId
 import com.springkit.agentguidebook.storage.SqlitePresentationRepository
+import com.springkit.agentguidebook.storage.SqlitePresentationUnitOfWork
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.datatest.withScenarios
@@ -567,11 +569,13 @@ class GuidelinePresentationIntegrationTest :
                     GuidelineId("new-rule"),
                     FIXED_INSTANT,
                 )
+            val unitOfWork = SqlitePresentationUnitOfWork(SqlitePresentationConfig(databasePath))
+            val repository = SqlitePresentationRepository(unitOfWork)
 
             val thrown =
                 shouldThrow<IllegalArgumentException> {
-                  SqlitePresentationRepository(databasePath).inImmediateTransaction { transaction ->
-                    transaction.record(listOf(newPresentation))
+                  unitOfWork.execute {
+                    repository.record(listOf(newPresentation))
                     throw failure
                   }
                 }
@@ -766,12 +770,16 @@ private fun presentationService(
     cwd: Path,
     databasePath: Path,
     clock: Clock = FIXED_CLOCK,
-): GuidelinePresentationService =
-    GuidelinePresentationService(
-        guidelineSearchService = GuidelineSearchFactory.fileSystem(),
-        presentationRepository = SqlitePresentationRepository(databasePath),
-        clock = clock,
-    )
+): GuidelinePresentationService {
+  val unitOfWork = SqlitePresentationUnitOfWork(SqlitePresentationConfig(databasePath))
+
+  return GuidelinePresentationService(
+      guidelineSearchService = GuidelineSearchFactory.fileSystem(),
+      unitOfWork = unitOfWork,
+      presentationRepository = SqlitePresentationRepository(unitOfWork),
+      clock = clock,
+  )
+}
 
 private fun request(
     project: PresentationProject,

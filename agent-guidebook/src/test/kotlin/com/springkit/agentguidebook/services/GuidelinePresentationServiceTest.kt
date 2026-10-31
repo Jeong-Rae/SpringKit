@@ -127,6 +127,7 @@ class GuidelinePresentationServiceTest :
           val service =
               GuidelinePresentationService(
                   guidelineSearchService = GuidelineSearchService(reader),
+                  unitOfWork = UnexpectedPresentationUnitOfWork,
                   presentationRepository = UnexpectedPresentationRepository,
                   clock = FIXED_CLOCK,
               )
@@ -157,8 +158,8 @@ class GuidelinePresentationServiceTest :
         scenario("일부 기록 후 저장 실패가 나면 전체 이력을 rollback하고 성공 목록을 반환하지 않습니다.") {
           val fixture =
               fixture(
-                  repository =
-                      MemoryPresentationRepository(
+                  persistence =
+                      memoryPresentationPersistence(
                           failOnGuidelineId = GuidelineId("second-rule"),
                           saveFailure = RetryablePresentationStorageException(),
                       )
@@ -174,8 +175,8 @@ class GuidelinePresentationServiceTest :
         scenario("commit 실패가 나면 기록을 rollback하고 성공 목록을 반환하지 않습니다.") {
           val fixture =
               fixture(
-                  repository =
-                      MemoryPresentationRepository(
+                  persistence =
+                      memoryPresentationPersistence(
                           commitFailure = RetryablePresentationStorageException("commit 실패")
                       )
               )
@@ -191,8 +192,8 @@ class GuidelinePresentationServiceTest :
           val failure = IllegalArgumentException("저장 callback 입력이 올바르지 않습니다.")
           val fixture =
               fixture(
-                  repository =
-                      MemoryPresentationRepository(
+                  persistence =
+                      memoryPresentationPersistence(
                           initialHistory = listOf(presentation("session-a", "older-rule")),
                           readFailure = failure,
                       ),
@@ -217,88 +218,173 @@ private data class PresentationServiceFixture(
     val matches: List<MatchedGuideline>,
 )
 
+private data class MemoryPresentationPersistence(
+    val unitOfWork: FakePresentationUnitOfWork,
+    val repository: MemoryPresentationRepository,
+    val store: MemoryPresentationStore,
+)
+
 private class FakeGuidelineSearchInputReader(
     private val sources: List<SourceFile> = listOf(SOURCE),
     var guidelines: List<Guideline> = GUIDELINES,
     private val searchFailure: RuntimeException? = null,
+    private val requireOutsideUnitOfWork: () -> Unit = {},
 ) : GuidelineSearchInputReader {
-  override fun validateWorkingDirectory(cwd: Path) = Unit
+  override fun validateWorkingDirectory(cwd: Path) {
+    requireOutsideUnitOfWork()
+  }
 
-  override fun readKotlinSources(filepaths: Collection<Path>): List<SourceFile> =
-      sources.filter { source ->
-        source.filepath in filepaths
-      }
+  override fun readKotlinSources(filepaths: Collection<Path>): List<SourceFile> {
+    requireOutsideUnitOfWork()
+    return sources.filter { source ->
+      source.filepath in filepaths
+    }
+  }
 
   override fun readGuidelines(root: Path): List<Guideline> {
+    requireOutsideUnitOfWork()
     searchFailure?.let { throw it }
     return guidelines
   }
 
-  override fun readRepositoryIdentity(cwd: Path): RepositoryIdentity =
-      RepositoryIdentity("acme", "backend-order")
+  override fun readRepositoryIdentity(cwd: Path): RepositoryIdentity {
+    requireOutsideUnitOfWork()
+    return RepositoryIdentity("acme", "backend-order")
+  }
 }
 
-private class MemoryPresentationRepository(
+private class MemoryPresentationStore(
     initialHistory: Collection<Presentation> = emptyList(),
-    private val failOnGuidelineId: GuidelineId? = null,
-    private val saveFailure: RuntimeException? = null,
     private val commitFailure: RuntimeException? = null,
     private val readFailure: RuntimeException? = null,
-) : PresentationRepository {
+) {
   private val committed = ArrayList(initialHistory)
+  private var pending: MutableList<Presentation>? = null
 
-  override fun <T> inImmediateTransaction(operation: (PresentationTransaction) -> T): T {
-    val pending = ArrayList(committed)
-    val transaction =
-        object : PresentationTransaction {
-          override fun presentations(sessionId: SessionId): List<Presentation> {
-            readFailure?.let { throw it }
-            return pending.filter { it.sessionId == sessionId }
-          }
-
-          override fun record(presentations: Collection<Presentation>) {
-            presentations.forEach { presentation ->
-              if (presentation.guidelineId == failOnGuidelineId) {
-                throw checkNotNull(saveFailure)
-              }
-              pending.add(presentation)
-            }
-          }
-        }
-    val result = operation(transaction)
-    commitFailure?.let { throw it }
-    committed.clear()
-    committed.addAll(pending)
-    return result
+  fun begin() {
+    check(pending == null) { "Fake UnitOfWork transaction은 중첩할 수 없습니다." }
+    pending = ArrayList(committed)
   }
+
+  fun commit() {
+    commitFailure?.let { throw it }
+    val transaction = activePresentations()
+    committed.clear()
+    committed.addAll(transaction)
+    pending = null
+  }
+
+  fun rollback() {
+    pending = null
+  }
+
+  fun requireInactive() {
+    check(pending == null) { "Guideline 검색은 UnitOfWork transaction 밖에서 수행해야 합니다." }
+  }
+
+  fun activePresentations(): MutableList<Presentation> =
+      checkNotNull(pending) { "Fake Repository는 활성 UnitOfWork 안에서만 사용할 수 있습니다." }
 
   fun presentationsFor(sessionId: SessionId): List<Presentation> = committed.filter {
     it.sessionId == sessionId
   }
 
   fun allPresentations(): List<Presentation> = committed.toList()
+
+  fun readFailure(): RuntimeException? = readFailure
+}
+
+private class FakePresentationUnitOfWork(
+    private val store: MemoryPresentationStore,
+) : UnitOfWork {
+  override fun <T> execute(operation: () -> T): T {
+    store.begin()
+
+    return try {
+      val result = operation()
+      store.commit()
+      result
+    } catch (failure: Throwable) {
+      store.rollback()
+      throw failure
+    }
+  }
+}
+
+private class MemoryPresentationRepository(
+    private val store: MemoryPresentationStore,
+    private val failOnGuidelineId: GuidelineId? = null,
+    private val saveFailure: RuntimeException? = null,
+) : PresentationRepository {
+  override fun presentations(sessionId: SessionId): List<Presentation> {
+    store.readFailure()?.let { throw it }
+    return store.activePresentations().filter { it.sessionId == sessionId }
+  }
+
+  override fun record(presentations: Collection<Presentation>) {
+    presentations.forEach { presentation ->
+      if (presentation.guidelineId == failOnGuidelineId) {
+        throw checkNotNull(saveFailure)
+      }
+      store.activePresentations().add(presentation)
+    }
+  }
+
+  fun presentationsFor(sessionId: SessionId): List<Presentation> = store.presentationsFor(sessionId)
+
+  fun allPresentations(): List<Presentation> = store.allPresentations()
 }
 
 private object UnexpectedPresentationRepository : PresentationRepository {
-  override fun <T> inImmediateTransaction(operation: (PresentationTransaction) -> T): T =
-      error("빈 검색 결과에서는 Presentation 저장소를 열지 않아야 합니다.")
+  override fun presentations(sessionId: SessionId): List<Presentation> =
+      error("빈 검색 결과에서는 Presentation 이력을 조회하지 않아야 합니다.")
+
+  override fun record(presentations: Collection<Presentation>) {
+    error("빈 검색 결과에서는 Presentation 이력을 기록하지 않아야 합니다.")
+  }
+}
+
+private object UnexpectedPresentationUnitOfWork : UnitOfWork {
+  override fun <T> execute(operation: () -> T): T =
+      error("빈 검색 결과에서는 Presentation UnitOfWork를 실행하지 않아야 합니다.")
 }
 
 private fun fixture(
     initialHistory: Collection<Presentation> = emptyList(),
-    repository: MemoryPresentationRepository = MemoryPresentationRepository(initialHistory),
+    persistence: MemoryPresentationPersistence = memoryPresentationPersistence(initialHistory),
     searchFailure: RuntimeException? = null,
 ): PresentationServiceFixture {
-  val reader = FakeGuidelineSearchInputReader(searchFailure = searchFailure)
+  val reader =
+      FakeGuidelineSearchInputReader(
+          searchFailure = searchFailure,
+          requireOutsideUnitOfWork = persistence.store::requireInactive,
+      )
   val matches = GUIDELINES.map { guideline -> MatchedGuideline(guideline.id, guideline.content) }
   val service =
       GuidelinePresentationService(
           guidelineSearchService = GuidelineSearchService(reader),
-          presentationRepository = repository,
+          unitOfWork = persistence.unitOfWork,
+          presentationRepository = persistence.repository,
           clock = FIXED_CLOCK,
       )
 
-  return PresentationServiceFixture(service, repository, reader, matches)
+  return PresentationServiceFixture(service, persistence.repository, reader, matches)
+}
+
+private fun memoryPresentationPersistence(
+    initialHistory: Collection<Presentation> = emptyList(),
+    failOnGuidelineId: GuidelineId? = null,
+    saveFailure: RuntimeException? = null,
+    commitFailure: RuntimeException? = null,
+    readFailure: RuntimeException? = null,
+): MemoryPresentationPersistence {
+  val store = MemoryPresentationStore(initialHistory, commitFailure, readFailure)
+
+  return MemoryPresentationPersistence(
+      unitOfWork = FakePresentationUnitOfWork(store),
+      repository = MemoryPresentationRepository(store, failOnGuidelineId, saveFailure),
+      store = store,
+  )
 }
 
 private fun request(sessionId: String): GuidelinePresentationRequest =
