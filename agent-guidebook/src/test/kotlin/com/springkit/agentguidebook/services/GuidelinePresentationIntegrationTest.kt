@@ -405,7 +405,7 @@ class GuidelinePresentationIntegrationTest :
             )
             val databasePath = project.cwd.resolve("history.sqlite")
             createPresentationTable(databasePath)
-            createSecondInsertFailureTrigger(databasePath, "zeta-rule")
+            createSecondInsertAbortTrigger(databasePath, "zeta-rule")
 
             val failure =
                 shouldThrow<PresentationStorageException> {
@@ -434,7 +434,7 @@ class GuidelinePresentationIntegrationTest :
             )
             val databasePath = project.cwd.resolve("history.sqlite")
             createPresentationTable(databasePath)
-            createSecondInsertFailureTrigger(databasePath, "zeta-rule", rollback = true)
+            createSecondInsertRollbackTrigger(databasePath, "zeta-rule")
 
             val failure =
                 shouldThrow<PresentationTransactionRollbackException> {
@@ -453,7 +453,7 @@ class GuidelinePresentationIntegrationTest :
           withPresentationProject { project ->
             val databasePath = project.cwd.resolve("history.sqlite")
             createPresentationTable(databasePath)
-            createSecondInsertFailureTrigger(databasePath, "zeta-rule", rollback = true)
+            createSecondInsertRollbackTrigger(databasePath, "zeta-rule")
             val connection = openDatabase(databasePath)
             try {
               connection.createStatement().use { statement ->
@@ -916,25 +916,46 @@ private fun insertPresentation(
       }
 }
 
-private fun createSecondInsertFailureTrigger(
+private fun createSecondInsertAbortTrigger(
     databasePath: Path,
     guidelineId: String,
-    rollback: Boolean = false,
 ) {
-  val action = if (rollback) "ROLLBACK" else "ABORT"
+  val statementSql =
+      """
+      CREATE TRIGGER fail_second_presentation
+      BEFORE INSERT ON presentation
+      WHEN NEW.guideline_id = '${yamlSingleQuoted(guidelineId)}'
+      BEGIN
+          SELECT RAISE(ABORT, 'second presentation insert failed');
+      END
+      """
+          .trimIndent()
+
+  createTrigger(databasePath, statementSql)
+}
+
+private fun createSecondInsertRollbackTrigger(
+    databasePath: Path,
+    guidelineId: String,
+) {
+  val statementSql =
+      """
+      CREATE TRIGGER fail_second_presentation
+      BEFORE INSERT ON presentation
+      WHEN NEW.guideline_id = '${yamlSingleQuoted(guidelineId)}'
+      BEGIN
+          SELECT RAISE(ROLLBACK, 'second presentation insert failed');
+      END
+      """
+          .trimIndent()
+
+  createTrigger(databasePath, statementSql)
+}
+
+private fun createTrigger(databasePath: Path, statementSql: String) {
   openDatabase(databasePath).use { connection ->
     connection.createStatement().use { statement ->
-      statement.execute(
-          """
-          CREATE TRIGGER fail_second_presentation
-          BEFORE INSERT ON presentation
-          WHEN NEW.guideline_id = '${yamlSingleQuoted(guidelineId)}'
-          BEGIN
-              SELECT RAISE($action, 'second presentation insert failed');
-          END
-          """
-              .trimIndent()
-      )
+      statement.execute(statementSql)
     }
   }
 }
