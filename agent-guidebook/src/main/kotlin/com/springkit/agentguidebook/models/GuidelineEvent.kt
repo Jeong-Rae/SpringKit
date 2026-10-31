@@ -1,6 +1,11 @@
 package com.springkit.agentguidebook.models
 
-/** 지침 적용 여부를 판단할 이벤트 이름을 표현합니다. */
+/**
+ * 지침을 적용할 작업 이벤트의 이름입니다.
+ *
+ * @property value 공백이 아닌 이벤트 식별자
+ * @throws IllegalArgumentException 값이 비어 있거나 공백뿐인 경우
+ */
 @JvmInline
 value class GuidelineEvent(val value: String) {
   init {

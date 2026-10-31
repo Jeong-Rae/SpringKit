@@ -1,6 +1,12 @@
 package com.springkit.agentguidebook.models
 
-/** 공백과 경로 구분자가 없는 정규화된 저장소 소유자와 저장소 이름을 표현합니다. */
+/**
+ * 정규화된 Git 저장소 소유자와 저장소 이름을 함께 보유합니다.
+ *
+ * @property owner 공백과 `/`가 없는 소유자 이름
+ * @property repository 공백과 `/`가 없는 저장소 이름
+ * @throws IllegalArgumentException 구성값이 비어 있거나 공백 또는 `/`를 포함하는 경우
+ */
 data class RepositoryIdentity(
     val owner: String,
     val repository: String,
@@ -21,5 +27,5 @@ data class RepositoryIdentity(
    *
    * @return owner와 repository를 슬래시로 연결한 식별자
    */
-  fun qualifiedName(): String = throw NotImplementedError("정규화된 저장소 식별자 표현은 구현 단계에서 추가합니다.")
+  fun qualifiedName(): String = "$owner/$repository"
 }

@@ -4,7 +4,15 @@ import com.springkit.agentguidebook.models.ApplicabilityContext
 import java.util.ArrayList
 import java.util.Collections
 
-/** 저장소와 언어 조건을 함께 평가합니다. */
+/**
+ * 저장소와 언어 조건을 함께 평가하는 지침 적용 범위입니다.
+ *
+ * 각 목록은 하나라도 일치하면 조건을 만족하고, 두 목록의 조건은 모두 만족해야 합니다.
+ *
+ * @param repositories owner/repository에 적용할 전체 일치 패턴 모음
+ * @param languages 적용할 언어 이름 모음
+ * @throws IllegalArgumentException 조건에 빈 문자열 또는 공백 문자열이 포함된 경우
+ */
 class Scope(
     repositories: Collection<String>,
     languages: Collection<String>,
@@ -23,12 +31,23 @@ class Scope(
 
   private val repositoryPatterns = this.repositories.map(::repositoryPattern)
 
-  /** 각 목록에서는 하나 이상의 조건을 만족해야 하며, 저장소와 언어 조건은 모두 만족해야 합니다. */
+  /**
+   * 저장소 패턴과 언어 조건이 모두 일치하는지 확인합니다.
+   *
+   * @param context 적용 여부를 평가할 저장소와 언어 정보
+   * @return 두 조건 목록이 모두 일치하면 `true`
+   */
   fun matches(context: ApplicabilityContext): Boolean {
+    val qualifiedName = context.repository.qualifiedName()
     val matchesRepository = repositoryPatterns.any { pattern ->
-      pattern.matches(repositoryName(context))
+      pattern.matches(qualifiedName)
     }
-    val matchesLanguage = languages.any { it == "*" || it == context.language.value }
+    val matchesLanguage = languages.any { language ->
+      val appliesToEveryLanguage = language == "*"
+      val matchesRequestedLanguage = language == context.language.value
+
+      appliesToEveryLanguage || matchesRequestedLanguage
+    }
 
     return matchesRepository && matchesLanguage
   }
@@ -38,9 +57,6 @@ class Scope(
           (other is Scope && repositories == other.repositories && languages == other.languages)
 
   override fun hashCode(): Int = 31 * repositories.hashCode() + languages.hashCode()
-
-  private fun repositoryName(context: ApplicabilityContext): String =
-      "${context.repository.owner}/${context.repository.repository}"
 
   private fun repositoryPattern(pattern: String): Regex =
       Regex(pattern.split('*').joinToString(".*") { Regex.escape(it) }, RegexOption.DOT_MATCHES_ALL)

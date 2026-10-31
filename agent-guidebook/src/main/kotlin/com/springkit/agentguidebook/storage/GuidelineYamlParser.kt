@@ -117,7 +117,8 @@ internal class GuidelineYamlParser {
       value as? String ?: throw GuidelineLoadException("지침 필드는 문자열이어야 합니다: $location")
 
   private fun requiredValue(fields: Map<*, *>, key: String, location: String): Any? {
-    if (!fields.containsKey(key)) {
+    val isMissingRequiredField = !fields.containsKey(key)
+    if (isMissingRequiredField) {
       throw GuidelineLoadException("필수 지침 필드가 없습니다: $location.$key")
     }
 

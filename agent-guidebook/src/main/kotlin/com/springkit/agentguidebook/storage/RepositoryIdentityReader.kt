@@ -94,8 +94,10 @@ internal class RepositoryIdentityReader {
     val hasUnsupportedPassword = uriish.pass != null
     val hasWhitespace = origin.any(Char::isWhitespace)
     val isScpAddress = uriish.scheme == null && host.isNotBlank() && !path.isNullOrEmpty()
+    val hasUnsupportedScpAddress =
+        !isScpAddress || hasUnsupportedAuthority || hasUnsupportedPassword || hasWhitespace
 
-    if (!isScpAddress || hasUnsupportedAuthority || hasUnsupportedPassword || hasWhitespace) {
+    if (hasUnsupportedScpAddress) {
       throw IllegalArgumentException("SSH origin 형식이 아닙니다.")
     }
 
@@ -104,8 +106,9 @@ internal class RepositoryIdentityReader {
 
   private fun ownerAndRepository(path: String?): Pair<String, String> {
     val parts = path.orEmpty().split('/').filter(String::isNotEmpty)
+    val hasOwnerAndRepository = parts.size == 2
 
-    if (parts.size != 2) {
+    if (!hasOwnerAndRepository) {
       throw IllegalArgumentException("origin 경로는 owner/repository 형식이어야 합니다.")
     }
 
