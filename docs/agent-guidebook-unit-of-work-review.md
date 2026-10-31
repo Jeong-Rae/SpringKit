@@ -12,9 +12,9 @@
 | --- | --- |
 | `services.UnitOfWork` | 애플리케이션 포트. `execute(operation: () -> T)`의 실행 범위를 열고, callback 성공 시 commit한 뒤 결과를 반환합니다. 실패 시 rollback을 수행합니다. |
 | `services.PresentationRepository` | 애플리케이션 포트. 지정 Session의 `Presentation`을 조회하고 새 기록을 저장합니다. 트랜잭션을 열거나 도메인 선별 규칙을 적용하지 않습니다. |
-| `storage.SqlitePresentationUnitOfWork` | Exposed 트랜잭션과 연결 수명을 관리하고 활성 경계를 확인합니다. 트랜잭션 중복 실행을 거부하며, SQLite 연결과 트랜잭션 실패를 공개 저장 오류로 변환합니다. |
+| `storage.SqlitePresentationUnitOfWork` | 활성 Exposed transaction 경계를 확인하고 중첩 실행을 거부합니다. Config가 준비한 실행별 Database에서 Exposed transaction과 commit/rollback/close 수명을 관리하고 트랜잭션 실패를 공개 저장 오류로 변환합니다. |
 | `storage.SqlitePresentationRepository` | Exposed typed DSL/DAO로 조회와 기록을 수행하고 행과 도메인 `Presentation` 사이를 변환합니다. 활성 UnitOfWork 밖의 CRUD를 거부합니다. |
-| `config.SqlitePresentationConfig` | DB 경로, SQLite driver 설정, Exposed 설정을 관리하고 `openDatabase(connectionRegistration): Database`로 실행별 Exposed Database 객체를 조립합니다. 연결은 지연되며 설정 생성은 파일 시스템이나 실제 DB 연결에 접근하지 않습니다. |
+| `config.SqlitePresentationConfig` | DB 경로, SQLite driver 설정, Exposed 설정과 스키마 초기화를 관리합니다. 실행 중 호출되는 `openDatabase(connectionRegistration): Database`는 경로 준비와 실행별 Database 조립을 맡고, `initializeSchema()`는 현재 Exposed transaction 안에서 테이블을 초기화합니다. Config 생성은 파일 시스템이나 실제 DB 연결에 접근하지 않습니다. |
 | `GuidelinePresentationService` | 검색은 트랜잭션 전에 수행합니다. 결과가 있으면 UnitOfWork 안에서 저장소 조회, Aggregate 선별, 기록 생성과 저장을 순서대로 조율합니다. |
 
 Application은 `UnitOfWork`와 `PresentationRepository`를 별도로 주입받습니다. SQLite 조립은 한 `SqlitePresentationUnitOfWork`를 만들고 같은 인스턴스를 `SqlitePresentationRepository`에 전달합니다.
@@ -33,9 +33,9 @@ class SqlitePresentationRepository(
 ) : PresentationRepository
 ```
 
-`SqlitePresentationConfig`는 외부에서 DB 경로를 지정할 수 있게 하고, timeout, transaction mode와 재시도 제한은 현재 계약값으로 고정합니다. 내부 `openDatabase(connectionRegistration): Database`는 SQLite 설정, connection factory와 Exposed `DatabaseConfig`를 조립해 Exposed `Database` 객체를 반환합니다. connection factory는 SQLite 설정 객체와 파일 경로를 캡처할 뿐 실제 JDBC 연결을 열지 않습니다. Config 생성자는 파일, 연결, 스키마를 만들지 않습니다. 별도의 descriptor 자료형이나 전역·재사용 `Database` 객체는 두지 않습니다.
+`SqlitePresentationConfig`는 외부에서 DB 경로를 지정할 수 있게 하고, timeout, transaction mode와 재시도 제한은 현재 계약값으로 고정합니다. 생성자는 경로 정규화, 디렉터리 생성, 연결, Database 객체 등록, 스키마 초기화를 하지 않습니다. `openDatabase(connectionRegistration): Database`가 실행 시점에 경로를 정규화하고 상위 디렉터리를 준비한 뒤 SQLite 설정, connection factory와 Exposed `DatabaseConfig`를 조립해 실행별 Exposed `Database` 객체를 반환합니다. 상위 경로 준비에서 발생한 파일 시스템 오류는 기존 환경 오류로 변환합니다. connection factory는 SQLite 설정 객체와 정규화된 경로를 캡처할 뿐 실제 JDBC 연결을 열지 않습니다. `initializeSchema()`는 UnitOfWork가 연 현재 Exposed transaction 안에서 Config의 `PresentationTable`을 초기화합니다. 별도의 descriptor 자료형이나 전역·재사용 `Database` 객체는 두지 않습니다.
 
-`SqlitePresentationUnitOfWork.execute`는 실행마다 연결 실패 수집기를 만들고 `config.openDatabase(connectionRegistration)`을 호출해 새 Exposed `Database`를 받습니다. `TransactionManager.closeAndUnregister(database)`는 해당 실행의 `finally`에서 호출합니다. UnitOfWork와 Repository 객체는 설정 및 같은 UnitOfWork 참조만 보유하므로 여러 요청에서 재사용할 수 있고, 매 요청의 연결 실패 상태와 Database 수명은 서로 분리됩니다.
+`SqlitePresentationUnitOfWork.execute`는 중첩 여부를 먼저 확인하고 실행마다 연결 실패 수집기를 만든 뒤 `config.openDatabase(connectionRegistration)`을 호출합니다. 이 호출이 경로 준비와 새 Exposed `Database` 조립을 수행하므로, 거부된 중첩 요청은 자식 경로를 만들지 않습니다. UnitOfWork는 `transaction(db = database)`를 열고 그 transaction 안에서 `config.initializeSchema()`를 callback보다 먼저 호출합니다. UnitOfWork는 `Path`, `SQLiteConfig`, `PresentationTable` 또는 구체 DDL을 직접 다루지 않습니다. `TransactionManager.closeAndUnregister(database)`는 해당 실행의 `finally`에서 호출합니다. UnitOfWork와 Repository 객체는 설정 및 같은 UnitOfWork 참조만 보유하므로 여러 요청에서 재사용할 수 있고, 매 요청의 연결 실패 상태와 Database 수명은 서로 분리됩니다.
 
 UnitOfWork는 실행마다 만든 내부 `SqlitePresentationTransactionContext`를 Exposed `Transaction.userData(Key)`에 저장합니다. 이 context에는 소유 UnitOfWork, 실행별 Database, rollback/close 실패 수집기, Repository SQL 실패 원인이 들어갑니다. `SqlitePresentationRepository.currentContext()`는 주입받은 UnitOfWork에 현재 context를 요청합니다. UnitOfWork는 `TransactionManager.currentOrNull()` 결과, 같은 Database identity와 owner identity를 검사하고, 불일치하면 DB 작업 전에 `IllegalStateException`을 던집니다. 이 기술 context는 실행 범위와 원인 보존을 연결하는 내부 adapter 자료형이며 Application callback에 노출하지 않고 일반 context/registry나 Core 개념으로 확장하지 않습니다.
 
@@ -66,13 +66,13 @@ interface PresentationRepository {
 
 ## 설정, 트랜잭션과 스키마
 
-기본 DB 경로는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`입니다. 테스트용 경로는 `SqlitePresentationConfig(databasePath = path)`로 지정합니다. Config 생성과 service factory 조립은 디렉터리 생성, JDBC 연결, DB 객체의 장기 등록 또는 스키마 초기화를 하지 않습니다. UnitOfWork는 다른 UnitOfWork를 포함해 현재 Exposed transaction이 하나라도 활성 상태면 새 경로 접근이나 DB 객체 생성 전에 `IllegalStateException`으로 중첩 실행을 거부합니다. 이후 경로 정규화와 상위 디렉터리 생성은 해당 `execute`에서만 수행하고 파일 시스템 오류는 `PresentationStorageUnavailableException`으로 변환합니다.
+기본 DB 경로는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`입니다. 테스트용 경로는 `SqlitePresentationConfig(databasePath = path)`로 지정합니다. Config 생성과 service factory 조립은 경로 정규화, 디렉터리 생성, JDBC 연결, DB 객체의 장기 등록 또는 스키마 초기화를 하지 않습니다. UnitOfWork는 다른 UnitOfWork를 포함해 현재 Exposed transaction이 하나라도 활성 상태면 `config.openDatabase`를 호출하기 전에 `IllegalStateException`으로 중첩 실행을 거부합니다. 실제 경로 정규화와 상위 디렉터리 생성은 `execute`에서 Config가 DB를 조립할 때 수행하며 파일 시스템 오류는 Config에서 `PresentationStorageUnavailableException`으로 변환합니다.
 
 SQLite 연결은 `SQLiteConfig`의 busy timeout 및 `IMMEDIATE` transaction 설정을 사용합니다. Exposed transaction의 최대 시도 횟수는 1회이며 자동 재시도 지연은 0입니다. 운영 코드에서 `BEGIN`, `COMMIT`, `ROLLBACK`, `PRAGMA`를 SQL 문자열로 직접 실행하지 않습니다. 실제 commit과 rollback은 Exposed transaction API에 위임합니다.
 
-UnitOfWork가 매 실행 `config.openDatabase(connectionRegistration)`을 호출해 새 Exposed `Database`를 받고 `transaction(db = database)`에 명시적으로 전달합니다. CRUD는 이 transaction 안에서만 수행합니다. Exposed는 같은 Database의 기본 중첩 transaction에서 부모 transaction 객체와 자원을 재사용하므로 callback 반환 뒤 독립 commit이 보장되지 않습니다. UnitOfWork는 Database 종류와 관계없이 현재 Exposed transaction이 하나라도 활성 상태면 시작을 거부합니다. 독립 중첩 transaction이나 propagation 정책은 추가하지 않습니다.
+UnitOfWork가 매 실행 `config.openDatabase(connectionRegistration)`을 호출해 새 Exposed `Database`를 받고 `transaction(db = database)`에 명시적으로 전달합니다. `config.initializeSchema()`와 CRUD는 이 transaction 안에서 수행합니다. Exposed는 같은 Database의 기본 중첩 transaction에서 부모 transaction 객체와 자원을 재사용하므로 callback 반환 뒤 독립 commit이 보장되지 않습니다. UnitOfWork는 Database 종류와 관계없이 현재 Exposed transaction이 하나라도 활성 상태면 시작을 거부합니다. 독립 중첩 transaction이나 propagation 정책은 추가하지 않습니다.
 
-스키마 정의는 `storage.PresentationTable`에 둡니다. `SqlitePresentationUnitOfWork`가 활성 transaction 안에서 Application callback보다 먼저 `SchemaUtils.create(PresentationTable)`을 실행합니다. 스키마 초기화 실패는 transaction 실패로 rollback하고 UnitOfWork의 저장 오류 경계에서 분류합니다. 이 배치는 설정 생성과 저장소 CRUD에서 스키마 생성을 분리하고, 조회 전에 필요한 테이블이 같은 Exposed transaction에서 준비되도록 합니다. 마이그레이션, 자동 열 복구와 빈 DB 재생성은 추가하지 않습니다.
+스키마 정의는 `storage.PresentationTable`에 둡니다. `SqlitePresentationUnitOfWork`는 활성 transaction 안에서 Application callback보다 먼저 `config.initializeSchema()`를 호출하고, Config 내부에서 `SchemaUtils.create(PresentationTable)`을 수행합니다. 스키마 초기화 실패는 transaction 실패로 rollback하고 UnitOfWork의 저장 오류 경계에서 분류합니다. 이 배치는 설정 생성과 저장소 CRUD에서 스키마 생성을 분리하고, 조회 전에 필요한 테이블이 같은 Exposed transaction에서 준비되도록 합니다. 마이그레이션, 자동 열 복구와 빈 DB 재생성은 추가하지 않습니다.
 
 저장소 조회와 기록은 Exposed Table DSL 및 DAO를 사용합니다. 조회 결과는 transaction 안에서 `Presentation`으로 복원하고 저장 전용 Entity를 외부에 반환하지 않습니다. 기존 복합 키 `(session_id, guideline_id)`, 세 컬럼, UTC `Instant` 문자열을 유지합니다.
 
@@ -96,7 +96,7 @@ UnitOfWork는 중첩 transaction이나 propagation 정책을 구현하지 않습
 
 Repository는 주입된 UnitOfWork가 실행마다 transaction-local context를 찾고 owner identity와 활성 `JdbcTransaction.db`를 검증하도록 요청합니다. 활성 context가 없거나 다른 UnitOfWork의 context이면 `IllegalStateException`을 던집니다. 이 검사는 SQL 조회나 DB 생성을 시작하기 전에 수행합니다.
 
-Repository의 SQL 호출은 실패한 예외 객체를 실행별 transaction context에 기록하고 같은 객체를 다시 던집니다. UnitOfWork는 transaction 종료 뒤 최종 실패 객체와 기록된 저장 실패를 대조해 Repository SQL 실패만 공개 오류로 분류합니다. 별도 wrapper가 callback 예외의 타입이나 객체 동일성을 바꾸지 않습니다. Application callback에서 직접 던진 `SQLException`은 Repository 저장 실패로 표시되지 않으므로 같은 객체로 전파합니다. Repository 호출에서 `ExposedSQLException`이 발생하면 기록한 외부 예외와 실제 `SQLException` 원인을 함께 보존해 rollback 실패 시 원본 SQL을 cause로 사용합니다. 연결 생성, 스키마 준비, commit, rollback 및 close에서 난 SQL 오류는 해당 작업을 수행하는 UnitOfWork가 분류합니다.
+Repository의 SQL 호출은 실패한 예외 객체를 실행별 transaction context에 기록하고 같은 객체를 다시 던집니다. UnitOfWork는 transaction 종료 뒤 최종 실패 객체와 기록된 저장 실패를 대조해 Repository SQL 실패만 공개 오류로 분류합니다. 별도 wrapper가 callback 예외의 타입이나 객체 동일성을 바꾸지 않습니다. Application callback에서 직접 던진 `SQLException`은 Repository 저장 실패로 표시되지 않으므로 같은 객체로 전파합니다. Repository 호출에서 `ExposedSQLException`이 발생하면 기록한 외부 예외와 실제 `SQLException` 원인을 함께 보존해 rollback 실패 시 원본 SQL을 cause로 사용합니다. transaction 연결, Config의 스키마 초기화, commit, rollback 및 close에서 난 SQL 오류는 UnitOfWork가 분류하고, 경로 준비의 파일 시스템 오류는 Config가 기존 환경 오류로 변환합니다.
 
 UnitOfWork는 현재 Exposed transaction이 어떤 Database에서 열렸는지와 관계없이 중첩 실행을 시작 전에 거부해 Exposed의 암묵적인 transaction 재사용을 막습니다. Repository SQL 실패 원인을 context에 기록해 callback이 직접 던진 SQL 예외와 저장소 DSL/DAO에서 발생한 SQL 예외를 구분합니다. UnitOfWork는 transaction 종료 직전 실패만 해당 기록과 비교하므로 callback이 저장 오류를 처리한 뒤 다른 예외로 실패한 경우 그 새 예외를 보존합니다. 기존 `PresentationTransactionRollbackException`은 저장 SQL의 원본 `SQLException`을 cause로, rollback 실패를 suppressed로 받습니다.
 
@@ -126,7 +126,19 @@ Exposed 연결 adapter는 rollback과 close 실패를 기록해 Exposed가 로�
 
 ### 두 번째 계약 Step: 하위 영속성 경계
 
-Repository가 실제 transaction 안에서 조회·기록하는 계약, UnitOfWork 밖의 CRUD 거부, 모든 활성 Exposed transaction에서의 중첩 거부, commit 전 반환 금지, callback SQL 예외 동일성, rollback·close 원인 보존을 별도 Scenario로 검증합니다. 기존 통합 테스트의 DB 행, 오류 원인, 동시성 assertion은 유지합니다. 첫 Step 승인 전에는 하위 경계 Scenario를 추가하지 않습니다.
+`SqlitePresentationUnitOfWorkIntegrationTest`에서 실제 SQLite 연결과 독립 JDBC 관찰자를 사용합니다. 활성 범위 밖 테스트는 `활성 UnitOfWork 밖에서 이력을 조회하면, 호출이 거부되고 DB와 상위 경로가 생성되지 않습니다.`, `활성 UnitOfWork 밖에서 빈 이력을 기록하면, 호출이 거부되고 DB와 상위 경로가 생성되지 않습니다.`, `활성 UnitOfWork 밖에서 Presentation을 기록하면, 호출이 거부되고 DB와 상위 경로가 생성되지 않습니다.`라는 `withScenarios` 입력으로 나눕니다. 그 밖의 Scenario는 다음 동작을 검증합니다.
+
+- `Repository A를 UnitOfWork B 안에서 조회하면, A 경계를 거부하고 B 이력과 A 경로를 보존합니다.`와 `Repository A를 UnitOfWork B 안에서 기록하면, A 경계를 거부하고 B 이력과 A 경로를 보존합니다.`
+- `같은 UnitOfWork를 중첩하면, 부모 변경을 rollback하고 기존 이력을 유지합니다.` 및 `다른 UnitOfWork를 중첩하면, 부모 변경을 rollback하고 자식 경로를 만들지 않습니다.`
+- `정상 scope가 끝나면 Repository 직접 조회를 거부하고 commit된 기록을 유지합니다.`와 `예외 scope 뒤 직접 기록을 거부하고 같은 어댑터의 다음 요청을 정상 commit합니다.`
+- `callback이 직접 던진 SQLException은 같은 객체로 전달하고 새 기록을 rollback합니다.`
+- `같은 UnitOfWork와 Repository를 두 스레드에서 사용하면, 각 결과와 기록을 보존합니다.` 시작을 callback 진입 전에 latch로 맞추고 호출 횟수는 검증하지 않습니다.
+
+각 Scenario는 `Presentation` 객체 동일성 대신 Session ID, Guideline ID, 시각 열과 독립 DB 행을 비교합니다.
+
+기존 `GuidelinePresentationIntegrationTest`의 빈 검색 Scenario에는 DB 파일뿐 아니라 상위 경로가 생기지 않는 검증만 추가합니다. 기존 22개 SQLite 통합 Scenario의 assertion은 그대로 유지합니다. 두 계약 Step 승인이 끝나기 전에는 실제 구현을 추가하지 않습니다.
+
+두 번째 Step 검증은 `spotlessApply` 뒤 `SqlitePresentationUnitOfWorkIntegrationTest`만 실행합니다. 전체 테스트 소스 컴파일은 성공하고 하위 adapter 호출이 SQLite UnitOfWork 또는 Repository의 `NotImplementedError` stub에서 실패해야 합니다. 컴파일 오류나 기대 예외와 다른 테스트 실패는 의도한 RED로 인정하지 않습니다. 기존 통합 테스트를 실행하거나 그 assertion을 변경해 RED를 만들지 않습니다.
 
 두 계약 Step을 각각 root가 검토하고 커밋·게시한 뒤 구현합니다. Core 회귀 테스트는 변경하지 않고 구현 후 실행합니다.
 
@@ -138,8 +150,8 @@ API를 바꾼 테스트 전용 단계에서는 새 `UnitOfWork` 포트와 Reposi
 
 ## 구현 순서
 
-1. **Config**: SQLite 경로와 연결·시도 정책을 보유하는 설정과 `openDatabase(connectionRegistration)`을 추가합니다. 호출 시 실제 연결은 열지 않으며 생성 시 파일, 디렉터리, 스키마도 만들지 않습니다.
-2. **UnitOfWork**: Exposed Database 연결, 활성 경계 검사, 중첩 거부, 스키마 초기화, commit/rollback/close, SQL 오류 분류와 원인 보존을 구현합니다.
+1. **Config**: SQLite 경로와 연결·시도 정책, 실행 시 경로 준비와 Database 조립을 담당하는 `openDatabase(connectionRegistration)`, 활성 transaction에서 스키마를 준비하는 `initializeSchema()`를 추가합니다. Config 생성은 파일, 디렉터리, 연결, 스키마에 접근하지 않습니다.
+2. **UnitOfWork**: 활성 경계 검사, 중첩 거부, Config가 제공한 Database의 Exposed transaction, Config의 스키마 초기화 호출, commit/rollback/close, SQL 오류 분류와 원인 보존을 구현합니다. 경로와 구체 스키마 정의는 직접 다루지 않습니다.
 3. **Repository**: 활성 Database transaction을 요구하는 Exposed CRUD와 저장 행 변환을 구현합니다. 직접 SQL 문자열을 사용하지 않습니다.
 4. **Application 및 factory**: 별도 UnitOfWork와 Repository를 주입하고 검색 전후 순서를 유지합니다. factory는 passive config와 adapter만 조립하고 빈 검색의 지연 동작을 보존합니다.
 5. **회귀 검증**: Core 테스트, Application 테스트, SQLite 및 독립 JVM 통합 시나리오 순으로 검증합니다. 실행은 `spotlessApply`, 해당 패키지 테스트, clean 없는 incremental `build` 순서를 따릅니다.

@@ -79,9 +79,9 @@ interface UnitOfWork {
 
 `UnitOfWork.execute`는 callback을 실행하고 성공 시 commit한 뒤에만 결과를 반환합니다. callback 또는 commit 실패는 전체 rollback을 시도합니다. 같은 Database의 암묵적 중첩 transaction은 부모 transaction을 재사용할 수 있으므로, 현재 Exposed transaction이 하나라도 활성 상태면 같은 UnitOfWork 또는 다른 UnitOfWork의 중첩 `execute`를 `IllegalStateException`으로 거부합니다. 중첩 또는 propagation 정책은 제공하지 않습니다.
 
-SQLite 구성은 `config.SqlitePresentationConfig(databasePath: Path)`가 맡습니다. 기본 DB 경로는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`이며 통합 테스트는 임시 경로를 전달합니다. Config의 내부 `openDatabase(connectionRegistration): Database`는 SQLite driver 설정, connection factory와 Exposed 설정을 적용한 새 Exposed `Database` 객체를 반환합니다. connection factory는 실제 `Connection`을 열지 않고 실행 시점까지 지연합니다. Config 생성자는 디렉터리, DB 연결 또는 스키마를 만들지 않습니다.
+SQLite 경로, 연결 설정과 스키마 초기화는 `config.SqlitePresentationConfig(databasePath: Path)`가 맡습니다. 기본 DB 경로는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`이며 통합 테스트는 임시 경로를 전달합니다. Config 생성자는 경로 정규화, 디렉터리 생성, DB 연결 또는 스키마 초기화를 하지 않습니다. UnitOfWork가 중첩 경계를 확인한 뒤 실행 시점에 호출하는 내부 `openDatabase(connectionRegistration): Database`가 경로를 정규화하고 상위 디렉터리를 준비해 SQLite driver 설정, connection factory와 Exposed 설정을 적용한 새 Exposed `Database` 객체를 반환합니다. 경로 준비 실패는 Config가 기존 환경 오류로 변환합니다. connection factory는 실제 `Connection`을 열지 않고 Exposed transaction 시작까지 연결을 지연합니다. `initializeSchema()`는 UnitOfWork가 연 현재 Exposed transaction 안에서 `SchemaUtils.create(PresentationTable)`을 수행합니다.
 
-`storage.SqlitePresentationUnitOfWork(config)`는 각 `execute`에서 실행별 연결 실패 수집기와 Exposed `Database`를 만들고 transaction이 끝나면 `finally`에서 Database를 해제합니다. `storage.SqlitePresentationRepository(unitOfWork)`는 매 호출 때 주입된 UnitOfWork의 현재 transaction-local context를 확인해 소유 경계 안에서 CRUD를 수행합니다. factory는 하나의 UnitOfWork 인스턴스를 만들어 Application과 Repository에 각각 주입합니다. 매 요청의 Database와 실패 상태는 실행별로 분리되어 adapter 객체는 여러 요청에서 재사용할 수 있습니다.
+`storage.SqlitePresentationUnitOfWork(config)`는 각 `execute`에서 실행별 연결 실패 수집기를 만들고 `config.openDatabase(connectionRegistration)`으로 받은 Exposed `Database`에서 transaction을 엽니다. transaction callback 전에 `config.initializeSchema()`를 호출합니다. transaction이 끝나면 `finally`에서 Database를 해제합니다. UnitOfWork는 경로, SQLite driver 설정, `PresentationTable` 또는 구체 DDL을 직접 다루지 않고 transaction 경계와 오류 수명을 관리합니다. `storage.SqlitePresentationRepository(unitOfWork)`는 매 호출 때 주입된 UnitOfWork의 현재 transaction-local context를 확인해 소유 경계 안에서 CRUD를 수행합니다. factory는 하나의 UnitOfWork 인스턴스를 만들어 Application과 Repository에 각각 주입합니다. 매 요청의 Database와 실패 상태는 실행별로 분리되어 adapter 객체는 여러 요청에서 재사용할 수 있습니다.
 
 Application은 검색을 트랜잭션 전에 실행합니다. 검색 결과가 비어 있으면 빈 목록을 반환하고 SQLite를 열지 않습니다. 검색 결과가 있으면 아래 동작 전체를 하나의 콜백으로 전달합니다.
 
@@ -124,7 +124,7 @@ return unitOfWork.execute {
 
 ## SQLite 계약
 
-기본 경로는 `Path.of(System.getProperty("user.home"), ".adaptive-guidebook", "adaptive-guidebook.db")`입니다. 파일이 없으면 상위 디렉터리와 DB를 만들고 `presentation` 테이블을 초기화합니다. 경로를 검증하는 테스트는 임시 경로를 `-Duser.home`으로 전달한 독립 JVM에서 기본 factory를 호출합니다. 사용자 `HOME` 환경 변수와 실제 사용자 홈을 변경하지 않습니다.
+기본 경로는 `Path.of(System.getProperty("user.home"), ".adaptive-guidebook", "adaptive-guidebook.db")`입니다. Config 생성은 경로를 정규화하거나 상위 디렉터리를 만들지 않습니다. 실제 `execute`에서 Config의 `openDatabase`가 상위 디렉터리와 Exposed `Database`를 준비하고, UnitOfWork transaction 안에서 Config의 `initializeSchema()`가 `presentation` 테이블을 초기화합니다. 경로를 검증하는 테스트는 임시 경로를 `-Duser.home`으로 전달한 독립 JVM에서 기본 factory를 호출합니다. 사용자 `HOME` 환경 변수와 실제 사용자 홈을 변경하지 않습니다.
 
 ```sql
 CREATE TABLE IF NOT EXISTS presentation (
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS presentation (
 
 저장 행을 Session, Guideline, 시각 값으로 재구성하지 못하거나 잘못된 중복 이력을 읽으면 `PresentationDatabaseCorruptException`으로 변환합니다. 도메인 또는 Application callback 자체에서 발생한 오류는 rollback한 뒤 기존 예외 타입과 원인을 그대로 전달합니다. callback이 직접 던진 `SQLException`은 원래 객체를 유지합니다. 저장 오류 타입으로 덮지 않습니다. Repository SQL 실패와 callback SQL 실패는 Exposed transaction-local metadata에서 원본 실패 객체를 구분해 공개 오류를 분류합니다. rollback 실패 시 `PresentationTransactionRollbackException`의 cause에는 원래 SQL 오류를, suppressed에는 rollback 실패를 보존합니다.
 
-영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc`, `dao` API를 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. `SqlitePresentationUnitOfWork`가 `SchemaUtils.create(PresentationTable)`을 callback 전에 현재 transaction에서 수행합니다. 어댑터 내부의 복합 키 테이블과 DAO Entity는 기존 3컬럼 SQLite 스키마를 표현하며 도메인 `Presentation`을 대체하지 않습니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
+영속성 어댑터는 Exposed 1.6.0의 `core`, `jdbc`, `dao` API를 사용하고 SQLite JDBC 3.53.4.0 driver를 유지합니다. UnitOfWork가 callback 전에 현재 transaction 안에서 `SqlitePresentationConfig.initializeSchema()`를 호출하며, Config는 내부에서 `SchemaUtils.create(PresentationTable)`을 수행합니다. 어댑터 내부의 복합 키 테이블과 DAO Entity는 기존 3컬럼 SQLite 스키마를 표현하며 도메인 `Presentation`을 대체하지 않습니다. TTL, 세션 테이블, 별도 캐시, 자동 삭제는 추가하지 않습니다. 실제 Hook과 CLI 연결은 이 계약에 포함하지 않습니다.
 
 ## 실패 계약
 
@@ -194,10 +194,19 @@ CREATE TABLE IF NOT EXISTS presentation (
 현재 변경은 두 계약 Step으로 나누어 진행합니다. 기존 Core 테스트인 `PresentationSessionTest`, `PresentationTest`와 값 객체 테스트는 변경하지 않습니다.
 
 1. **Application 계약 Step**: `GuidelinePresentationServiceTest`는 기존 검색 서비스, 실제 도메인 객체, 메모리 Repository Fake, 별도 Fake UnitOfWork와 고정 Clock을 연결합니다. Repository Fake는 활성 UnitOfWork 안에서만 CRUD를 허용하고 commit된 상태를 확인합니다. 검색 입력 Fake는 active transaction 안에서 검색이 시작되면 실패해 검색이 저장 transaction 밖에 있음을 보장합니다. 빈 검색 Scenario는 저장소뿐 아니라 UnitOfWork도 실행되지 않게 합니다. 기존 `GuidelinePresentationIntegrationTest`는 이 Step에서 생성자와 fixture 조립만 변경하며 assertion과 Scenario는 추가하지 않습니다.
-2. **영속성 경계 계약 Step**: Repository와 UnitOfWork의 활성 범위, 중첩 실행 거부, commit 전 반환 금지, 원본 SQL 오류와 rollback·close 원인 보존을 별도 Scenario로 검증합니다. 기존 실제 SQLite 통합 Scenario는 새 API에서도 assertion을 유지합니다.
+2. **영속성 경계 계약 Step**: `SqlitePresentationUnitOfWorkIntegrationTest`는 아래 SQLite 경계 Scenario를 실행합니다.
+   - 세 `withScenarios` 입력: 활성 UnitOfWork 밖에서 이력 조회, 빈 이력 기록, 유효 Presentation 기록
+   - Repository A를 UnitOfWork B 안에서 조회하거나 기록했을 때 A 경계 거부, B의 기존 행 보존, A 경로 미생성
+   - 같은 UnitOfWork 또는 다른 UnitOfWork를 중첩했을 때 거부, 부모 변경 rollback, 자식 경로 미생성
+   - 정상 scope가 끝난 뒤 Repository 직접 조회 거부 및 commit 행 유지
+   - 예외 scope가 끝난 뒤 직접 기록 거부, 행 rollback, 같은 adapter 재사용 후 새 요청 commit
+   - callback이 직접 던진 `SQLException`의 동일 객체 전달과 새 기록 rollback
+   - 같은 UnitOfWork와 Repository를 공유하는 두 스레드의 반환값과 commit 행
 
-각 Step은 root 검토 후 커밋·게시합니다. 두 계약 Step이 모두 끝나기 전에는 실제 구현을 추가하지 않습니다. RED 단계에는 한국어 설명이 있는 compileable `NotImplementedError` stub을 사용하고, 지정한 Application 테스트만 실행해 컴파일 성공 후 Application stub에서 실패하는지 확인합니다. Configuration 또는 라이브러리 기동 전용 테스트는 추가하지 않습니다. Hook/CLI 프로세스 연결도 이 계약에 포함하지 않습니다.
+   DB 행은 Session ID, Guideline ID와 시각 값으로 관찰하며 도메인 객체 동등성에는 의존하지 않습니다. 기존 22개 SQLite 통합 Scenario의 assertion은 그대로 둡니다. 기존 빈 검색 통합 Scenario에는 DB 상위 경로 미생성 assertion만 더합니다.
+
+각 Step은 root 검토 후 커밋·게시합니다. 두 계약 Step이 모두 끝나기 전에는 실제 구현을 추가하지 않습니다. RED 단계에는 한국어 설명이 있는 compileable `NotImplementedError` stub을 사용합니다. 첫 Step은 Application 테스트, 두 번째 Step은 `SqlitePresentationUnitOfWorkIntegrationTest`만 실행해 컴파일 성공 후 해당 stub에서 실패하는지 확인합니다. Configuration 또는 라이브러리 기동 전용 테스트는 추가하지 않습니다. Hook/CLI 프로세스 연결도 이 계약에 포함하지 않습니다.
 
 SQLite 원자성 테스트는 테스트 DB에 실제 `BEFORE INSERT` trigger를 설치해 특정 두 번째 Guideline 행 삽입을 실패시킵니다. 운영 코드의 오류 주입 옵션은 만들지 않습니다. 독립 프로세스 테스트도 같은 테스트 진입점을 사용하며 운영 CLI를 변경하지 않습니다.
 
-계약 테스트를 모두 커밋·게시한 뒤 Config, UnitOfWork, Repository, Application wiring 순으로 구현합니다. 기존 Core 동작은 변경하지 않습니다. 실제 SQLite 및 독립 JVM 통합 검증은 하위 구현 뒤에 수행합니다.
+각 계약 Step은 `spotlessApply` 뒤 해당 Step의 테스트만 실행합니다. 두 번째 Step도 `SqlitePresentationUnitOfWorkIntegrationTest`만 실행해 컴파일 성공과 SQLite UnitOfWork/Repository `NotImplementedError`에 의한 의도한 RED를 확인합니다. 계약 테스트를 모두 커밋·게시한 뒤 Config, UnitOfWork, Repository, Application wiring 순으로 구현합니다. 기존 Core 동작은 변경하지 않습니다. 실제 SQLite 및 독립 JVM 통합 검증은 하위 구현 뒤에 수행합니다.

@@ -216,6 +216,7 @@ class GuidelinePresentationIntegrationTest :
 
             result shouldBe emptyList()
             Files.exists(databasePath) shouldBe false
+            Files.exists(databasePath.parent) shouldBe false
           }
         }
       }
