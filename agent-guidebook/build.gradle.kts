@@ -24,6 +24,7 @@ kotlin {
 }
 
 dependencies {
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
   implementation("org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r")
   implementation("org.jetbrains.exposed:exposed-core:1.6.0")
   implementation("org.jetbrains.exposed:exposed-jdbc:1.6.0")
