@@ -1,4 +1,5 @@
 plugins {
+  application
   kotlin("jvm") version "2.3.21"
   id("com.diffplug.spotless") version "8.10.2"
 }
@@ -6,6 +7,11 @@ plugins {
 group = "com.springkit.agentguidebook"
 
 version = "0.0.1-SNAPSHOT"
+
+application {
+  mainClass.set("com.springkit.agentguidebook.codex.MainKt")
+  applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
 
 repositories {
   mavenCentral()
@@ -24,7 +30,9 @@ kotlin {
 }
 
 dependencies {
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
   implementation("org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r")
+  runtimeOnly("org.slf4j:slf4j-nop:2.0.18")
   implementation("org.jetbrains.exposed:exposed-core:1.6.0")
   implementation("org.jetbrains.exposed:exposed-jdbc:1.6.0")
   implementation("org.xerial:sqlite-jdbc:3.53.4.0")
@@ -37,6 +45,15 @@ dependencies {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  dependsOn(tasks.named("installDist"))
+  systemProperty(
+      "agentGuidebook.applicationExecutable",
+      layout.buildDirectory
+          .file("install/agent-guidebook/bin/agent-guidebook")
+          .get()
+          .asFile
+          .absolutePath,
+  )
   systemProperty("agentGuidebook.testRuntimeClasspath", sourceSets["test"].runtimeClasspath.asPath)
 }
 
