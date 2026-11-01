@@ -10,6 +10,7 @@ version = "0.0.1-SNAPSHOT"
 
 application {
   mainClass.set("com.springkit.agentguidebook.codex.MainKt")
+  applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
 repositories {
@@ -31,6 +32,7 @@ kotlin {
 dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
   implementation("org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r")
+  runtimeOnly("org.slf4j:slf4j-nop:2.0.18")
   implementation("org.jetbrains.exposed:exposed-core:1.6.0")
   implementation("org.jetbrains.exposed:exposed-jdbc:1.6.0")
   implementation("org.xerial:sqlite-jdbc:3.53.4.0")

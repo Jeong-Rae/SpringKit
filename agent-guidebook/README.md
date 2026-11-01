@@ -1,7 +1,7 @@
 # Agent Guidebook
 
-Agent Guidebook은 변경된 Kotlin 파일과 프로젝트 지침을 검색해 관련 지침의
-ID와 본문을 반환하고, 요청한 Session에 이미 제공한 지침을 기록하는 Kotlin 라이브러리입니다.
+Agent Guidebook은 변경된 Kotlin 파일에 적용할 프로젝트 지침을 검색하고, 요청한
+Session에 새로 제공한 지침을 기록하는 Kotlin 라이브러리와 JVM 실행 앱입니다.
 요구사항은 [검색 계약](../docs/agent-guidebook-search-contract.md),
 [Presentation 계약](../docs/agent-guidebook-presentation-contract.md),
 [POC 문서](../docs/agent-guidebook-poc.md), [기술 노트](../docs/agent-guidebook-poc-technical-notes.md)를 따릅니다.
@@ -13,8 +13,9 @@ ID와 본문을 반환하고, 요청한 Session에 이미 제공한 지침을 �
 | 패키지 | 책임 |
 | --- | --- |
 | `config` | SQLite 경로와 연결 정책, 실행 시 Database 조립 및 transaction 안의 스키마 초기화 |
+| `features.presentation` | Session에 새로 제공할 지침 검색과 이력 기록 UseCase |
 | `models` | 공개 요청, 응답과 값 객체 |
-| `services` | 검색 및 Session별 지침 제공 조율과 입력 읽기 경계 |
+| `services` | 검색, 입력 읽기 경계와 기존 호출자를 위한 Presentation 서비스 |
 | `client` | 공개 검색·지침 제공 factory와 실제 입력 경계 조립 |
 | `core` | 적용 범위, 정규식 일치, 지침 검색 규칙, Session별 제공 이력의 선별과 기록 |
 | `storage` | 파일 시스템, YAML, Git 입력 및 SQLite 이력 어댑터 |
@@ -72,8 +73,10 @@ SQLite 잠금은 최대 1,000ms 대기하며, 그 뒤에도 잠금이 유지되�
 세 `TEXT` 열과 `(session_id, guideline_id)` 기본 키는 일반 Exposed `Table`로 정의하고, Repository는 typed `selectAll`과 `insert`로 조회·기록합니다. 조회한 문자열 행은 transaction 안에서 도메인 `Presentation`으로 복원합니다. 구현 판단과 실패 경계는
 [SQLite 저장소 라이브러리 검토](../docs/agent-guidebook-sqlite-library-review.md)에서 확인할 수 있습니다.
 
-이 Kotlin API는 기존 Codex Hook이나 운영 CLI와 연결되어 있지 않습니다.
-Session별 제공 이력의 검증 단계와 결과는
+Codex `PostToolUse` Hook wrapper는 배포한 JVM 앱에 연결되어 있습니다. 앱은 입력 Adapter,
+`GuidelinePresentationFactory`, 출력 Adapter를 차례로 조립합니다. `features.presentation`의
+`PresentGuidelinesUseCase`가 검색과 Session별 이력 기록을 조율하며, 기존
+`GuidelinePresentationService.present`도 같은 UseCase로 위임합니다. Session별 제공 이력의 검증 단계와 결과는
 [Presentation 검증 기록](../docs/agent-guidebook-presentation-verification.md)에서 확인할 수 있습니다.
 
 검색은 `.kt`와 `.kts` 파일만 읽고, `cwd/.agents/guides` 아래의 `guideline.yaml`을
@@ -87,12 +90,15 @@ JGit의 시스템 설정 탐색은 환경에 따라 Git 프로세스를 실행�
 
 ## Codex PostToolUse Hook
 
-`hooks/post-tool-use.sh`는 Codex가 보낸 Hook stdin을 단일 실행 파일에 그대로 전달합니다. 실행 파일의 stdout, stderr, 종료 코드와 Codex 호출 cwd를 보존합니다. wrapper는 Hook JSON을 읽거나 변환하지 않으며 Kotlin 검색 앱과 연결되어 있지 않습니다. 실행 앱은 Hook 응답 JSON을 stdout에 직접 써야 합니다.
+`hooks/post-tool-use.sh`는 Codex가 보낸 Hook stdin을 단일 실행 파일에 그대로 전달합니다. Gradle `application` 배포 스크립트를 설정하면 wrapper가 Kotlin 앱을 실행하며 stdout, stderr, 종료 코드와 호출 cwd를 보존합니다. wrapper는 Hook JSON을 해석하지 않습니다. JVM 앱이 입력을 읽고 필요한 경우 `hookSpecificOutput.additionalContext` JSON을 stdout에 씁니다.
 
 실행 파일은 `AGENT_GUIDEBOOK_APP_EXECUTABLE` 환경 변수에 절대 경로로 지정하고, Codex 프로세스가 그 환경을 상속하도록 시작합니다.
 
 ```sh
-export AGENT_GUIDEBOOK_APP_EXECUTABLE="/absolute/path/to/agent-guidebook-app"
+cd agent-guidebook
+./gradlew installDist
+export AGENT_GUIDEBOOK_APP_EXECUTABLE="$PWD/build/install/agent-guidebook/bin/agent-guidebook"
+cd /absolute/path/to/target-project
 codex
 ```
 
@@ -100,11 +106,13 @@ codex
 
 Codex 설정에 `PostToolUse` command hook을 등록하고, wrapper의 절대 경로를 지정합니다. [예제 설정](hooks/hooks.example.json)은 matcher를 `^apply_patch$`로 제한합니다. JSON의 `command` 값은 셸 명령 문자열이므로, 공백이 있는 wrapper 경로는 JSON 문자열 내부에서 다시 따옴표로 감싸야 합니다. 예제의 checkout 경로는 실제 위치로 바꾸고, 프로젝트 설정을 쓸 때는 Codex에서 해당 `.codex/` 계층을 신뢰해야 합니다.
 
-실제 Hook probe에서는 Codex CLI inline 설정을 검증했습니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 별도 runtime 검증 전까지 미확인입니다.
+생산 wrapper와 배포 앱의 표준 입력·출력·오류·종료 코드는 프로세스 통합 테스트로 검증합니다. 실제 Codex 다음 모델 입력에 추가 컨텍스트가 전달되는 runtime probe는 별도 확인 대상입니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 별도 runtime 검증 전까지 미확인입니다.
 
 검증 단계와 실제 run4 payload, canary 결과는 [Hook 검증 기록](../docs/agent-guidebook-hook-verification.md)에서 확인할 수 있습니다.
 
-환경 변수나 앱 경로가 잘못되면 wrapper는 한국어 진단을 stderr에 쓰고 종료 코드 64, 127 또는 126을 반환합니다. 유효한 앱이 실행되면 앱이 반환한 종료 코드를 그대로 전달합니다. 기본 테스트와 실행 방법은 아래 [검증](#검증) 절을 따릅니다.
+입력 Adapter는 `PostToolUse`의 `apply_patch` 이벤트만 처리합니다. 대상 요청에는 비어 있지 않은 `session_id`, 절대 경로 `cwd`, 문자열 `tool_response`가 필요합니다. 성공한 `tool_response`의 `Exit code: 0`과 `Success. Updated the following files:` marker 아래에서 추가·수정된 경로를 읽습니다. marker부터 시작하는 원래 도구 출력도 지원합니다. 상대 경로는 `cwd` 기준으로 해석합니다. 삭제되거나 현재 없는 경로와 디렉터리는 검색하지 않습니다. 기존 검색 서비스가 `.kt`와 `.kts` 파일만 읽습니다. 다른 이벤트·도구, 실패한 패치, 검색 대상이 없는 요청은 빈 stdout과 종료 코드 0을 반환합니다.
+
+잘못된 Hook JSON이나 대상 이벤트의 필드 오류는 stderr 진단과 종료 코드 64를 반환합니다. 검색·저장·표준 스트림 오류는 원인 메시지를 stderr에 쓰고 종료 코드 1을 반환합니다. stdout에는 진단이나 실패 JSON을 쓰지 않습니다. wrapper의 실행 파일 설정 오류는 64, 파일을 찾을 수 없는 경우는 127, 실행할 수 없는 경우는 126을 반환합니다. 유효한 앱을 실행한 뒤에는 앱의 종료 코드를 그대로 전달합니다. 기본 테스트와 실행 방법은 아래 [검증](#검증) 절을 따릅니다.
 
 ## 검증
 
@@ -119,4 +127,4 @@ Spotless의 ktfmt로 포맷합니다. Kotest는 JUnit Platform에서 실행합�
 ./gradlew build
 ```
 
-빌드 결과는 `build/libs/agent-guidebook-0.0.1-SNAPSHOT.jar`입니다.
+`./gradlew installDist`는 `build/install/agent-guidebook/bin/agent-guidebook` 실행 스크립트와 JVM 의존성을 설치합니다. 배포 스크립트에는 SQLite JDBC의 Java 25 native access 옵션과 SLF4J no-op provider가 포함되어 정상 기동 때 라이브러리 경고를 stderr에 쓰지 않습니다. 테스트는 이 배포 스크립트를 사용해 Hook 프로세스를 검증합니다. 빌드 결과에는 `build/libs/agent-guidebook-0.0.1-SNAPSHOT.jar`도 포함됩니다.
