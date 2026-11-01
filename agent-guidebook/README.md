@@ -106,7 +106,7 @@ codex
 
 Codex 설정에 `PostToolUse` command hook을 등록하고, wrapper의 절대 경로를 지정합니다. [예제 설정](hooks/hooks.example.json)은 matcher를 `^apply_patch$`로 제한합니다. JSON의 `command` 값은 셸 명령 문자열이므로, 공백이 있는 wrapper 경로는 JSON 문자열 내부에서 다시 따옴표로 감싸야 합니다. 예제의 checkout 경로는 실제 위치로 바꾸고, 프로젝트 설정을 쓸 때는 Codex에서 해당 `.codex/` 계층을 신뢰해야 합니다.
 
-생산 wrapper와 배포 앱의 표준 입력·출력·오류·종료 코드는 프로세스 통합 테스트로 검증합니다. 실제 Codex 다음 모델 입력에 추가 컨텍스트가 전달되는 runtime probe는 별도 확인 대상입니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 별도 runtime 검증 전까지 미확인입니다.
+생산 wrapper와 배포 앱의 표준 입력·출력·오류·종료 코드는 프로세스 통합 테스트로 검증합니다. Codex CLI 0.166.0의 임시 Git 프로젝트에서 CLI inline Hook 설정으로 실행해, 실제 추가 컨텍스트가 다음 모델 입력에 전달되는 것을 확인했습니다. 이 실행은 성공했으며, Codex stderr에는 별도 MCP worker의 HTTP 403 로그도 포함됐습니다. [Codex Hook adapter 검증 기록](../docs/agent-guidebook-codex-adapter-verification.md)에 실행 증거를 기록합니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 아직 runtime 검증되지 않았습니다.
 
 검증 단계와 실제 run4 payload, canary 결과는 [Hook 검증 기록](../docs/agent-guidebook-hook-verification.md)에서 확인할 수 있습니다.
 
