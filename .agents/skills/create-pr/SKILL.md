@@ -5,6 +5,7 @@ description: >
   Use when preparing a branch, committing changes, writing a PR title or body,
   publishing a draft PR, updating it after review, or recovering from a failed
   publication. Follow repository instructions for tools and workflow.
+license: MIT
 metadata:
   internal: true
 ---
@@ -25,3 +26,6 @@ rules.
 - Then read [references/pr-description.md](references/pr-description.md) fully
   for composition, diagrams, links, and the default body structure. Apply
   the repository's or user's writing rules.
+- When researching or revising these PR writing rules, consult
+  [references/pr-description-sources.md](references/pr-description-sources.md)
+  for the supporting materials. Do not load it for routine PR drafting.

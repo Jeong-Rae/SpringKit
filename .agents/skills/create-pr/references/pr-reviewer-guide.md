@@ -63,17 +63,3 @@ PR의 제목, 브랜치, 푸터, 권한 및 게시 절차에는 저장소의 `AG
 
 마지막 섹션은 해당 사항이 없다면 생략합니다. 작은 변경에는 본문과 섹션 수를 줄입니다.
 검토할 사항 역시 일반적인 품질 체크리스트로 채우지 않고, 실제 변경에서 판단해야 하는 부분만 작성합니다.
-
-## 예시: SpringKit
-
-- [PR #34](https://github.com/Jeong-Rae/SpringKit/pull/34): 변경 책임과 구체적 검토 계약을 분리하고 관련 계약 문서에 직접 연결합니다.
-- [PR #35](https://github.com/Jeong-Rae/SpringKit/pull/35): `61개 RED`, `284개 테스트 통과`, `spotlessApply → test → build` 등 일반 수행 기록은 제외합니다. 실제 Codex 통합 검증의 중요한 결과, 지원하는 입력 형식과 출력 실패 후 재전송 제약, `hooks.json` 미검증 범위는 필요한 경우 남깁니다.
-
-## 참고 근거
-
-아래 자료는 이 프로젝트의 규칙을 설계할 때 참고한 자료이며, 프로젝트의 Must·Must Not은 이 문서가 정합니다.
-
-- [Google Engineering Practices: Writing good CL descriptions](https://google.github.io/eng-practices/review/developer/cl-descriptions.html)
-- [GitHub Docs: Helping others review your changes](https://docs.github.com/en/pull-requests/concepts/helping-others-review-your-changes)
-- [CodeRabbit: Pull Request Reviews](https://docs.coderabbit.ai/pr-reviews/summaries)
-- [PR-Agent: Describe](https://docs.pr-agent.ai/tools/describe/)
