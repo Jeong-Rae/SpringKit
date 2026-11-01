@@ -1,4 +1,5 @@
 plugins {
+  application
   kotlin("jvm") version "2.3.21"
   id("com.diffplug.spotless") version "8.10.2"
 }
@@ -6,6 +7,10 @@ plugins {
 group = "com.springkit.agentguidebook"
 
 version = "0.0.1-SNAPSHOT"
+
+application {
+  mainClass.set("com.springkit.agentguidebook.codex.MainKt")
+}
 
 repositories {
   mavenCentral()
@@ -38,6 +43,15 @@ dependencies {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  dependsOn(tasks.named("installDist"))
+  systemProperty(
+      "agentGuidebook.applicationExecutable",
+      layout.buildDirectory
+          .file("install/agent-guidebook/bin/agent-guidebook")
+          .get()
+          .asFile
+          .absolutePath,
+  )
   systemProperty("agentGuidebook.testRuntimeClasspath", sourceSets["test"].runtimeClasspath.asPath)
 }
 
