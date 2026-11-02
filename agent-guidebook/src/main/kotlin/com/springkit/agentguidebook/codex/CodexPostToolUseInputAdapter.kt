@@ -41,17 +41,18 @@ class CodexPostToolUseInputAdapter {
         try {
           Json.parseToJsonElement(input)
         } catch (cause: SerializationException) {
-          invalidInput("Codex Hook 입력 JSON을 해석할 수 없습니다.", cause)
+          throw InvalidCodexHookInputException("Codex Hook 입력 JSON을 해석할 수 없습니다.", cause)
         }
 
-    return element as? JsonObject ?: invalidInput("Codex Hook 입력은 JSON 객체여야 합니다.")
+    return element as? JsonObject
+        ?: throw InvalidCodexHookInputException("Codex Hook 입력은 JSON 객체여야 합니다.")
   }
 
   private fun requiredString(input: JsonObject, name: String): String {
     val value = input[name] as? JsonPrimitive
 
     if (value == null || !value.isString) {
-      invalidInput("Codex Hook 입력의 $name 필드는 문자열이어야 합니다.")
+      throw InvalidCodexHookInputException("Codex Hook 입력의 $name 필드는 문자열이어야 합니다.")
     }
 
     return value.content
@@ -61,7 +62,7 @@ class CodexPostToolUseInputAdapter {
       try {
         SessionId(value)
       } catch (cause: IllegalArgumentException) {
-        invalidInput("Codex Hook 입력의 session_id 필드가 비어 있습니다.", cause)
+        throw InvalidCodexHookInputException("Codex Hook 입력의 session_id 필드가 비어 있습니다.", cause)
       }
 
   private fun absolutePath(value: String, fieldName: String): Path {
@@ -69,11 +70,11 @@ class CodexPostToolUseInputAdapter {
         try {
           Path.of(value)
         } catch (cause: InvalidPathException) {
-          invalidInput("Codex Hook 입력의 $fieldName 경로가 올바르지 않습니다.", cause)
+          throw InvalidCodexHookInputException("Codex Hook 입력의 $fieldName 경로가 올바르지 않습니다.", cause)
         }
 
     if (!path.isAbsolute) {
-      invalidInput("Codex Hook 입력의 $fieldName 경로는 절대 경로여야 합니다.")
+      throw InvalidCodexHookInputException("Codex Hook 입력의 $fieldName 경로는 절대 경로여야 합니다.")
     }
 
     return path
@@ -111,20 +112,20 @@ class CodexPostToolUseInputAdapter {
 
   private fun parseChangeLine(line: String): Pair<Char, Path> {
     if (line.length < 3 || line[0] !in CHANGE_STATUSES || line[1] != ' ') {
-      invalidInput("Codex Hook 입력의 변경 파일 목록 형식이 올바르지 않습니다.")
+      throw InvalidCodexHookInputException("Codex Hook 입력의 변경 파일 목록 형식이 올바르지 않습니다.")
     }
 
     val pathValue = line.substring(2)
 
     if (pathValue.isEmpty()) {
-      invalidInput("Codex Hook 입력의 변경 파일 경로가 비어 있습니다.")
+      throw InvalidCodexHookInputException("Codex Hook 입력의 변경 파일 경로가 비어 있습니다.")
     }
 
     val path =
         try {
           Path.of(pathValue)
         } catch (cause: InvalidPathException) {
-          invalidInput("Codex Hook 입력의 변경 파일 경로가 올바르지 않습니다.", cause)
+          throw InvalidCodexHookInputException("Codex Hook 입력의 변경 파일 경로가 올바르지 않습니다.", cause)
         }
 
     return line[0] to path
@@ -158,11 +159,6 @@ class CodexPostToolUseInputAdapter {
       }
     }
   }
-
-  private fun invalidInput(
-      message: String,
-      cause: Throwable? = null,
-  ): Nothing = throw InvalidCodexHookInputException(message, cause)
 
   private companion object {
     const val POST_TOOL_USE_EVENT = "PostToolUse"

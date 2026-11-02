@@ -8,7 +8,9 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -84,28 +86,32 @@ class CodexPostToolUseInputAdapterTest :
                 InvalidJsonScenario(
                     name = "JSON 문법이 잘못되면, 입력 오류를 전달합니다.",
                     input = """{"hook_event_name":""",
+                    expectedMessage = "Codex Hook 입력 JSON을 해석할 수 없습니다.",
+                    expectedCauseType = SerializationException::class.java,
                 ),
                 InvalidJsonScenario(
                     name = "최상위 값이 배열이면, 입력 오류를 전달합니다.",
                     input = "[]",
+                    expectedMessage = "Codex Hook 입력은 JSON 객체여야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "최상위 값이 null이면, 입력 오류를 전달합니다.",
                     input = "null",
+                    expectedMessage = "Codex Hook 입력은 JSON 객체여야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "최상위 값이 문자열이면, 입력 오류를 전달합니다.",
                     input = "\"text\"",
+                    expectedMessage = "Codex Hook 입력은 JSON 객체여야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "최상위 값이 숫자이면, 입력 오류를 전달합니다.",
                     input = "1",
+                    expectedMessage = "Codex Hook 입력은 JSON 객체여야 합니다.",
                 ),
             ),
         ) { scenario ->
-          shouldThrow<InvalidCodexHookInputException> {
-            adapter.read(scenario.input)
-          }
+          adapter.shouldReject(scenario)
         }
 
         withScenarios(
@@ -114,24 +120,26 @@ class CodexPostToolUseInputAdapterTest :
                 InvalidJsonScenario(
                     name = "hook_event_name이 없으면, 입력 오류를 전달합니다.",
                     input = hookInput(hookEventName = null),
+                    expectedMessage = "Codex Hook 입력의 hook_event_name 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "hook_event_name이 문자열이 아니면, 입력 오류를 전달합니다.",
                     input = hookInput(hookEventName = JsonPrimitive(1)),
+                    expectedMessage = "Codex Hook 입력의 hook_event_name 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "tool_name이 없으면, 입력 오류를 전달합니다.",
                     input = hookInput(toolName = null),
+                    expectedMessage = "Codex Hook 입력의 tool_name 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "tool_name이 문자열이 아니면, 입력 오류를 전달합니다.",
                     input = hookInput(toolName = JsonPrimitive(true)),
+                    expectedMessage = "Codex Hook 입력의 tool_name 필드는 문자열이어야 합니다.",
                 ),
             ),
         ) { scenario ->
-          shouldThrow<InvalidCodexHookInputException> {
-            adapter.read(scenario.input)
-          }
+          adapter.shouldReject(scenario)
         }
       }
 
@@ -142,32 +150,42 @@ class CodexPostToolUseInputAdapterTest :
                 InvalidJsonScenario(
                     name = "session_id가 없으면, 입력 오류를 전달합니다.",
                     input = hookInput(sessionId = null),
+                    expectedMessage = "Codex Hook 입력의 session_id 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "session_id가 문자열이 아니면, 입력 오류를 전달합니다.",
                     input = hookInput(sessionId = JsonPrimitive(7)),
+                    expectedMessage = "Codex Hook 입력의 session_id 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "cwd가 없으면, 입력 오류를 전달합니다.",
                     input = hookInput(cwd = null),
+                    expectedMessage = "Codex Hook 입력의 cwd 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "cwd가 문자열이 아니면, 입력 오류를 전달합니다.",
                     input = hookInput(cwd = JsonNull),
+                    expectedMessage = "Codex Hook 입력의 cwd 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "tool_response가 없으면, 입력 오류를 전달합니다.",
                     input = hookInput(toolResponse = null),
+                    expectedMessage = "Codex Hook 입력의 tool_response 필드는 문자열이어야 합니다.",
                 ),
                 InvalidJsonScenario(
                     name = "tool_response가 문자열이 아니면, 입력 오류를 전달합니다.",
                     input = hookInput(toolResponse = JsonPrimitive(false)),
+                    expectedMessage = "Codex Hook 입력의 tool_response 필드는 문자열이어야 합니다.",
+                ),
+                InvalidJsonScenario(
+                    name = "cwd에 NUL 문자가 있으면, 입력 오류와 InvalidPathException 원인을 전달합니다.",
+                    input = hookInput(cwd = JsonPrimitive("\u0000")),
+                    expectedMessage = "Codex Hook 입력의 cwd 경로가 올바르지 않습니다.",
+                    expectedCauseType = InvalidPathException::class.java,
                 ),
             ),
         ) { scenario ->
-          shouldThrow<InvalidCodexHookInputException> {
-            adapter.read(scenario.input)
-          }
+          adapter.shouldReject(scenario)
         }
 
         withScenarios(
@@ -176,22 +194,28 @@ class CodexPostToolUseInputAdapterTest :
                 InvalidJsonScenario(
                     name = "session_id가 빈 문자열이면, 입력 오류를 전달합니다.",
                     input = hookInput(sessionId = JsonPrimitive("")),
+                    expectedMessage = "Codex Hook 입력의 session_id 필드가 비어 있습니다.",
+                    expectedCauseType = IllegalArgumentException::class.java,
                 ),
                 InvalidJsonScenario(
                     name = "session_id가 공백으로만 구성되면, 입력 오류를 전달합니다.",
                     input = hookInput(sessionId = JsonPrimitive(" \t\n")),
+                    expectedMessage = "Codex Hook 입력의 session_id 필드가 비어 있습니다.",
+                    expectedCauseType = IllegalArgumentException::class.java,
                 ),
             ),
         ) { scenario ->
-          shouldThrow<InvalidCodexHookInputException> {
-            adapter.read(scenario.input)
-          }
+          adapter.shouldReject(scenario)
         }
 
         scenario("cwd가 상대 경로이면, 입력 오류를 전달합니다.") {
-          shouldThrow<InvalidCodexHookInputException> {
-            adapter.read(hookInput(cwd = JsonPrimitive("relative/project")))
-          }
+          adapter.shouldReject(
+              InvalidJsonScenario(
+                  name = "cwd가 상대 경로이면, 입력 오류를 전달합니다.",
+                  input = hookInput(cwd = JsonPrimitive("relative/project")),
+                  expectedMessage = "Codex Hook 입력의 cwd 경로는 절대 경로여야 합니다.",
+              )
+          )
         }
       }
 
@@ -373,6 +397,7 @@ class CodexPostToolUseInputAdapterTest :
                                         "Unexpected output line\n"
                                 ),
                         ),
+                    expectedMessage = "Codex Hook 입력의 변경 파일 목록 형식이 올바르지 않습니다.",
                 ),
                 InvalidJsonScenario(
                     name = "성공 marker 아래 경로가 비어 있으면, 입력 오류를 전달합니다.",
@@ -385,12 +410,21 @@ class CodexPostToolUseInputAdapterTest :
                                         "Success. Updated the following files:\nM \n"
                                 ),
                         ),
+                    expectedMessage = "Codex Hook 입력의 변경 파일 목록 형식이 올바르지 않습니다.",
+                ),
+                InvalidJsonScenario(
+                    name = "변경 경로에 NUL 문자가 있으면, InvalidPathException 원인의 입력 오류를 전달합니다.",
+                    input =
+                        hookInput(
+                            cwd = JsonPrimitive("/tmp"),
+                            toolResponse = JsonPrimitive(successfulToolResponse("M \u0000")),
+                        ),
+                    expectedMessage = "Codex Hook 입력의 변경 파일 경로가 올바르지 않습니다.",
+                    expectedCauseType = InvalidPathException::class.java,
                 ),
             ),
         ) { scenario ->
-          shouldThrow<InvalidCodexHookInputException> {
-            adapter.read(scenario.input)
-          }
+          adapter.shouldReject(scenario)
         }
 
         scenario("envelope가 없는 원래 성공 출력을 읽으면, 변경 파일 경로를 반환합니다.") {
@@ -466,6 +500,8 @@ private data class FailedPatchScenario(
 private data class InvalidJsonScenario(
     val name: String,
     val input: String,
+    val expectedMessage: String,
+    val expectedCauseType: Class<out Throwable>? = null,
 )
 
 private data class EmptyPathResultScenario(
@@ -495,6 +531,20 @@ private fun hookInput(
           put("unknown_metadata", buildJsonObject { put("enabled", JsonPrimitive(true)) })
         }
         .toString()
+
+private fun CodexPostToolUseInputAdapter.shouldReject(scenario: InvalidJsonScenario) {
+  val exception =
+      shouldThrow<InvalidCodexHookInputException> {
+        read(scenario.input)
+      }
+
+  exception.message shouldBe scenario.expectedMessage
+  if (scenario.expectedCauseType == null) {
+    exception.cause shouldBe null
+  } else {
+    scenario.expectedCauseType.isInstance(exception.cause) shouldBe true
+  }
+}
 
 private fun successfulToolResponse(vararg changedPaths: String): String = buildString {
   append("Exit code: 0\n")
