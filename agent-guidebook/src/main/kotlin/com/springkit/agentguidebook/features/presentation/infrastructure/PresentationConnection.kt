@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.storage
+package com.springkit.agentguidebook.features.presentation.infrastructure
 
 import java.sql.Connection
 import java.sql.SQLException

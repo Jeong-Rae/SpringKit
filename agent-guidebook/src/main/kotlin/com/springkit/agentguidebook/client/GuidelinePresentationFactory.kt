@@ -1,9 +1,9 @@
 package com.springkit.agentguidebook.client
 
-import com.springkit.agentguidebook.config.SqlitePresentationConfig
+import com.springkit.agentguidebook.features.presentation.infrastructure.SqlitePresentationConfig
+import com.springkit.agentguidebook.features.presentation.infrastructure.SqlitePresentationRepository
+import com.springkit.agentguidebook.features.presentation.infrastructure.SqlitePresentationUnitOfWork
 import com.springkit.agentguidebook.services.GuidelinePresentationService
-import com.springkit.agentguidebook.storage.SqlitePresentationRepository
-import com.springkit.agentguidebook.storage.SqlitePresentationUnitOfWork
 import java.time.Clock
 
 /**

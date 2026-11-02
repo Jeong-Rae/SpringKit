@@ -1,7 +1,7 @@
 package com.springkit.agentguidebook.services
 
 import com.springkit.agentguidebook.core.MatchedGuideline
-import com.springkit.agentguidebook.features.presentation.PresentGuidelinesUseCase
+import com.springkit.agentguidebook.features.presentation.application.PresentGuidelinesUseCase
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
 import java.time.Clock
 

@@ -14,7 +14,6 @@ import com.springkit.agentguidebook.models.GuidelineSearchRequest
 import com.springkit.agentguidebook.models.Language
 import com.springkit.agentguidebook.models.RepositoryIdentity
 import com.springkit.agentguidebook.models.SourceFile
-import com.springkit.agentguidebook.services.GuidelineSearchInputReader
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.datatest.withScenarios

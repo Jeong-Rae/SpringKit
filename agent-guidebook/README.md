@@ -12,13 +12,15 @@ Session에 새로 제공한 지침을 기록하는 Kotlin 라이브러리와 JVM
 
 | 패키지 | 책임 |
 | --- | --- |
-| `config` | SQLite 경로와 연결 정책, 실행 시 Database 조립 및 transaction 안의 스키마 초기화 |
-| `features.presentation` | Session에 새로 제공할 지침 검색과 이력 기록 UseCase |
+| `features.search.application` | 지침 검색 UseCase와 입력 읽기 포트 |
+| `features.search.infrastructure` | 파일 시스템, YAML, Git 검색 입력 어댑터 |
+| `features.presentation.application` | Session별 제공 UseCase와 이력 저장 포트 |
+| `features.presentation.infrastructure` | SQLite 이력 저장소, transaction 경계와 연결 설정 |
 | `models` | 공개 요청, 응답과 값 객체 |
-| `services` | 검색, 입력 읽기 경계와 기존 호출자를 위한 Presentation 서비스 |
+| `services` | 기존 호출자를 위한 검색·Presentation 서비스와 호환 별칭 |
 | `client` | 공개 검색·지침 제공 factory와 실제 입력 경계 조립 |
 | `core` | 적용 범위, 정규식 일치, 지침 검색 규칙, Session별 제공 이력의 선별과 기록 |
-| `storage` | 파일 시스템, YAML, Git 입력 및 SQLite 이력 어댑터 |
+| `config`, `storage` | 기존 SQLite 타입 경로의 Kotlin 호환 별칭 |
 | `errors` | 호출자가 처리할 오류 모델 |
 | `codex` | PostToolUse, additionalContext 변환 |
 
@@ -39,11 +41,14 @@ val matches =
     )
 ```
 
-`GuidelineSearchService`는 `GuidelineSearchInputReader`에 입력 읽기를 위임합니다. 테스트에서는
-메모리 기반 입력 경계를 주입해 실제 파일 시스템과 Git 없이 검색 흐름을 확인할 수 있습니다.
+`GuidelineSearchService`는 기존 공개 API를 유지하는 facade이며 검색 처리는
+`features.search.application.SearchGuidelinesUseCase`가 맡습니다. UseCase는
+`GuidelineSearchInputReader` 포트에 입력 읽기를 위임합니다. 테스트에서는 메모리 기반 입력
+경계를 주입해 실제 파일 시스템과 Git 없이 검색 흐름을 확인할 수 있습니다.
 
 `PresentationRepository`는 이력 조회·기록을 맡고, `UnitOfWork`가 실행 범위를 관리합니다.
-SQLite 연결 설정과 초기화는 `config`에서 구성합니다. 객체 조립과 실행 범위는
+두 포트와 Session별 제공 UseCase는 `features.presentation.application`에 있습니다.
+SQLite 연결 설정과 초기화는 `features.presentation.infrastructure`에서 구성합니다. 객체 조립과 실행 범위는
 [영속성 경계 검토](../docs/agent-guidebook-unit-of-work-review.md)에서 확인할 수 있습니다.
 
 Session별로 아직 제공하지 않은 지침을 검색하고 SQLite에 기록하려면 Presentation factory를 사용합니다.
@@ -74,7 +79,7 @@ SQLite 잠금은 최대 1,000ms 대기하며, 그 뒤에도 잠금이 유지되�
 [SQLite 저장소 라이브러리 검토](../docs/agent-guidebook-sqlite-library-review.md)에서 확인할 수 있습니다.
 
 Codex `PostToolUse` Hook wrapper는 배포한 JVM 앱에 연결되어 있습니다. 앱은 입력 Adapter,
-`GuidelinePresentationFactory`, 출력 Adapter를 차례로 조립합니다. `features.presentation`의
+`GuidelinePresentationFactory`, 출력 Adapter를 차례로 조립합니다. `features.presentation.application`의
 `PresentGuidelinesUseCase`가 검색과 Session별 이력 기록을 조율하며, 기존
 `GuidelinePresentationService.present`도 같은 UseCase로 위임합니다. Session별 제공 이력의 검증 단계와 결과는
 [Presentation 검증 기록](../docs/agent-guidebook-presentation-verification.md)에서 확인할 수 있습니다.

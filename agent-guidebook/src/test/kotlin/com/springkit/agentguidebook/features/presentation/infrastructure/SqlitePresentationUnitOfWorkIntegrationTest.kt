@@ -1,11 +1,8 @@
-package com.springkit.agentguidebook.services
+package com.springkit.agentguidebook.features.presentation.infrastructure
 
-import com.springkit.agentguidebook.config.SqlitePresentationConfig
 import com.springkit.agentguidebook.core.Presentation
 import com.springkit.agentguidebook.models.GuidelineId
 import com.springkit.agentguidebook.models.SessionId
-import com.springkit.agentguidebook.storage.SqlitePresentationRepository
-import com.springkit.agentguidebook.storage.SqlitePresentationUnitOfWork
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.datatest.withScenarios

@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.storage
+package com.springkit.agentguidebook.features.search.infrastructure
 
 import com.springkit.agentguidebook.core.Guideline
 import com.springkit.agentguidebook.errors.GuidelineLoadException

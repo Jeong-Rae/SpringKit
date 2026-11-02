@@ -1,2 +1,2 @@
-/** YAML, 파일 시스템, Git, SQLite에 접근합니다. */
+/** 이전 SQLite infrastructure 타입 이름의 Kotlin 호환 별칭을 제공합니다. */
 package com.springkit.agentguidebook.storage

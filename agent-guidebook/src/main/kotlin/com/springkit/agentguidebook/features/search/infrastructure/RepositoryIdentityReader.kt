@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.storage
+package com.springkit.agentguidebook.features.search.infrastructure
 
 import com.springkit.agentguidebook.errors.RepositoryIdentityUnavailableException
 import com.springkit.agentguidebook.models.RepositoryIdentity

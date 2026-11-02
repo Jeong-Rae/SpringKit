@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.features.presentation
+package com.springkit.agentguidebook.features.presentation.application
 
 import com.springkit.agentguidebook.core.Guideline
 import com.springkit.agentguidebook.core.MatchCondition
@@ -8,6 +8,8 @@ import com.springkit.agentguidebook.core.Scope
 import com.springkit.agentguidebook.errors.GuidelineLoadException
 import com.springkit.agentguidebook.errors.InvalidSearchRequestException
 import com.springkit.agentguidebook.errors.RetryablePresentationStorageException
+import com.springkit.agentguidebook.features.search.application.GuidelineSearchInputReader
+import com.springkit.agentguidebook.features.search.application.SearchGuidelinesUseCase
 import com.springkit.agentguidebook.models.GuidelineEvent
 import com.springkit.agentguidebook.models.GuidelineId
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
@@ -15,10 +17,6 @@ import com.springkit.agentguidebook.models.Language
 import com.springkit.agentguidebook.models.RepositoryIdentity
 import com.springkit.agentguidebook.models.SessionId
 import com.springkit.agentguidebook.models.SourceFile
-import com.springkit.agentguidebook.services.GuidelineSearchInputReader
-import com.springkit.agentguidebook.services.GuidelineSearchService
-import com.springkit.agentguidebook.services.PresentationRepository
-import com.springkit.agentguidebook.services.UnitOfWork
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -389,7 +387,7 @@ private fun fixture(
   val matches = GUIDELINES.map { guideline -> MatchedGuideline(guideline.id, guideline.content) }
   val useCase =
       PresentGuidelinesUseCase(
-          guidelineSearchService = GuidelineSearchService(reader),
+          guidelineSearchService = SearchGuidelinesUseCase(reader),
           unitOfWork = unitOfWork ?: FakePresentationUnitOfWork(store),
           presentationRepository = presentationRepository ?: repository,
           clock = FIXED_CLOCK,
