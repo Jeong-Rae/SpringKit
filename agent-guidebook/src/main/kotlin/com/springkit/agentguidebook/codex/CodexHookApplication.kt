@@ -6,8 +6,23 @@ import com.springkit.agentguidebook.models.GuidelinePresentationRequest
 class CodexHookApplication(
     private val presentGuidelines: (GuidelinePresentationRequest) -> List<MatchedGuideline>,
 ) {
-  fun run(input: CodexHookInput, output: CodexHookOutput): Int =
-      throw NotImplementedError("CodexHookApplication.run")
+  fun run(
+      input: CodexHookInput,
+      output: CodexHookOutput,
+  ): Int {
+    try {
+      val request = input.read() ?: return 0
+      val guidelines = presentGuidelines(request)
+      output.present(guidelines)
+      return 0
+    } catch (exception: InvalidCodexHookInputException) {
+      output.diagnose("Codex Hook 입력 오류: ${exceptionMessages(exception)}")
+      return INVALID_INPUT_EXIT_CODE
+    } catch (exception: Exception) {
+      output.diagnose("Agent Guidebook 실행 실패: ${exceptionMessages(exception)}")
+      return EXECUTION_FAILURE_EXIT_CODE
+    }
+  }
 
   private fun exceptionMessages(exception: Exception): String =
       generateSequence<Throwable>(exception) { it.cause }
