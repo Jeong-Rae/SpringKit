@@ -69,6 +69,8 @@ val newGuidelines =
     )
 ```
 
+기존 `GuidelineSearchService`와 `GuidelinePresentationService`의 생성자 및 `search`·`present` 메서드, `client` factory는 유지합니다. 이동한 application 포트, SQLite 타입, Presentation UseCase의 기존 이름은 Kotlin `typealias`로 제공해 Kotlin 소스 재컴파일 호환을 지원합니다. 이전 FQCN의 이미 컴파일된 JVM 바이너리 호환은 보장하지 않습니다. 자세한 내용은 [구조 검토](../docs/agent-guidebook-structure-review.md)를 참고합니다.
+
 기본 이력 DB는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`입니다. 이력은
 Session ID와 Guideline ID 조합으로 저장되므로 본문이 바뀌어도 같은 Guideline ID를 다시 제공하지 않습니다.
 `present`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
@@ -95,21 +97,17 @@ JGit의 시스템 설정 탐색은 환경에 따라 Git 프로세스를 실행�
 
 ## Codex PostToolUse Hook
 
-`hooks/post-tool-use.sh`는 Codex가 보낸 Hook stdin을 단일 실행 파일에 그대로 전달합니다. Gradle `application` 배포 스크립트를 설정하면 wrapper가 Kotlin 앱을 실행하며 stdout, stderr, 종료 코드와 호출 cwd를 보존합니다. wrapper는 Hook JSON을 해석하지 않습니다. JVM 앱이 입력을 읽고 필요한 경우 `hookSpecificOutput.additionalContext` JSON을 stdout에 씁니다.
+설치 디렉터리에는 `bin/agent-guidebook`, `bin/agent-guidebook.bat`, `lib/*.jar`, `hooks/post-tool-use.sh`, `hooks/hooks.example.json`이 있습니다. `bin` 실행 스크립트는 같은 설치 디렉터리의 `lib`을 사용하므로, 실행 시 빌드 checkout이 필요하지 않습니다. `hooks/post-tool-use.sh`는 Codex가 보낸 Hook stdin을 단일 실행 파일에 그대로 전달합니다. wrapper는 Hook JSON을 해석하지 않습니다. JVM 앱이 입력을 읽고 필요한 경우 `hookSpecificOutput.additionalContext` JSON을 stdout에 씁니다.
 
-실행 파일은 `AGENT_GUIDEBOOK_APP_EXECUTABLE` 환경 변수에 절대 경로로 지정하고, Codex 프로세스가 그 환경을 상속하도록 시작합니다.
+`AGENT_GUIDEBOOK_APP_EXECUTABLE`에는 설치된 `bin/agent-guidebook`의 절대 경로를 지정합니다. Codex 설정에는 설치된 `hooks/hooks.example.json`을 참고해 `PostToolUse` command Hook을 등록하고, `command`가 설치 경로의 `hooks/post-tool-use.sh`를 가리키게 합니다. 경로에 공백이 있으면 JSON의 `command` 값처럼 전체 경로를 따옴표로 감쌉니다.
 
 ```sh
-cd agent-guidebook
-./gradlew installDist
-export AGENT_GUIDEBOOK_APP_EXECUTABLE="$PWD/build/install/agent-guidebook/bin/agent-guidebook"
+export AGENT_GUIDEBOOK_APP_EXECUTABLE="/absolute/path/to/Agent Guidebook installation/bin/agent-guidebook"
 cd /absolute/path/to/target-project
 codex
 ```
 
-환경 변수 값은 실행 파일 경로 하나입니다. 공백이 있는 경로도 따옴표로 감싸 전체 경로를 전달합니다. 인자나 셸 명령 문자열은 넣지 않습니다. wrapper가 해당 경로를 따옴표로 실행하므로 `$()`나 역따옴표 같은 셸 문자가 실행되지 않습니다.
-
-Codex 설정에 `PostToolUse` command hook을 등록하고, wrapper의 절대 경로를 지정합니다. [예제 설정](hooks/hooks.example.json)은 matcher를 `^apply_patch$`로 제한합니다. JSON의 `command` 값은 셸 명령 문자열이므로, 공백이 있는 wrapper 경로는 JSON 문자열 내부에서 다시 따옴표로 감싸야 합니다. 예제의 checkout 경로는 실제 위치로 바꾸고, 프로젝트 설정을 쓸 때는 Codex에서 해당 `.codex/` 계층을 신뢰해야 합니다.
+환경 변수 값은 실행 파일 경로 하나입니다. 공백이 있는 경로도 따옴표로 감싸 전체 경로를 전달합니다. 인자나 셸 명령 문자열은 넣지 않습니다. wrapper가 해당 경로를 따옴표로 실행하므로 `$()`나 역따옴표 같은 셸 문자가 실행되지 않습니다. Codex는 target project의 작업 디렉터리에서 실행하며, SQLite 이력은 실행 계정의 `user.home`에 저장됩니다. 설치 경로, 프로젝트 경로, 사용자 DB 경로는 서로 독립적입니다.
 
 생산 wrapper와 배포 앱의 표준 입력·출력·오류·종료 코드는 프로세스 통합 테스트로 검증합니다. Codex CLI 0.166.0의 임시 Git 프로젝트에서 CLI inline Hook 설정으로 실행해, 실제 추가 컨텍스트가 다음 모델 입력에 전달되는 것을 확인했습니다. 이 실행은 성공했으며, Codex stderr에는 별도 MCP worker의 HTTP 403 로그도 포함됐습니다. [Codex Hook adapter 검증 기록](../docs/agent-guidebook-codex-adapter-verification.md)에 실행 증거를 기록합니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 아직 runtime 검증되지 않았습니다.
 

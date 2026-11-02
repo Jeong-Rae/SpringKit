@@ -13,6 +13,22 @@ application {
   applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
+distributions {
+  main {
+    contents {
+      from("hooks/post-tool-use.sh") {
+        into("hooks")
+        filePermissions {
+          unix("rwxr-xr-x")
+        }
+      }
+      from("hooks/hooks.example.json") {
+        into("hooks")
+      }
+    }
+  }
+}
+
 repositories {
   mavenCentral()
 }
