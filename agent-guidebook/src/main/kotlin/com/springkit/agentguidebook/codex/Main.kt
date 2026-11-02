@@ -6,15 +6,18 @@ import java.io.FileOutputStream
 import kotlin.system.exitProcess
 
 fun main() {
-  val application =
-      CodexHookApplication(
+  val input =
+      CodexHookInput(
+          input = System.`in`,
           inputAdapter = CodexPostToolUseInputAdapter(),
-          presentGuidelines = GuidelinePresentationFactory.fileSystem()::present,
+      )
+  val output =
+      CodexHookOutput(
+          stdout = FileOutputStream(FileDescriptor.out),
+          stderr = FileOutputStream(FileDescriptor.err),
           outputAdapter = CodexPostToolUseOutputAdapter(),
       )
+  val application = CodexHookApplication(GuidelinePresentationFactory.fileSystem()::present)
 
-  val output = FileOutputStream(FileDescriptor.out)
-  val error = FileOutputStream(FileDescriptor.err)
-
-  exitProcess(application.run(System.`in`, output, error))
+  exitProcess(application.run(input, output))
 }

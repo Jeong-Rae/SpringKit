@@ -10,6 +10,7 @@ import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
@@ -30,12 +31,12 @@ class CodexHookApplicationTest :
             val guideline = MatchedGuideline(GuidelineId("service-rule"), "서비스 지침 원문입니다.")
 
             val exitCode =
-                application { listOf(guideline) }
-                    .run(
-                        input = postToolUseInput(cwd).toByteArrayInputStream(),
-                        output = stdout,
-                        error = stderr,
-                    )
+                runHookApplication(
+                    application { listOf(guideline) },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = stderr,
+                )
 
             exitCode shouldBe 0
             stderr.toString(UTF_8) shouldBe ""
@@ -55,14 +56,12 @@ class CodexHookApplicationTest :
           val input = """{"hook_event_name":"PreToolUse","tool_name":"apply_patch"}"""
 
           val exitCode =
-              application {
-                    throw IllegalStateException("무관한 이벤트에서 UseCase가 실행되었습니다.")
-                  }
-                  .run(
-                      input = input.toByteArrayInputStream(),
-                      output = stdout,
-                      error = stderr,
-                  )
+              runHookApplication(
+                  application { throw IllegalStateException("무관한 이벤트에서 UseCase가 실행되었습니다.") },
+                  input = input.toByteArrayInputStream(),
+                  stdout = stdout,
+                  stderr = stderr,
+              )
 
           exitCode shouldBe 0
           stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
@@ -75,12 +74,12 @@ class CodexHookApplicationTest :
             val stderr = ByteArrayOutputStream()
 
             val exitCode =
-                application { emptyList() }
-                    .run(
-                        input = postToolUseInput(cwd).toByteArrayInputStream(),
-                        output = stdout,
-                        error = stderr,
-                    )
+                runHookApplication(
+                    application { emptyList() },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = stderr,
+                )
 
             exitCode shouldBe 0
             stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
@@ -93,14 +92,12 @@ class CodexHookApplicationTest :
           val stderr = ByteArrayOutputStream()
 
           val exitCode =
-              application {
-                    throw IllegalStateException("잘못된 입력에서 UseCase가 실행되었습니다.")
-                  }
-                  .run(
-                      input = "{\"hook_event_name\":".toByteArrayInputStream(),
-                      output = stdout,
-                      error = stderr,
-                  )
+              runHookApplication(
+                  application { throw IllegalStateException("잘못된 입력에서 UseCase가 실행되었습니다.") },
+                  input = "{\"hook_event_name\":".toByteArrayInputStream(),
+                  stdout = stdout,
+                  stderr = stderr,
+              )
 
           exitCode shouldBe 64
           stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
@@ -113,14 +110,12 @@ class CodexHookApplicationTest :
             val stderr = ByteArrayOutputStream()
 
             val exitCode =
-                application {
-                      throw IllegalStateException("검색 서비스 예외")
-                    }
-                    .run(
-                        input = postToolUseInput(cwd).toByteArrayInputStream(),
-                        output = stdout,
-                        error = stderr,
-                    )
+                runHookApplication(
+                    application { throw IllegalStateException("검색 서비스 예외") },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = stderr,
+                )
 
             exitCode shouldBe 1
             stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
@@ -136,14 +131,12 @@ class CodexHookApplicationTest :
                 PresentationStorageUnavailableException(cause = IOException("DB 경로가 디렉터리입니다."))
 
             val exitCode =
-                application {
-                      throw failure
-                    }
-                    .run(
-                        input = postToolUseInput(cwd).toByteArrayInputStream(),
-                        output = stdout,
-                        error = stderr,
-                    )
+                runHookApplication(
+                    application { throw failure },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = stderr,
+                )
 
             exitCode shouldBe 1
             stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
@@ -158,19 +151,150 @@ class CodexHookApplicationTest :
             val guideline = MatchedGuideline(GuidelineId("service-rule"), "서비스 지침 원문입니다.")
 
             val exitCode =
-                application { listOf(guideline) }
-                    .run(
-                        input = postToolUseInput(cwd).toByteArrayInputStream(),
-                        output = FailingOutputStream(IOException("stdout 기록 실패")),
-                        error = stderr,
-                    )
+                runHookApplication(
+                    application { listOf(guideline) },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = FailingOutputStream(IOException("stdout 기록 실패")),
+                    stderr = stderr,
+                )
 
             exitCode shouldBe 1
             stderr.toString(UTF_8) shouldContain "stdout 기록 실패"
           }
         }
+
+        scenario("stdin 읽기 실패면 UseCase를 실행하지 않고 진단과 1을 반환합니다.") {
+          val stdout = ByteArrayOutputStream()
+          val stderr = ByteArrayOutputStream()
+
+          val exitCode =
+              runHookApplication(
+                  application { throw IllegalStateException("읽기 실패 뒤 UseCase가 실행되었습니다.") },
+                  input = FailingInputStream(IOException("stdin 읽기 실패")),
+                  stdout = stdout,
+                  stderr = stderr,
+              )
+
+          exitCode shouldBe 1
+          stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
+          stderr.toString(UTF_8) shouldContain "stdin 읽기 실패"
+        }
+
+        scenario("stdout flush에서 IOException이 나면 진단과 1을 반환합니다.") {
+          withHookProject { cwd ->
+            val stderr = ByteArrayOutputStream()
+            val guideline = MatchedGuideline(GuidelineId("service-rule"), "서비스 지침 원문입니다.")
+
+            val exitCode =
+                runHookApplication(
+                    application { listOf(guideline) },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = FailingFlushOutputStream(IOException("stdout flush 실패")),
+                    stderr = stderr,
+                )
+
+            exitCode shouldBe 1
+            stderr.toString(UTF_8) shouldContain "stdout flush 실패"
+          }
+        }
+
+        scenario("잘못된 입력의 stderr 쓰기 실패에도 64를 반환합니다.") {
+          val stdout = ByteArrayOutputStream()
+
+          val exitCode =
+              runHookApplication(
+                  application { throw IllegalStateException("잘못된 입력에서 UseCase가 실행되었습니다.") },
+                  input = "{\"hook_event_name\":".toByteArrayInputStream(),
+                  stdout = stdout,
+                  stderr = FailingOutputStream(IOException("stderr 쓰기 실패")),
+              )
+
+          exitCode shouldBe 64
+          stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
+        }
+
+        scenario("잘못된 입력의 stderr flush 실패에도 64를 반환합니다.") {
+          val stdout = ByteArrayOutputStream()
+
+          val exitCode =
+              runHookApplication(
+                  application { throw IllegalStateException("잘못된 입력에서 UseCase가 실행되었습니다.") },
+                  input = "{\"hook_event_name\":".toByteArrayInputStream(),
+                  stdout = stdout,
+                  stderr = FailingFlushOutputStream(IOException("stderr flush 실패")),
+              )
+
+          exitCode shouldBe 64
+          stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
+        }
+
+        scenario("실행 실패의 stderr 쓰기 실패에도 1을 반환합니다.") {
+          withHookProject { cwd ->
+            val stdout = ByteArrayOutputStream()
+
+            val exitCode =
+                runHookApplication(
+                    application { throw IllegalStateException("검색 서비스 예외") },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = FailingOutputStream(IOException("stderr 쓰기 실패")),
+                )
+
+            exitCode shouldBe 1
+            stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
+          }
+        }
+
+        scenario("실행 실패의 stderr flush 실패에도 1을 반환합니다.") {
+          withHookProject { cwd ->
+            val stdout = ByteArrayOutputStream()
+
+            val exitCode =
+                runHookApplication(
+                    application { throw IllegalStateException("검색 서비스 예외") },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = FailingFlushOutputStream(IOException("stderr flush 실패")),
+                )
+
+            exitCode shouldBe 1
+            stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
+          }
+        }
+
+        scenario("원인 체인의 중복·빈 메시지는 순서를 보존해 진단하고 1을 반환합니다.") {
+          withHookProject { cwd ->
+            val stdout = ByteArrayOutputStream()
+            val stderr = ByteArrayOutputStream()
+            val failure =
+                IllegalStateException(
+                    "same",
+                    IllegalArgumentException(
+                        "",
+                        IOException("same", UnsupportedOperationException("root cause")),
+                    ),
+                )
+
+            val exitCode =
+                runHookApplication(
+                    application { throw failure },
+                    input = postToolUseInput(cwd).toByteArrayInputStream(),
+                    stdout = stdout,
+                    stderr = stderr,
+                )
+
+            exitCode shouldBe 1
+            stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
+            stderr.toString(UTF_8) shouldBe
+                "Agent Guidebook 실행 실패: same: IllegalArgumentException: root cause\n"
+          }
+        }
       }
     })
+
+private class FailingInputStream(private val failure: IOException) : InputStream() {
+  override fun read(): Int = throw failure
+}
 
 private class FailingOutputStream(private val failure: IOException) : OutputStream() {
   override fun write(value: Int) {
@@ -178,13 +302,30 @@ private class FailingOutputStream(private val failure: IOException) : OutputStre
   }
 }
 
+private class FailingFlushOutputStream(private val failure: IOException) : ByteArrayOutputStream() {
+  override fun flush() {
+    throw failure
+  }
+}
+
 private fun application(
     presentGuidelines: (GuidelinePresentationRequest) -> List<MatchedGuideline>,
-): CodexHookApplication =
-    CodexHookApplication(
-        inputAdapter = CodexPostToolUseInputAdapter(),
-        presentGuidelines = presentGuidelines,
-        outputAdapter = CodexPostToolUseOutputAdapter(),
+): CodexHookApplication = CodexHookApplication(presentGuidelines)
+
+private fun runHookApplication(
+    application: CodexHookApplication,
+    input: InputStream,
+    stdout: OutputStream,
+    stderr: OutputStream,
+): Int =
+    application.run(
+        input = CodexHookInput(input, CodexPostToolUseInputAdapter()),
+        output =
+            CodexHookOutput(
+                stdout,
+                stderr,
+                CodexPostToolUseOutputAdapter(),
+            ),
     )
 
 private fun postToolUseInput(cwd: Path): String {
