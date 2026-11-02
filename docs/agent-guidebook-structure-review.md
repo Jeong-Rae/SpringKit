@@ -84,3 +84,25 @@ Search application의 `SearchGuidelines`는 `execute(GuidelineSearchRequest): Li
 | 6 | 문서·전체 검증·PR 반영 | spotlessApply → test → 증분 build 성공, 최종 diff와 PR 본문 일치 |
 
 각 Step을 검증하고 커밋한 뒤 다음 Step으로 진행합니다. 분석 완료 후 사용자 승인 대기 없이 계약 작성으로 진행합니다. GitHub Release, Native Image, 새 도메인 규칙과 자동 설치 도구는 추가하지 않습니다.
+
+## 검증 결과
+
+2026년 11월 2일 원격 `develop`의 `8c41d85`를 반영하고 minimalism 기준으로 범위를 확정했습니다. 테스트 목록과 범위는 오케스트레이터가 결정했고, Worker가 계약 테스트를 작성한 뒤 구현했습니다. 오케스트레이터는 실제 diff와 테스트 XML을 별도로 확인했습니다.
+
+| 검증 대상 | 결과 |
+| --- | --- |
+| 기존 상위 도메인·값 계약 | 101개 성공 |
+| 검색 UseCase 계약 | 최소 Stub에서 컴파일 성공 후 8개 `NotImplementedError` 실패 확인 |
+| 설치 파일·프로세스 계약 | 컴파일 성공 후 누락된 `post-tool-use.sh`에서 5개 실패 확인 |
+| 기능별 구조 정리 | 설치 계약을 제외한 280개 성공 |
+| 설치 구성 완성 | 복사한 설치물의 파일 구성·프로세스 계약 5개 성공 |
+| 전체 회귀 | 24개 테스트 클래스, 285개 성공, 실패·오류·생략 각각 0개 |
+| 최종 Gradle 검증 | `spotlessApply` → `test` → 증분 `build` 성공 |
+
+검색 계약은 `7bcb4e3`, 설치 계약은 `40862a0`에서 확정했습니다. 기능별 의존 경계는 `eaa2228`, 설치 구성은 `f87483b`에서 완성했습니다. 최종 XML은 `/tmp/sk-39-structure-verification/final-green/`에 보관했습니다. 임시 경로는 이후 환경에서 유지되지 않을 수 있습니다.
+
+패키지의 import 의존을 확인한 결과 순환이 없고, 두 feature의 application·infrastructure는 이전 `services/storage/config/client/codex`를 참조하지 않습니다. 기존 `core/models/errors/codex`와 Hook 구현은 이번 정리에서 바뀌지 않았습니다. 이동한 파일·YAML·Git·SQLite 구현은 package와 import를 제외한 본문이 동일합니다. 검색은 transaction 밖에서 실행하고 이력 조회·선별·기록과 commit 뒤 반환 순서를 유지합니다.
+
+설치물 전체를 한글·공백 경로에 복사해 그 안의 Hook과 launcher만 실행했습니다. 정상 제공, 같은 Session의 중복 제외, 다른 Session 분리, 대상 없는 요청의 DB 미생성, 입력 오류 64와 저장 실패 1을 확인했습니다. 실행 전후 설치물의 상대 경로·내용 해시·실행 권한도 동일했습니다. `installDist`, TAR와 ZIP에 Hook과 JSON 예제가 포함되며 Hook 실행 권한은 `755`입니다.
+
+현재 확인한 실행 환경은 Linux와 Java 25입니다. 테스트 JVM의 SQLite native access 경고는 남아 있으나, 앱 launcher에는 기존 native access 옵션이 적용되어 있습니다. Windows launcher 포함 여부만 확인했고 Windows 실행과 GraalVM Native Image·GitHub Release는 후속 범위입니다. 실제 Codex의 Context 전달 증거와 파일 기반 Hook 설정 로딩의 미검증 범위는 [기존 실행 검증 기록](agent-guidebook-codex-adapter-verification.md)을 따릅니다.
