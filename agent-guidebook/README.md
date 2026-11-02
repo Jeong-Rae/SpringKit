@@ -80,8 +80,13 @@ SQLite 잠금은 최대 1,000ms 대기하며, 그 뒤에도 잠금이 유지되�
 세 `TEXT` 열과 `(session_id, guideline_id)` 기본 키는 일반 Exposed `Table`로 정의하고, Repository는 typed `selectAll`과 `insert`로 조회·기록합니다. 조회한 문자열 행은 transaction 안에서 도메인 `Presentation`으로 복원합니다. 구현 판단과 실패 경계는
 [SQLite 저장소 라이브러리 검토](../docs/agent-guidebook-sqlite-library-review.md)에서 확인할 수 있습니다.
 
-Codex `PostToolUse` Hook wrapper는 배포한 JVM 앱에 연결되어 있습니다. 앱은 입력 Adapter,
-`GuidelinePresentationFactory`, 출력 Adapter를 차례로 조립합니다. `features.presentation.application`의
+Codex `PostToolUse` Hook wrapper는 배포한 JVM 앱에 연결되어 있습니다. 진입점은
+`CodexHookInput`, `CodexHookOutput`과 기존 `GuidelinePresentationFactory`를 조립합니다.
+입력 객체는 EOF까지 UTF-8 입력을 읽어 기존 Adapter로 요청을 변환하고, 출력 객체는
+정상 응답과 진단을 각각 stdout과 stderr에 기록한 뒤 flush합니다. 호출자가 전달한 스트림은 닫지 않습니다.
+`CodexHookApplication.run(input, output)`은 실행 흐름과 종료 코드만 결정합니다.
+객체별 계약과 실패 경계는 [Hook 입출력 책임 검토](../docs/agent-guidebook-hook-stdio-review.md)를 따릅니다.
+`features.presentation.application`의
 `PresentGuidelinesUseCase`가 검색과 Session별 이력 기록을 조율하며, 기존
 `GuidelinePresentationService.present`도 같은 UseCase로 위임합니다. Session별 제공 이력의 검증 단계와 결과는
 [Presentation 검증 기록](../docs/agent-guidebook-presentation-verification.md)에서 확인할 수 있습니다.

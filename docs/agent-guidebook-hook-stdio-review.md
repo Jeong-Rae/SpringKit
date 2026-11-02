@@ -61,3 +61,21 @@ ByteArrayInputStream과 필요한 최소 실패 스트림을 사용합니다. �
 5. Application 조율 구현, 관련 Codex·설치 프로세스 회귀와 증분 build 검증
 
 각 범위를 검증하고 커밋한 뒤 다음 범위로 진행합니다. 모든 신규 계약을 작성한 뒤 하위 구성 요소부터 구현합니다. 검증 명령은 `spotlessApply` → 범위 `test` → 최종 증분 `build` 순서를 따릅니다. 오케스트레이터가 실제 diff와 테스트 XML을 독립 확인하며, 정상 출력에 추가 줄바꿈이나 진단이 섞이지 않는지 확인합니다.
+
+## 검증 결과
+
+2026년 11월 2일 오케스트레이터가 실제 diff와 XML을 확인했습니다.
+
+| 범위 | 결과 | 커밋 |
+| --- | --- | --- |
+| Application 계약 | 전체 소스 컴파일 성공, 14개 모두 Application Stub의 NotImplementedError로 실패 | `1b7b7bc` |
+| Input·Output 계약 | 11개 모두 각 Port Stub의 NotImplementedError로 실패 | `73e79b7` |
+| Input·Output 구현 | 11개 성공, 실패·오류·생략 각각 0개 | `dc0131e` |
+| Application 연결 | Codex·설치 프로세스 82개 성공 | `095c18c` |
+| 전체 회귀와 증분 build | 26개 클래스의 305개 성공, 실패·오류·생략 각각 0개, build 성공 | `095c18c` |
+
+UTF-8 응답 바이트와 진단 줄바꿈, 쓰기 뒤 flush, 출력 생략과 호출자 리소스의 미종료를 확인했습니다. 입력·stdout의 원래 IOException은 그대로 전파되고, stderr 쓰기·flush 실패에서도 종료 코드 64와 1이 유지됩니다. 기존 예외 원인 체인 처리와 종료 코드 상수는 원문 그대로입니다. Application에는 스트림·인코딩·Adapter 접근이 남아 있지 않으며, 기존 도메인·UseCase·Adapter·Hook 구현은 이번 변경에서 수정하지 않았습니다.
+
+설치 전체를 별도 경로로 복사한 기존 프로세스 테스트도 통과했습니다. 정상 제공, 같은 Session의 중복 제외, 다른 Session 분리, 빈 대상의 DB 미생성, 입력·저장 오류와 설치 파일 보존을 검증합니다. 실행 진입점의 descriptor 연결도 유지합니다.
+
+검증 로그와 XML은 `/tmp/sk-39-hook-stdio/`에 보관했습니다. 이 임시 경로는 이후 환경에서 유지되지 않을 수 있습니다. 테스트 JVM에는 기존 SQLite native access 경고가 있었으나 빌드는 성공했습니다. 앱 launcher의 기존 native access 옵션과 실제 프로세스의 출력 계약은 유지합니다.
