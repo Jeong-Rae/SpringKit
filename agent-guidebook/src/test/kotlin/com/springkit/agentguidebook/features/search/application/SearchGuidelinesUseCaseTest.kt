@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.services
+package com.springkit.agentguidebook.features.search.application
 
 import com.springkit.agentguidebook.core.Guideline
 import com.springkit.agentguidebook.core.MatchCondition
@@ -21,7 +21,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Path
 
-class GuidelineSearchServiceTest :
+class SearchGuidelinesUseCaseTest :
     FeatureSpec({
       feature("인메모리 입력을 통한 지침 검색") {
         withScenarios(
@@ -67,14 +67,14 @@ class GuidelineSearchServiceTest :
                   guidelines = listOf(guideline),
                   repositoryIdentity = RepositoryIdentity("acme", "backend-order"),
               )
-          val service = GuidelineSearchService(inputReader)
+          val useCase = SearchGuidelinesUseCase(inputReader)
           val request =
               GuidelineSearchRequest(
                   cwd = cwd,
                   filepaths = listOf(cwd.resolve("src/../src/OrderService.kt")),
               )
 
-          val matches = service.search(request)
+          val matches = useCase.execute(request)
 
           matches shouldBe scenario.expected
         }
@@ -94,10 +94,10 @@ class GuidelineSearchServiceTest :
                 override fun readGuidelines(root: Path): List<Guideline> =
                     throw GuidelineLoadException("소스가 없으면 지침을 읽지 않습니다.")
               }
-          val service = GuidelineSearchService(inputReader)
+          val useCase = SearchGuidelinesUseCase(inputReader)
           val request = GuidelineSearchRequest(cwd = cwd, filepaths = emptyList())
 
-          val matches = service.search(request)
+          val matches = useCase.execute(request)
 
           matches shouldBe emptyList()
         }
@@ -117,10 +117,10 @@ class GuidelineSearchServiceTest :
                   guidelines = emptyList(),
                   repositoryIdentity = null,
               )
-          val service = GuidelineSearchService(inputReader)
+          val useCase = SearchGuidelinesUseCase(inputReader)
           val request = GuidelineSearchRequest(cwd = cwd, filepaths = listOf(sourcePath))
 
-          val matches = service.search(request)
+          val matches = useCase.execute(request)
 
           matches shouldBe emptyList()
         }
@@ -141,10 +141,10 @@ class GuidelineSearchServiceTest :
                 override fun readKotlinSources(filepaths: Collection<Path>): List<SourceFile> =
                     throw SourceReadException("인메모리 소스가 없습니다: $missingSourcePath")
               }
-          val service = GuidelineSearchService(inputReader)
+          val useCase = SearchGuidelinesUseCase(inputReader)
           val request = GuidelineSearchRequest(cwd = cwd, filepaths = listOf(missingSourcePath))
 
-          shouldThrow<SourceReadException> { service.search(request) }
+          shouldThrow<SourceReadException> { useCase.execute(request) }
         }
 
         scenario("읽기 경계에서 소스 원인이 있는 오류를 받으면, 원인이 보존됩니다.") {
@@ -163,10 +163,10 @@ class GuidelineSearchServiceTest :
                 override fun readKotlinSources(filepaths: Collection<Path>): List<SourceFile> =
                     throw failure
               }
-          val service = GuidelineSearchService(inputReader)
+          val useCase = SearchGuidelinesUseCase(inputReader)
           val request = GuidelineSearchRequest(cwd = cwd, filepaths = listOf(sourcePath))
 
-          val exception = shouldThrow<SourceReadException> { service.search(request) }
+          val exception = shouldThrow<SourceReadException> { useCase.execute(request) }
 
           exception.cause shouldBe cause
         }
@@ -190,14 +190,14 @@ class GuidelineSearchServiceTest :
                 ),
             ),
         ) { scenario ->
-          val service = GuidelineSearchService(UnexpectedGuidelineSearchInputReader())
+          val useCase = SearchGuidelinesUseCase(UnexpectedGuidelineSearchInputReader())
           val request =
               GuidelineSearchRequest(
                   cwd = scenario.cwd,
                   filepaths = listOf(scenario.filepath),
               )
 
-          val exception = shouldThrow<InvalidSearchRequestException> { service.search(request) }
+          val exception = shouldThrow<InvalidSearchRequestException> { useCase.execute(request) }
 
           exception.message.orEmpty() shouldContain scenario.expectedMessage
         }

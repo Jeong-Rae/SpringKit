@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.storage
+package com.springkit.agentguidebook.features.presentation.infrastructure
 
 import com.springkit.agentguidebook.errors.PresentationDatabaseCorruptException
 import com.springkit.agentguidebook.errors.PresentationStorageException

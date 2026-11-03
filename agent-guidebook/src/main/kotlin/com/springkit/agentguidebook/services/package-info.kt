@@ -1,2 +1,2 @@
-/** 지침을 에이전트에게 제공하는 공개 행위를 구현합니다. */
+/** 공개 서비스 facade와 이전 application port 이름의 Kotlin 호환 별칭을 제공합니다. */
 package com.springkit.agentguidebook.services

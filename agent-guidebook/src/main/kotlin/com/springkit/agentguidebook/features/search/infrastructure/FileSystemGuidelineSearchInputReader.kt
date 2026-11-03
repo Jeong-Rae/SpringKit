@@ -1,13 +1,13 @@
-package com.springkit.agentguidebook.storage
+package com.springkit.agentguidebook.features.search.infrastructure
 
 import com.springkit.agentguidebook.core.Guideline
 import com.springkit.agentguidebook.errors.GuidelineLoadException
 import com.springkit.agentguidebook.errors.InvalidSearchRequestException
 import com.springkit.agentguidebook.errors.RepositoryIdentityUnavailableException
 import com.springkit.agentguidebook.errors.SourceReadException
+import com.springkit.agentguidebook.features.search.application.GuidelineSearchInputReader
 import com.springkit.agentguidebook.models.RepositoryIdentity
 import com.springkit.agentguidebook.models.SourceFile
-import com.springkit.agentguidebook.services.GuidelineSearchInputReader
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException

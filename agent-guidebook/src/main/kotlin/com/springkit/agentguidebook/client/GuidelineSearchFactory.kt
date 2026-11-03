@@ -1,7 +1,7 @@
 package com.springkit.agentguidebook.client
 
+import com.springkit.agentguidebook.features.search.infrastructure.FileSystemGuidelineSearchInputReader
 import com.springkit.agentguidebook.services.GuidelineSearchService
-import com.springkit.agentguidebook.storage.FileSystemGuidelineSearchInputReader
 
 /**
  * 실제 파일 시스템을 사용하는 지침 검색 서비스를 조립합니다.

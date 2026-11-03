@@ -1,4 +1,4 @@
-package com.springkit.agentguidebook.storage
+package com.springkit.agentguidebook.features.presentation.infrastructure
 
 import org.jetbrains.exposed.v1.core.Table
 
