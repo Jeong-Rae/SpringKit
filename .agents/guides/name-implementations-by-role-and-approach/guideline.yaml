@@ -17,6 +17,8 @@ content: |
 
   인터페이스에는 맡은 역할을, 구현체에는 실제 구현 방식이나 더 좁은 역할을 이름으로 표현합니다. 클래스를 상속할 때도 같은 기준을 적용합니다. 인터페이스임을 나타내는 `I`와 구현체임을 나타내는 `Impl`은 붙이지 않습니다.
 
+  Port는 필요한 역할을 이름으로 표현하고, 구현체는 기술이나 구체 역할을 드러냅니다. 예를 들어 `search.InputReader`의 파일 시스템 구현은 `search.filesystem.FileSystemInputReader`이고, `presentation.Repository`의 SQLite 구현은 `presentation.sqlite.SqliteRepository`입니다. `JGitRepositoryIdentityReader`처럼 구현 기술과 역할을 함께 나타낼 수도 있습니다.
+
   ## Do Not 예시
 
   ```kotlin

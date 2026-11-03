@@ -1,12 +1,12 @@
 package com.springkit.agentguidebook.client
 
-import com.springkit.agentguidebook.features.search.infrastructure.FileSystemGuidelineSearchInputReader
+import com.springkit.agentguidebook.search.Factory
 import com.springkit.agentguidebook.services.GuidelineSearchService
 
 /**
- * 실제 파일 시스템을 사용하는 지침 검색 서비스를 조립합니다.
+ * 기존 공개 Search Factory 경로를 canonical 검색 Factory로 연결합니다.
  *
- * 검색 입력은 서비스 호출 시점에 읽기 경계를 통해 조회합니다.
+ * 실제 입력은 검색 호출 시점에 canonical 입력 경계에서 읽습니다.
  */
 object GuidelineSearchFactory {
   /**
@@ -14,6 +14,5 @@ object GuidelineSearchFactory {
    *
    * @return 실제 프로젝트 파일과 Git 저장소 식별자를 읽는 검색 서비스
    */
-  fun fileSystem(): GuidelineSearchService =
-      GuidelineSearchService(FileSystemGuidelineSearchInputReader())
+  fun fileSystem(): GuidelineSearchService = Factory.fileSystem()
 }

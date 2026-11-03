@@ -1,5 +1,4 @@
 package com.springkit.agentguidebook.services
 
-/** Compatibility alias for the Presentation application repository port. */
-typealias PresentationRepository =
-    com.springkit.agentguidebook.features.presentation.application.PresentationRepository
+/** 기존 Presentation Repository 포트 경로를 유지하는 Kotlin 소스 호환 별칭입니다. */
+typealias PresentationRepository = com.springkit.agentguidebook.presentation.Repository

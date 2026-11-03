@@ -19,9 +19,17 @@ content: |
 
   의존성 경계를 만드는 추상화는 구현체 수와 관계없이 사용할 수 있습니다. 도메인이나 애플리케이션이 인프라의 구체적인 기술에 의존하지 않도록 정의한 인터페이스가 이에 해당합니다.
 
+  Port는 계약을 필요로 하는 내부 책임이 소유합니다. 예를 들어 `search.InputReader`와 `presentation.Repository`는 각각 그 Slice의 Port입니다. Slice 간 협력은 상대 Slice가 공개한 계약을 사용합니다. `presentation`은 `search.SearchGuidelines`를 호출하고, 검색 Application은 Presentation이나 파일 시스템 Adapter에 의존하지 않습니다.
+
+  Factory는 Application과 기술 Adapter를 조립하는 경계이므로 필요한 구체 구현을 알 수 있습니다. 도메인과 Application은 Factory나 기술 구현에 의존하지 않습니다.
+
   의존성 경계 내부의 구현 요소는 구현체가 하나로 예상된다면 미래의 가능성만으로 인터페이스나 추상 클래스를 분리하지 않습니다. 기획이나 요구사항에서 서로 다른 구현, 정책, 전략이 구체적으로 예정되어 있을 때 확장 지점을 만듭니다.
 
   확장이 필요하더라도 상속 계층을 먼저 만들지 않습니다. 변경되는 역할을 별도의 객체로 분리하고 `has-a` 조합 관계로 구성할 수 있는지 우선 고려합니다. 상속은 하위 타입이 상위 타입의 계약과 의미를 그대로 만족하는 `is-a` 관계가 명확할 때 사용합니다.
+
+  `Command`, `Handler`, `Port`, `Adapter`, `infrastructure` 같은 객체나 계층을 기계적으로 만들지 않습니다. 현재 요구에 필요한 실행 책임과 의존성 경계만 둡니다. UseCase를 그대로 전달하는 Service를 별도 행위 계층으로 중복하지 않습니다.
+
+  호환 경로에는 이전 소스 경로를 위한 별칭이나 얇은 forwarding만 둡니다. 새 구현은 호환 경로에 역의존하지 않습니다. Kotlin 소스 재컴파일 호환과 이전 JVM 바이너리 FQCN 호환은 구분합니다. 설치 앱의 실행 계약인 `com.springkit.agentguidebook.codex.MainKt`는 새 실행 조립으로 forwarding합니다.
 
   ## Do Not 예시
 

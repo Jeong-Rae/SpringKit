@@ -19,6 +19,10 @@ content: |
 
   둘째, 중복 여부는 이름을 읽는 위치에서 판단합니다. 반복한 표현을 생략해도 상위 맥락과 함께 읽으면 의미가 분명해야 합니다.
 
+  맥락을 덜어도 공개 import와 사용 위치에서 업무 의미가 드러나야 합니다. Guideline처럼 도메인 고유 개념을 `Model`이나 `Entity` 같은 일반 이름으로 줄이지 않습니다.
+
+  예를 들어 `presentation.Repository`는 해당 Slice 안의 역할 이름이고, `presentation.sqlite.SqliteRepository`는 구현 기술을 포함한 이름입니다. `Repository`를 공개 위치에서 사용할 때도 import 경로와 호출 맥락으로 제공 이력 저장 역할이 분명해야 합니다.
+
   ## Do Not 예시
 
   ```kotlin

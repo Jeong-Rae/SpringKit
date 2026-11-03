@@ -1,2 +1,2 @@
-/** 적용 범위를 판단하고 정규식으로 소스 코드 관련성을 평가합니다. */
+/** 이전 도메인 모델 경로를 유지하는 Kotlin 소스 호환 별칭을 제공합니다. */
 package com.springkit.agentguidebook.core

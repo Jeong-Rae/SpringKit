@@ -1,23 +1,4 @@
 package com.springkit.agentguidebook.codex
 
-import com.springkit.agentguidebook.client.GuidelinePresentationFactory
-import java.io.FileDescriptor
-import java.io.FileOutputStream
-import kotlin.system.exitProcess
-
-fun main() {
-  val input =
-      CodexHookInput(
-          input = System.`in`,
-          inputAdapter = CodexPostToolUseInputAdapter(),
-      )
-  val output =
-      CodexHookOutput(
-          stdout = FileOutputStream(FileDescriptor.out),
-          stderr = FileOutputStream(FileDescriptor.err),
-          outputAdapter = CodexPostToolUseOutputAdapter(),
-      )
-  val application = CodexHookApplication(GuidelinePresentationFactory.fileSystem()::present)
-
-  exitProcess(application.run(input, output))
-}
+/** 기존 JVM 실행 진입점을 Presentation이 소유한 Codex Hook으로 전달합니다. */
+fun main() = com.springkit.agentguidebook.presentation.codex.main()

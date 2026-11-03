@@ -1,15 +1,4 @@
 package com.springkit.agentguidebook.features.presentation.application
 
-/**
- * Application 작업의 transaction 경계를 관리하는 포트입니다.
- *
- * callback이 성공하고 commit된 뒤에만 결과를 반환합니다.
- */
-interface UnitOfWork {
-  /**
-   * callback을 한 transaction에서 실행합니다.
-   *
-   * 실패한 callback은 rollback 대상입니다.
-   */
-  fun <T> execute(operation: () -> T): T
-}
+/** 기존 transaction 포트 경로를 유지하는 Kotlin 소스 호환 별칭입니다. */
+typealias UnitOfWork = com.springkit.agentguidebook.presentation.UnitOfWork

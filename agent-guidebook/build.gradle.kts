@@ -61,6 +61,7 @@ dependencies {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  inputs.dir("../.agents/guides")
   dependsOn(tasks.named("installDist"))
   systemProperty(
       "agentGuidebook.applicationExecutable",

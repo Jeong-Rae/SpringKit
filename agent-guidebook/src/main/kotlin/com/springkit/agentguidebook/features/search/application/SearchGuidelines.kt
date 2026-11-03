@@ -1,9 +1,4 @@
 package com.springkit.agentguidebook.features.search.application
 
-import com.springkit.agentguidebook.core.MatchedGuideline
-import com.springkit.agentguidebook.models.GuidelineSearchRequest
-
-/** 지침 검색을 수행하는 Application 계약입니다. */
-fun interface SearchGuidelines {
-  fun execute(request: GuidelineSearchRequest): List<MatchedGuideline>
-}
+/** 기존 검색 실행 계약 경로를 유지하는 Kotlin 소스 호환 별칭입니다. */
+typealias SearchGuidelines = com.springkit.agentguidebook.search.SearchGuidelines
