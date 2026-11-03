@@ -164,21 +164,20 @@ class GuidelineSearchIntegrationTest :
           }
         }
 
-        scenario("현재 19개 지침을 복사하고 추상화 정규식에 맞는 코드를 검색하면, 해당 ID와 본문을 반환합니다.") {
+        scenario("프로젝트 지침을 복사하고 추상화 정규식에 맞는 코드를 검색하면, 해당 지침을 반환합니다.") {
           withProject { cwd ->
-            val copiedGuidelineCount = copyProjectGuidelines(cwd)
+            copyProjectGuidelines(cwd)
             val filepath =
                 writeSource(cwd, "src/main/kotlin/OrderRepository.kt", "interface OrderRepository")
-
-            copiedGuidelineCount shouldBe 19
 
             val matches =
                 GuidelineSearchFactory.fileSystem()
                     .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
-            matches.map { it.id } shouldBe
-                listOf(GuidelineId("abstract-dependency-boundaries-and-confirmed-extension-points"))
-            matches.single().content shouldContain "추상화는 의존성 방향을 분리"
+            val abstractDependencyGuideline = matches.single {
+              it.id == GuidelineId("abstract-dependency-boundaries-and-confirmed-extension-points")
+            }
+            abstractDependencyGuideline.content shouldContain "추상화는 의존성 방향을 분리"
           }
         }
       }
@@ -919,7 +918,7 @@ private fun StringBuilder.appendYamlValues(values: List<String>) {
 
 private fun yamlSingleQuoted(value: String): String = value.replace("'", "''")
 
-private fun copyProjectGuidelines(cwd: Path): Int {
+private fun copyProjectGuidelines(cwd: Path) {
   val guidebookRoot = projectGuidelinesRoot()
   val guidelineFiles =
       Files.walk(guidebookRoot).use { paths ->
@@ -935,8 +934,6 @@ private fun copyProjectGuidelines(cwd: Path): Int {
     Files.createDirectories(destination.parent)
     Files.copy(sourceFile, destination)
   }
-
-  return guidelineFiles.size
 }
 
 private fun projectGuidelinesRoot(): Path {

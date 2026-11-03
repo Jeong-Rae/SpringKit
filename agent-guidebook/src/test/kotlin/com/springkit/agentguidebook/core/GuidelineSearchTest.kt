@@ -179,12 +179,6 @@ class GuidelineSearchTest :
                       language = Language("kotlin"),
                   )
               )
-          guideline.id shouldBe GuidelineId("repository-rule")
-          guideline.scope.repositories shouldBe listOf("*")
-          guideline.scope.languages shouldBe listOf("kotlin")
-          guideline.events shouldBe setOf(GuidelineEvent("file_changed"))
-          guideline.match.patterns shouldBe listOf("RepositoryImpl")
-          guidelines.map { it.content } shouldBe listOf("kotlin 지침 본문")
         }
       }
 

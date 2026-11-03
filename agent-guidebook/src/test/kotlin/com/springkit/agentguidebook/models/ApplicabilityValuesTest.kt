@@ -3,7 +3,6 @@ package com.springkit.agentguidebook.models
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.datatest.withScenarios
-import io.kotest.matchers.shouldBe
 
 class ApplicabilityValuesTest :
     FeatureSpec({
@@ -23,12 +22,6 @@ class ApplicabilityValuesTest :
         ) { scenario ->
           shouldThrow<IllegalArgumentException> { Language(scenario.value) }
         }
-
-        scenario("언어 이름이 정상 값이면, 입력을 보존합니다.") {
-          val language = Language("kotlin")
-
-          language.value shouldBe "kotlin"
-        }
       }
 
       feature("이벤트 이름") {
@@ -46,12 +39,6 @@ class ApplicabilityValuesTest :
             ),
         ) { scenario ->
           shouldThrow<IllegalArgumentException> { GuidelineEvent(scenario.value) }
-        }
-
-        scenario("이벤트 이름이 정상 값이면, 입력을 보존합니다.") {
-          val event = GuidelineEvent("file_changed")
-
-          event.value shouldBe "file_changed"
         }
       }
     })

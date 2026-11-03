@@ -14,6 +14,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 class CodexPostToolUseInputAdapter {
+  /**
+   * 다른 Hook 이벤트나 도구, 실패한 patch 또는 현재 존재하는 변경 파일이 없으면 요청이 없습니다. 이때 `null`은 입력 오류가 아닌 현재 호출을 건너뛴다는
+   * 뜻이며 잘못된 입력은 예외로 전달합니다. 이 어댑터는 종료 정책을 정하지 않으므로 [CodexHookApplication.run]이 `null`을 성공 종료로 처리합니다.
+   */
   fun read(input: String): GuidelinePresentationRequest? {
     val inputObject = parseInputObject(input)
     val hookEventName = requiredString(inputObject, "hook_event_name")

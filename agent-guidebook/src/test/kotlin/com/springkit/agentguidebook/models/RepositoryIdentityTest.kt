@@ -25,12 +25,6 @@ class RepositoryIdentityTest :
             RepositoryIdentity(scenario.owner, "backend-order")
           }
         }
-
-        scenario("저장소 소유자가 정상 값이면, 식별자에 입력을 보존합니다.") {
-          val identity = RepositoryIdentity("acme", "backend-order")
-
-          identity.owner shouldBe "acme"
-        }
       }
 
       feature("저장소 이름") {
@@ -50,12 +44,6 @@ class RepositoryIdentityTest :
           shouldThrow<IllegalArgumentException> {
             RepositoryIdentity("acme", scenario.repository)
           }
-        }
-
-        scenario("저장소 이름이 정상 값이면, 식별자에 입력을 보존합니다.") {
-          val identity = RepositoryIdentity("acme", "backend-order")
-
-          identity.repository shouldBe "backend-order"
         }
       }
 

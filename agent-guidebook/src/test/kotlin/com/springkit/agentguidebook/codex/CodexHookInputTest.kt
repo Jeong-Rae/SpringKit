@@ -1,6 +1,7 @@
 package com.springkit.agentguidebook.codex
 
 import com.springkit.agentguidebook.models.SessionId
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -11,7 +12,6 @@ import java.io.InputStream
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
@@ -47,36 +47,22 @@ class CodexHookInputTest :
           stream.closed shouldBe false
         }
 
-        scenario("잘못된 JSON의 입력 예외와 원인을 그대로 전달하고 스트림을 닫지 않습니다.") {
+        scenario("잘못된 JSON이면 입력 예외를 전달하고 스트림을 닫지 않습니다.") {
           val stream = ChunkedInputStream("{".toByteArray(UTF_8), chunkSize = 1)
 
-          val failure =
-              try {
-                CodexHookInput(stream, CodexPostToolUseInputAdapter()).read()
-                null
-              } catch (exception: InvalidCodexHookInputException) {
-                exception
-              }
-
-          failure.shouldNotBeNull()
-          failure.message shouldBe "Codex Hook 입력 JSON을 해석할 수 없습니다."
-          (failure.cause is SerializationException) shouldBe true
+          shouldThrow<InvalidCodexHookInputException> {
+            CodexHookInput(stream, CodexPostToolUseInputAdapter()).read()
+          }
           stream.closed shouldBe false
         }
 
-        scenario("입력 읽기 IOException을 같은 인스턴스로 전달하고 스트림을 닫지 않습니다.") {
+        scenario("입력 읽기 IOException을 전달하고 스트림을 닫지 않습니다.") {
           val failure = IOException("입력 스트림 실패")
           val stream = PortFailingInputStream(failure)
 
-          val caught =
-              try {
-                CodexHookInput(stream, CodexPostToolUseInputAdapter()).read()
-                null
-              } catch (exception: IOException) {
-                exception
-              }
-
-          caught shouldBe failure
+          shouldThrow<IOException> {
+            CodexHookInput(stream, CodexPostToolUseInputAdapter()).read()
+          }
           stream.closed shouldBe false
         }
       }

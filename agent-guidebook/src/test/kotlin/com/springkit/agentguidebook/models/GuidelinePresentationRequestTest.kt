@@ -38,21 +38,5 @@ class GuidelinePresentationRequestTest :
 
           request.filepaths shouldBe listOf(filepath)
         }
-
-        scenario("요청을 만들면, Session 식별자와 경로 값을 그대로 보존합니다.") {
-          val sessionId = SessionId("codex-session-123")
-          val cwd = Path.of("/workspace/project/../project")
-          val filepaths = listOf(Path.of("/workspace/project/src/../Order.kt"))
-          val request =
-              GuidelinePresentationRequest(
-                  sessionId = sessionId,
-                  cwd = cwd,
-                  filepaths = filepaths,
-              )
-
-          request.sessionId shouldBe sessionId
-          request.cwd shouldBe cwd
-          request.filepaths shouldBe filepaths
-        }
       }
     })

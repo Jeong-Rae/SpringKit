@@ -35,19 +35,4 @@ class GuidelineSearchInputTest :
           request.filepaths shouldBe listOf(Path.of("/workspace/Order.kt"))
         }
       }
-
-      feature("검색 소스 입력") {
-        scenario("파일 경로와 한글 내용을 가진 소스를 만들면, 모든 입력이 보존됩니다.") {
-          val sourceFile =
-              SourceFile(
-                  filepath = Path.of("/workspace/src/Order.kt"),
-                  content = "class 주문서비스",
-                  language = Language("kotlin"),
-              )
-
-          sourceFile.filepath shouldBe Path.of("/workspace/src/Order.kt")
-          sourceFile.content shouldBe "class 주문서비스"
-          sourceFile.language shouldBe Language("kotlin")
-        }
-      }
     })

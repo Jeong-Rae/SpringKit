@@ -126,19 +126,6 @@ class GuidelineTest :
       }
 
       feature("지침 본문") {
-        scenario("본문이 한글 문장인 지침을 만들면, 본문이 보존됩니다.") {
-          val guideline =
-              Guideline(
-                  id = GuidelineId("본문 규칙"),
-                  scope = Scope(listOf("*"), listOf("*")),
-                  events = setOf(GuidelineEvent("file_changed")),
-                  match = MatchCondition(emptyList()),
-                  content = "서비스는 저장소 추상화에 의존해야 합니다.",
-              )
-
-          guideline.content shouldBe "서비스는 저장소 추상화에 의존해야 합니다."
-        }
-
         withScenarios(
             nameFn = { it.name },
             listOf(

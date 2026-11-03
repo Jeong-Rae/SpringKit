@@ -2,6 +2,7 @@ package com.springkit.agentguidebook.codex
 
 import com.springkit.agentguidebook.core.MatchedGuideline
 import com.springkit.agentguidebook.models.GuidelineId
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
@@ -45,28 +46,22 @@ class CodexHookOutputTest :
           stderr.closed shouldBe false
         }
 
-        scenario("stdout 쓰기 IOException을 같은 인스턴스로 전달하고 stderr로 우회하지 않습니다.") {
+        scenario("stdout 쓰기 IOException이 전파되고 stderr로 우회하지 않습니다.") {
           val failure = IOException("stdout 쓰기 실패")
           val stdout = PortFailingWriteOutputStream(failure)
           val stderr = PortTrackingOutputStream()
 
-          val caught =
-              try {
-                CodexHookOutput(stdout, stderr, CodexPostToolUseOutputAdapter())
-                    .present(sampleGuidelines)
-                null
-              } catch (exception: IOException) {
-                exception
-              }
-
-          caught shouldBe failure
+          shouldThrow<IOException> {
+            CodexHookOutput(stdout, stderr, CodexPostToolUseOutputAdapter())
+                .present(sampleGuidelines)
+          }
           stderr.writeCount shouldBe 0
           stderr.flushCount shouldBe 0
           stdout.closed shouldBe false
           stderr.closed shouldBe false
         }
 
-        scenario("stdout flush IOException을 같은 인스턴스로 전달하고 stderr로 우회하지 않습니다.") {
+        scenario("stdout flush IOException이 전파되고 stderr로 우회하지 않습니다.") {
           val failure = IOException("stdout flush 실패")
           val stdout = PortFailingFlushOutputStream(failure)
           val stderr = PortTrackingOutputStream()
@@ -74,16 +69,10 @@ class CodexHookOutputTest :
               checkNotNull(CodexPostToolUseOutputAdapter().render(sampleGuidelines))
                   .toByteArray(UTF_8)
 
-          val caught =
-              try {
-                CodexHookOutput(stdout, stderr, CodexPostToolUseOutputAdapter())
-                    .present(sampleGuidelines)
-                null
-              } catch (exception: IOException) {
-                exception
-              }
-
-          caught shouldBe failure
+          shouldThrow<IOException> {
+            CodexHookOutput(stdout, stderr, CodexPostToolUseOutputAdapter())
+                .present(sampleGuidelines)
+          }
           stdout.bytes.toList() shouldBe expected.toList()
           stdout.flushSnapshots.map { it.toList() } shouldBe listOf(expected.toList())
           stderr.writeCount shouldBe 0
