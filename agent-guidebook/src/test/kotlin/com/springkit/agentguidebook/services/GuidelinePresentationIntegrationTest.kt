@@ -6,11 +6,6 @@ import com.springkit.agentguidebook.config.SqlitePresentationConfig
 import com.springkit.agentguidebook.core.Presentation
 import com.springkit.agentguidebook.errors.GuidelineLoadException
 import com.springkit.agentguidebook.errors.InvalidSearchRequestException
-import com.springkit.agentguidebook.errors.PresentationDatabaseCorruptException
-import com.springkit.agentguidebook.errors.PresentationStorageException
-import com.springkit.agentguidebook.errors.PresentationStorageUnavailableException
-import com.springkit.agentguidebook.errors.PresentationTransactionRollbackException
-import com.springkit.agentguidebook.errors.RetryablePresentationStorageException
 import com.springkit.agentguidebook.models.GuidelineId
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
 import com.springkit.agentguidebook.models.SessionId
@@ -22,9 +17,7 @@ import io.kotest.datatest.withScenarios
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
-import io.kotest.matchers.types.shouldBeInstanceOf
 import java.nio.charset.StandardCharsets
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -32,7 +25,6 @@ import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds
 import java.sql.Connection
 import java.sql.DriverManager
-import java.sql.SQLException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -267,7 +259,7 @@ class GuidelinePresentationIntegrationTest :
           }
         }
 
-        scenario("SQLite가 아닌 파일을 열면 원인을 보존한 손상 예외를 전달합니다.") {
+        scenario("SQLite가 아닌 파일이면 요청을 실패시키고 파일 내용을 보존합니다.") {
           withPresentationProject { project ->
             writeGuideline(
                 project.cwd,
@@ -278,17 +270,14 @@ class GuidelinePresentationIntegrationTest :
             val databasePath = project.cwd.resolve("history.sqlite")
             Files.writeString(databasePath, "SQLite 데이터베이스가 아닙니다.")
 
-            val failure =
-                shouldThrow<PresentationDatabaseCorruptException> {
-                  presentationService(project.cwd, databasePath)
-                      .present(request(project, "session-a"))
-                }
-
-            failure.cause shouldNotBe null
+            shouldThrow<Exception> {
+              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+            }
+            Files.readString(databasePath) shouldBe "SQLite 데이터베이스가 아닙니다."
           }
         }
 
-        scenario("SQLite schema가 손상되면 원인을 보존한 손상 예외를 전달합니다.") {
+        scenario("SQLite schema가 손상되면 요청을 실패시키고 파일을 변경하지 않습니다.") {
           withPresentationProject { project ->
             writeGuideline(
                 project.cwd,
@@ -300,13 +289,12 @@ class GuidelinePresentationIntegrationTest :
             createPresentationTable(databasePath)
             corruptPresentationSchema(databasePath)
 
-            val failure =
-                shouldThrow<PresentationDatabaseCorruptException> {
-                  presentationService(project.cwd, databasePath)
-                      .present(request(project, "session-a"))
-                }
+            val before = Files.readAllBytes(databasePath)
 
-            failure.cause shouldNotBe null
+            shouldThrow<Exception> {
+              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+            }
+            Files.readAllBytes(databasePath).toList() shouldBe before.toList()
           }
         }
 
@@ -314,22 +302,14 @@ class GuidelinePresentationIntegrationTest :
             nameFn = { it.name },
             listOf(
                 CorruptPresentationRowScenario(
-                    name = "저장 시각이 올바르지 않으면 손상 예외와 원인을 전달합니다.",
+                    name = "저장 시각이 올바르지 않으면 조회를 실패시키고 기존 이력을 보존합니다.",
                     guidelineId = "service-rule",
                     presentedAt = "어제 오후",
-                    duplicate = false,
                 ),
                 CorruptPresentationRowScenario(
-                    name = "저장 Guideline ID가 올바르지 않으면 손상 예외와 원인을 전달합니다.",
+                    name = "저장 Guideline ID가 올바르지 않으면 조회를 실패시키고 기존 이력을 보존합니다.",
                     guidelineId = "",
                     presentedAt = OLD_TIMESTAMP,
-                    duplicate = false,
-                ),
-                CorruptPresentationRowScenario(
-                    name = "같은 이력이 중복 저장되어 있으면 손상 예외와 원인을 전달합니다.",
-                    guidelineId = "service-rule",
-                    presentedAt = OLD_TIMESTAMP,
-                    duplicate = true,
                 ),
             ),
         ) { scenario ->
@@ -341,33 +321,23 @@ class GuidelinePresentationIntegrationTest :
                 pattern = "OrderService",
             )
             val databasePath = project.cwd.resolve("history.sqlite")
-            createPresentationTable(databasePath, primaryKey = !scenario.duplicate)
+            createPresentationTable(databasePath)
             insertPresentation(
                 databasePath,
                 "session-a",
                 scenario.guidelineId,
                 scenario.presentedAt,
             )
-            if (scenario.duplicate) {
-              insertPresentation(
-                  databasePath,
-                  "session-a",
-                  scenario.guidelineId,
-                  scenario.presentedAt,
-              )
+            val before = rows(databasePath)
+
+            shouldThrow<Exception> {
+              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
             }
-
-            val failure =
-                shouldThrow<PresentationDatabaseCorruptException> {
-                  presentationService(project.cwd, databasePath)
-                      .present(request(project, "session-a"))
-                }
-
-            failure.cause shouldNotBe null
+            rows(databasePath) shouldBe before
           }
         }
 
-        scenario("DB 상위 경로가 파일이면 환경 오류와 원인을 전달합니다.") {
+        scenario("DB 상위 경로가 파일이면 요청을 실패시키고 기존 파일을 보존합니다.") {
           withPresentationProject { project ->
             writeGuideline(
                 project.cwd,
@@ -379,13 +349,10 @@ class GuidelinePresentationIntegrationTest :
             Files.writeString(parentFile, "파일입니다.")
             val databasePath = parentFile.resolve("history.sqlite")
 
-            val failure =
-                shouldThrow<PresentationStorageUnavailableException> {
-                  presentationService(project.cwd, databasePath)
-                      .present(request(project, "session-a"))
-                }
-
-            failure.cause shouldNotBe null
+            shouldThrow<Exception> {
+              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+            }
+            Files.readString(parentFile) shouldBe "파일입니다."
           }
         }
 
@@ -407,18 +374,14 @@ class GuidelinePresentationIntegrationTest :
             createPresentationTable(databasePath)
             createSecondInsertAbortTrigger(databasePath, "zeta-rule")
 
-            val failure =
-                shouldThrow<PresentationStorageException> {
-                  presentationService(project.cwd, databasePath)
-                      .present(request(project, "session-a"))
-                }
-
-            failure.cause shouldNotBe null
+            shouldThrow<Exception> {
+              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+            }
             rows(databasePath) shouldBe emptyList()
           }
         }
 
-        scenario("trigger가 자동 rollback한 뒤 명시 rollback도 실패하면 두 원인을 보존합니다.") {
+        scenario("trigger가 전체 rollback하면 성공 목록을 반환하지 않고 이력을 비웁니다.") {
           withPresentationProject { project ->
             writeGuideline(
                 project.cwd,
@@ -436,58 +399,14 @@ class GuidelinePresentationIntegrationTest :
             createPresentationTable(databasePath)
             createSecondInsertRollbackTrigger(databasePath, "zeta-rule")
 
-            val failure =
-                shouldThrow<PresentationTransactionRollbackException> {
-                  presentationService(project.cwd, databasePath)
-                      .present(request(project, "session-a"))
-                }
-
-            failure.cause.shouldBeInstanceOf<SQLException>()
-            failure.suppressed shouldHaveSize 1
-            failure.suppressed.single().shouldBeInstanceOf<SQLException>()
-            rows(databasePath) shouldBe emptyList()
-          }
-        }
-
-        scenario("SQLite RAISE(ROLLBACK)은 행을 되돌리고 뒤이은 ROLLBACK을 실패시킵니다.") {
-          withPresentationProject { project ->
-            val databasePath = project.cwd.resolve("history.sqlite")
-            createPresentationTable(databasePath)
-            createSecondInsertRollbackTrigger(databasePath, "zeta-rule")
-            val connection = openDatabase(databasePath)
-            try {
-              connection.createStatement().use { statement ->
-                statement.execute("BEGIN IMMEDIATE")
-              }
-              insertPresentation(
-                  connection,
-                  "session-a",
-                  "alpha-rule",
-                  OLD_TIMESTAMP,
-              )
-
-              shouldThrow<SQLException> {
-                insertPresentation(
-                    connection,
-                    "session-a",
-                    "zeta-rule",
-                    FIXED_TIMESTAMP,
-                )
-              }
-              shouldThrow<SQLException> {
-                connection.createStatement().use { statement ->
-                  statement.execute("ROLLBACK")
-                }
-              }
-            } finally {
-              connection.close()
+            shouldThrow<Exception> {
+              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
             }
-
             rows(databasePath) shouldBe emptyList()
           }
         }
 
-        scenario("다른 연결이 write lock을 잡으면 bounded busy 대기 뒤 재시도 예외와 원인을 전달합니다.") {
+        scenario("다른 연결의 write lock이 timeout까지 남으면 요청을 실패시키고 이력을 보존합니다.") {
           withPresentationProject { project ->
             writeGuideline(
                 project.cwd,
@@ -502,20 +421,17 @@ class GuidelinePresentationIntegrationTest :
               statement.execute("BEGIN IMMEDIATE")
             }
 
-            val failure =
-                try {
-                  shouldThrow<RetryablePresentationStorageException> {
-                    presentationService(project.cwd, databasePath)
-                        .present(request(project, "session-a"))
-                  }
-                } finally {
-                  lockConnection.createStatement().use { statement ->
-                    statement.execute("ROLLBACK")
-                  }
-                  lockConnection.close()
-                }
-
-            failure.cause shouldNotBe null
+            try {
+              shouldThrow<Exception> {
+                presentationService(project.cwd, databasePath)
+                    .present(request(project, "session-a"))
+              }
+            } finally {
+              lockConnection.createStatement().use { statement ->
+                statement.execute("ROLLBACK")
+              }
+              lockConnection.close()
+            }
             rows(databasePath) shouldBe emptyList()
           }
         }
@@ -539,25 +455,22 @@ class GuidelinePresentationIntegrationTest :
               }
             }
 
-            val failure =
-                try {
-                  shouldThrow<RetryablePresentationStorageException> {
-                    presentationService(project.cwd, databasePath)
-                        .present(request(project, "session-a"))
-                  }
-                } finally {
-                  reader.createStatement().use { statement ->
-                    statement.execute("ROLLBACK")
-                  }
-                  reader.close()
-                }
-
-            failure.cause shouldNotBe null
+            try {
+              shouldThrow<Exception> {
+                presentationService(project.cwd, databasePath)
+                    .present(request(project, "session-a"))
+              }
+            } finally {
+              reader.createStatement().use { statement ->
+                statement.execute("ROLLBACK")
+              }
+              reader.close()
+            }
             rows(databasePath) shouldBe emptyList()
           }
         }
 
-        scenario("저장 callback 자체의 예외는 원래 타입을 보존하고 추가 행을 rollback합니다.") {
+        scenario("저장 callback 예외는 기존 이력을 보존하고 새 행을 rollback합니다.") {
           withPresentationProject { project ->
             val databasePath = project.cwd.resolve("history.sqlite")
             createPresentationTable(databasePath)
@@ -571,17 +484,14 @@ class GuidelinePresentationIntegrationTest :
                     FIXED_INSTANT,
                 )
             val unitOfWork = SqlitePresentationUnitOfWork(SqlitePresentationConfig(databasePath))
-            val repository = SqlitePresentationRepository(unitOfWork)
+            val repository = SqlitePresentationRepository()
 
-            val thrown =
-                shouldThrow<IllegalArgumentException> {
-                  unitOfWork.execute {
-                    repository.record(listOf(newPresentation))
-                    throw failure
-                  }
-                }
-
-            thrown shouldBe failure
+            shouldThrow<IllegalArgumentException> {
+              unitOfWork.execute {
+                repository.record(listOf(newPresentation))
+                throw failure
+              }
+            }
             rows(databasePath) shouldBe before
           }
         }
@@ -672,13 +582,26 @@ class GuidelinePresentationIntegrationTest :
               Files.writeString(goFile, "GO", StandardCharsets.UTF_8)
               processes.forEach { process ->
                 waitForProbe(process)
-                process.exitValue() shouldBe 0
               }
-              val outcomes = outputFiles.map(::probeResult)
-              val nonEmptyResults = outcomes.filter { it == "RESULT|single-rule" }
+              val outcomes = processes.mapIndexed { index, process ->
+                process.exitValue() to Files.readString(outputFiles[index])
+              }
+              outcomes.all { (exitCode, _) -> exitCode in 0..1 } shouldBe true
+              val successfulResults =
+                  outcomes
+                      .filter { it.first == 0 }
+                      .map { (_, output) ->
+                        output.lineSequence().lastOrNull { it.startsWith("RESULT|") }
+                            ?: error("성공한 독립 JVM이 결과를 출력하지 않았습니다: $output")
+                      }
+              val nonEmptyResults = successfulResults.filter { it == "RESULT|single-rule" }
+              val failures = outcomes.filter { it.first == 1 }
 
               nonEmptyResults shouldHaveSize 1
-              outcomes.count { it == "RESULT|" || it == "RETRYABLE" } shouldBe 1
+              failures.all { (_, output) ->
+                isSqliteLockFailure(output) && "RESULT|" !in output
+              } shouldBe true
+              successfulResults.count { it == "RESULT|" } + failures.size shouldBe 1
               rows(
                   temporaryHome.resolve(".adaptive-guidebook/adaptive-guidebook.db"),
                   "session-a",
@@ -712,7 +635,6 @@ private data class CorruptPresentationRowScenario(
     val name: String,
     val guidelineId: String,
     val presentedAt: String,
-    val duplicate: Boolean,
 )
 
 object PresentationIntegrationJvmProbe {
@@ -728,25 +650,14 @@ object PresentationIntegrationJvmProbe {
     }
 
     val result =
-        try {
-          GuidelinePresentationFactory.fileSystem()
-              .present(
-                  GuidelinePresentationRequest(
-                      sessionId = SessionId(sessionId),
-                      cwd = cwd,
-                      filepaths = listOf(sourceFile),
-                  )
-              )
-        } catch (exception: RetryablePresentationStorageException) {
-          if (mode == "concurrent") {
-            println("RETRYABLE")
-            return
-          }
-          throw exception
-        } catch (exception: NotImplementedError) {
-          println("NOT_IMPLEMENTED")
-          return
-        }
+        GuidelinePresentationFactory.fileSystem()
+            .present(
+                GuidelinePresentationRequest(
+                    sessionId = SessionId(sessionId),
+                    cwd = cwd,
+                    filepaths = listOf(sourceFile),
+                )
+            )
 
     println("RESULT|${result.joinToString(",") { it.id.value }}")
   }
@@ -777,7 +688,7 @@ private fun presentationService(
   return GuidelinePresentationService(
       guidelineSearchService = GuidelineSearchFactory.fileSystem(),
       unitOfWork = unitOfWork,
-      presentationRepository = SqlitePresentationRepository(unitOfWork),
+      presentationRepository = SqlitePresentationRepository(),
       clock = clock,
   )
 }
@@ -864,7 +775,7 @@ private fun guidelineYaml(id: String, pattern: String, content: String): String 
 
 private fun yamlSingleQuoted(value: String): String = value.replace("'", "''")
 
-private fun createPresentationTable(databasePath: Path, primaryKey: Boolean = true) {
+private fun createPresentationTable(databasePath: Path) {
   Files.createDirectories(databasePath.parent)
   openDatabase(databasePath).use { connection ->
     connection.createStatement().use { statement ->
@@ -872,13 +783,13 @@ private fun createPresentationTable(databasePath: Path, primaryKey: Boolean = tr
         resultSet.next() shouldBe true
         resultSet.getString(1) shouldBe "delete"
       }
-      val primaryKeyClause = if (primaryKey) ", PRIMARY KEY (session_id, guideline_id)" else ""
       statement.execute(
           """
           CREATE TABLE IF NOT EXISTS presentation (
               session_id TEXT NOT NULL,
               guideline_id TEXT NOT NULL,
-              presented_at TEXT NOT NULL$primaryKeyClause
+              presented_at TEXT NOT NULL,
+              PRIMARY KEY (session_id, guideline_id)
           )
           """
               .trimIndent()
@@ -1085,8 +996,14 @@ private fun stopProbe(process: Process) {
 
 private fun probeResult(outputFile: Path): String =
     Files.readAllLines(outputFile, StandardCharsets.UTF_8).lastOrNull { line ->
-      line.startsWith("RESULT|") || line == "RETRYABLE" || line == "NOT_IMPLEMENTED"
+      line.startsWith("RESULT|")
     } ?: error("독립 JVM 테스트 프로세스가 결과를 출력하지 않았습니다: ${Files.readString(outputFile)}")
+
+private fun isSqliteLockFailure(output: String): Boolean {
+  val lowercaseOutput = output.lowercase()
+  return listOf("sqlite_busy", "sqlite_locked", "database is locked", "database table is locked")
+      .any(lowercaseOutput::contains)
+}
 
 private fun awaitFiles(directory: Path, expectedFiles: Collection<Path>) {
   FileSystems.getDefault().newWatchService().use { watcher ->

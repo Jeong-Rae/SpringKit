@@ -6,7 +6,6 @@ import com.springkit.agentguidebook.core.MatchedGuideline
 import com.springkit.agentguidebook.core.Presentation
 import com.springkit.agentguidebook.core.Scope
 import com.springkit.agentguidebook.errors.GuidelineLoadException
-import com.springkit.agentguidebook.errors.RetryablePresentationStorageException
 import com.springkit.agentguidebook.models.GuidelineEvent
 import com.springkit.agentguidebook.models.GuidelineId
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
@@ -161,11 +160,11 @@ class GuidelinePresentationServiceTest :
                   persistence =
                       memoryPresentationPersistence(
                           failOnGuidelineId = GuidelineId("second-rule"),
-                          saveFailure = RetryablePresentationStorageException(),
+                          saveFailure = IllegalStateException("두 번째 기록 실패"),
                       )
               )
 
-          shouldThrow<RetryablePresentationStorageException> {
+          shouldThrow<IllegalStateException> {
             fixture.service.present(request("session-a"))
           }
 
@@ -177,11 +176,11 @@ class GuidelinePresentationServiceTest :
               fixture(
                   persistence =
                       memoryPresentationPersistence(
-                          commitFailure = RetryablePresentationStorageException("commit 실패")
+                          commitFailure = IllegalStateException("commit 실패")
                       )
               )
 
-          shouldThrow<RetryablePresentationStorageException> {
+          shouldThrow<IllegalStateException> {
             fixture.service.present(request("session-a"))
           }
 

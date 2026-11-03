@@ -1,7 +1,6 @@
 package com.springkit.agentguidebook.codex
 
 import com.springkit.agentguidebook.core.MatchedGuideline
-import com.springkit.agentguidebook.errors.PresentationStorageUnavailableException
 import com.springkit.agentguidebook.models.GuidelineId
 import com.springkit.agentguidebook.models.GuidelinePresentationRequest
 import io.kotest.core.spec.style.FeatureSpec
@@ -123,12 +122,11 @@ class CodexHookApplicationTest :
           }
         }
 
-        scenario("저장에서 예외가 나면 저장소 진단과 1을 반환하고 stdout을 비웁니다.") {
+        scenario("실행 중 저장 오류가 나면 일반 실행 실패 진단과 1을 반환합니다.") {
           withHookProject { cwd ->
             val stdout = ByteArrayOutputStream()
             val stderr = ByteArrayOutputStream()
-            val failure =
-                PresentationStorageUnavailableException(cause = IOException("DB 경로가 디렉터리입니다."))
+            val failure = IOException("DB 경로가 디렉터리입니다.")
 
             val exitCode =
                 runHookApplication(
@@ -140,7 +138,7 @@ class CodexHookApplicationTest :
 
             exitCode shouldBe 1
             stdout.toByteArray().toList() shouldBe byteArrayOf().toList()
-            stderr.toString(UTF_8) shouldContain "Presentation 저장소를 사용할 수 없습니다."
+            stderr.toString(UTF_8) shouldContain "Agent Guidebook 실행 실패"
             stderr.toString(UTF_8) shouldContain "DB 경로가 디렉터리입니다."
           }
         }

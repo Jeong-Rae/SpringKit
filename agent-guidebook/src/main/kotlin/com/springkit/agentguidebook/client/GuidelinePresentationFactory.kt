@@ -23,7 +23,7 @@ object GuidelinePresentationFactory {
     return GuidelinePresentationService(
         guidelineSearchService = GuidelineSearchFactory.fileSystem(),
         unitOfWork = unitOfWork,
-        presentationRepository = SqlitePresentationRepository(unitOfWork),
+        presentationRepository = SqlitePresentationRepository(),
         clock = Clock.systemUTC(),
     )
   }

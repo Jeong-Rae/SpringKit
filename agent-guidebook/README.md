@@ -45,9 +45,13 @@ val matches =
 `GuidelineSearchInputReader` 포트에 입력 읽기를 위임합니다. 테스트에서는 메모리 기반 입력
 경계를 주입해 실제 파일 시스템과 Git 없이 검색 흐름을 확인할 수 있습니다.
 
-`PresentationRepository`는 이력 조회·기록을 맡고, `UnitOfWork`가 실행 범위를 관리합니다.
-두 포트와 Session별 제공 UseCase는 `features.presentation.application`에 있습니다.
-SQLite 연결 설정과 초기화는 `features.presentation.infrastructure`에서 구성합니다.
+`PresentationRepository`와 `UnitOfWork`는 `features.presentation.application`의
+포트입니다. `SqlitePresentationRepository`는 Exposed DSL로 이력을 조회·기록하고,
+`SqlitePresentationUnitOfWork`는 Application transaction 경계를 SQLite transaction으로
+연결합니다. UnitOfWork는 스키마 준비와 callback을 Exposed transaction 안에서 실행하며
+commit과 rollback은 Exposed가 관리합니다. Session별 제공 UseCase도
+`features.presentation.application`에 있습니다. SQLite 연결 설정과 초기화는
+`features.presentation.infrastructure`에서 구성합니다.
 
 Session별로 아직 제공하지 않은 지침을 검색하고 SQLite에 기록하려면 Presentation factory를 사용합니다.
 
@@ -73,7 +77,8 @@ val newGuidelines =
 Session ID와 Guideline ID 조합으로 저장되므로 본문이 바뀌어도 같은 Guideline ID를 다시 제공하지 않습니다.
 `present`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
 Commit 후 반환 전에 프로세스가 끝나면 다음 요청은 저장된 ID를 제외합니다. 수신 확인이나 재전송은 하지 않습니다.
-SQLite 잠금은 최대 1,000ms 대기하며, 그 뒤에도 잠금이 유지되면 재시도 가능한 저장소 예외를 전달합니다.
+SQLite 잠금은 최대 1,000ms 대기합니다. Exposed의 `defaultMaxAttempts=1` 설정으로 SQL callback은
+자동 재실행하지 않습니다. 잠금이 계속되거나 저장에 실패하면 오류를 호출자에게 전달합니다.
 이력 저장은 Exposed 1.6.0의 `core`, `jdbc` typed DSL과 SQLite JDBC 3.53.4.0 driver를 사용합니다.
 세 `TEXT` 열과 `(session_id, guideline_id)` 기본 키는 일반 Exposed `Table`로 정의하고, Repository는 typed `selectAll`과 `insert`로 조회·기록합니다. 조회한 문자열 행은 transaction 안에서 도메인 `Presentation`으로 복원합니다.
 

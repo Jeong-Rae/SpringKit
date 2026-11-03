@@ -153,7 +153,7 @@ class CodexHookProcessIntegrationTest :
           }
         }
 
-        scenario("SQLite 경로가 디렉터리이면 저장소 진단과 1을 반환하고 Context를 출력하지 않습니다.") {
+        scenario("SQLite 경로가 디렉터리이면 일반 실행 실패와 1을 반환하고 Context를 출력하지 않습니다.") {
           withTemporaryInstallation(sourceInstallationDirectory) { installation ->
             withTemporaryProject(installation.temporaryRoot) { cwd ->
               withTemporaryHome(installation.temporaryRoot) { userHome ->
@@ -172,7 +172,7 @@ class CodexHookProcessIntegrationTest :
                 withClue(result.diagnostic("저장 실패 호출")) {
                   result.exitCode shouldBe 1
                   result.stdout shouldBe ""
-                  result.stderr shouldContain "저장소"
+                  result.stderr shouldContain "Agent Guidebook 실행 실패"
                   Files.isDirectory(databasePath) shouldBe true
                 }
               }

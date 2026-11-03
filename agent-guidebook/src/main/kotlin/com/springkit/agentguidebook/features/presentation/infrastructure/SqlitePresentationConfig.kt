@@ -1,12 +1,9 @@
 package com.springkit.agentguidebook.features.presentation.infrastructure
 
-import com.springkit.agentguidebook.errors.PresentationStorageUnavailableException
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import org.jetbrains.exposed.v1.core.DatabaseConfig
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.DatabaseConnectionAutoRegistration
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.sqlite.SQLiteConfig
 
@@ -23,9 +20,7 @@ class SqlitePresentationConfig(
    *
    * JDBC 연결은 반환된 Database의 transaction이 시작될 때 생성합니다.
    */
-  internal fun openDatabase(
-      connectionRegistration: DatabaseConnectionAutoRegistration,
-  ): Database {
+  internal fun openDatabase(): Database {
     val normalizedDatabasePath = prepareDatabasePath()
     val sqliteConfig =
         SQLiteConfig().apply {
@@ -40,10 +35,7 @@ class SqlitePresentationConfig(
         databaseConfig =
             DatabaseConfig {
               defaultMaxAttempts = MAX_ATTEMPTS
-              defaultMinRetryDelay = NO_RETRY_DELAY_MILLISECONDS
-              defaultMaxRetryDelay = NO_RETRY_DELAY_MILLISECONDS
             },
-        connectionAutoRegistration = connectionRegistration,
     )
   }
 
@@ -57,21 +49,14 @@ class SqlitePresentationConfig(
   }
 
   private fun prepareDatabasePath(): Path {
-    try {
-      val normalizedPath = databasePath.toAbsolutePath().normalize()
-      normalizedPath.parent?.let(Files::createDirectories)
-      return normalizedPath
-    } catch (failure: IOException) {
-      throw PresentationStorageUnavailableException(cause = failure)
-    } catch (failure: SecurityException) {
-      throw PresentationStorageUnavailableException(cause = failure)
-    }
+    val normalizedPath = databasePath.toAbsolutePath().normalize()
+    normalizedPath.parent?.let(Files::createDirectories)
+    return normalizedPath
   }
 
   private companion object {
     const val BUSY_TIMEOUT_MILLISECONDS = 1_000
     const val MAX_ATTEMPTS = 1
-    const val NO_RETRY_DELAY_MILLISECONDS = 0L
 
     fun defaultDatabasePath(): Path =
         Path.of(

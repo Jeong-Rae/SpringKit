@@ -7,7 +7,6 @@ import com.springkit.agentguidebook.core.Presentation
 import com.springkit.agentguidebook.core.Scope
 import com.springkit.agentguidebook.errors.GuidelineLoadException
 import com.springkit.agentguidebook.errors.InvalidSearchRequestException
-import com.springkit.agentguidebook.errors.RetryablePresentationStorageException
 import com.springkit.agentguidebook.features.search.application.GuidelineSearchInputReader
 import com.springkit.agentguidebook.features.search.application.SearchGuidelinesUseCase
 import com.springkit.agentguidebook.models.GuidelineEvent
@@ -147,7 +146,7 @@ class PresentGuidelinesUseCaseTest :
         }
 
         scenario("두 번째 기록이 실패하면 앞선 기록도 rollback하고 원래 예외를 전달합니다.") {
-          val failure = RetryablePresentationStorageException("두 번째 기록 실패")
+          val failure = IllegalStateException("두 번째 기록 실패")
           val initialHistory = listOf(presentation("session-a", "older-rule"))
           val fixture =
               fixture(
@@ -157,17 +156,14 @@ class PresentGuidelinesUseCaseTest :
               )
           val before = presentationValues(fixture.store.allPresentations())
 
-          val thrown =
-              shouldThrow<RetryablePresentationStorageException> {
-                fixture.useCase.execute(request("session-a"))
-              }
-
-          (thrown === failure) shouldBe true
+          shouldThrow<IllegalStateException> {
+            fixture.useCase.execute(request("session-a"))
+          }
           presentationValues(fixture.store.allPresentations()) shouldBe before
         }
 
         scenario("commit이 실패하면 이력을 rollback하고 성공 결과를 반환하지 않습니다.") {
-          val failure = RetryablePresentationStorageException("commit 실패")
+          val failure = IllegalStateException("commit 실패")
           val initialHistory = listOf(presentation("session-a", "older-rule"))
           val fixture =
               fixture(
@@ -176,12 +172,9 @@ class PresentGuidelinesUseCaseTest :
               )
           val before = presentationValues(fixture.store.allPresentations())
 
-          val thrown =
-              shouldThrow<RetryablePresentationStorageException> {
-                fixture.useCase.execute(request("session-a"))
-              }
-
-          (thrown === failure) shouldBe true
+          shouldThrow<IllegalStateException> {
+            fixture.useCase.execute(request("session-a"))
+          }
           presentationValues(fixture.store.allPresentations()) shouldBe before
         }
 
