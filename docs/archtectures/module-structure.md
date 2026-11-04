@@ -1,9 +1,5 @@
 # 모듈구조
 
-이 문서의 그래프는 멀티모듈 템플릿의 물리적인 Gradle 모듈 구성을 설명합니다. BC와 Slice는 논리적인 모델·유스케이스 소유권을 나타내므로 물리 모듈과 일대일로 대응하지 않습니다.
-
-Agent Guidebook은 단일 Gradle 모듈이며 `com.springkit.agentguidebook`이 하나의 BC입니다. 그 안에서 `search`와 `presentation`이 각각 Slice를 소유합니다. 아래 멀티모듈 그래프는 이 패키지 구조를 강제하지 않는 일반 템플릿입니다.
-
 ## 의존성 방향
 
 ```mermaid
