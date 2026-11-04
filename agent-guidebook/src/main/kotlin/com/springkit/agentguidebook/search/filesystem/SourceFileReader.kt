@@ -8,18 +8,8 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 
-/**
- * Kotlin 소스 파일을 엄격한 UTF-8 디코딩으로 읽습니다.
- *
- * 읽기 또는 디코딩 실패는 검색 소스 오류로 전달합니다.
- */
 internal class SourceFileReader {
 
-  /**
-   * `.kt`와 `.kts` 파일을 입력 순서대로 한 번씩 읽습니다.
-   *
-   * 지원하지 않는 확장자는 결과에서 제외합니다.
-   */
   fun readKotlinSources(filepaths: Collection<Path>): List<SourceFile> =
       filepaths.filter(::isKotlinSource).map(::readKotlinSource)
 

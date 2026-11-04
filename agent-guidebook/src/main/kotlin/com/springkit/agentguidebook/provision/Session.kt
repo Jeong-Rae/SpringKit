@@ -3,11 +3,6 @@ package com.springkit.agentguidebook.provision
 import com.springkit.agentguidebook.domain.GuidelineId
 import com.springkit.agentguidebook.domain.MatchedGuideline
 
-/**
- * 한 Session에서 제공한 지침 이력과 미제공 지침 판단을 소유합니다.
- *
- * 이력의 중복 기준은 Guideline ID이며, 제공 시각은 중복 여부에 영향을 주지 않습니다.
- */
 class Session(
     val id: SessionId,
     history: Collection<Provision>,
@@ -30,11 +25,6 @@ class Session(
     }
   }
 
-  /**
-   * 이미 제공한 지침을 제외하고 입력 순서대로 첫 항목을 반환합니다.
-   *
-   * 조회 중 Session 이력과 입력 컬렉션은 변경하지 않습니다.
-   */
   fun notProvided(guidelines: Collection<MatchedGuideline>): List<MatchedGuideline> {
     val consideredGuidelineIds = mutableSetOf<GuidelineId>()
     val notProvidedGuidelines = mutableListOf<MatchedGuideline>()
@@ -51,11 +41,7 @@ class Session(
     return notProvidedGuidelines
   }
 
-  /**
-   * 새 Provision 이력을 검증한 뒤 Session 상태에 추가합니다.
-   *
-   * 인자 오류나 기존 이력과의 중복이 있으면 상태를 바꾸지 않습니다.
-   */
+  /** 잘못된 Session ID나 중복 Guideline ID가 있으면 상태를 바꾸지 않습니다. */
   fun record(provisions: Collection<Provision>) {
     val requestedProvisions = provisions.toList()
     val requestedGuidelineIds = mutableSetOf<GuidelineId>()

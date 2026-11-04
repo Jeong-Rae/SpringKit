@@ -12,18 +12,8 @@ import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.URIish
 import org.eclipse.jgit.transport.UrlConfig
 
-/**
- * Git 저장소의 origin 설정을 읽어 정규화된 소유자와 저장소 이름으로 변환합니다.
- *
- * JGit으로 현재 경로의 저장소를 탐색하고 origin의 첫 주소만 사용합니다.
- */
 internal class JGitRepositoryIdentityReader {
 
-  /**
-   * 지정한 작업 경로의 Git 저장소에서 origin 식별자를 읽습니다.
-   *
-   * 저장소, 설정 또는 주소를 확인할 수 없으면 원인을 보존한 예외를 전달합니다.
-   */
   fun read(cwd: Path): RepositoryIdentity =
       try {
         val repository = FileRepositoryBuilder().setMustExist(true).findGitDir(cwd.toFile()).build()

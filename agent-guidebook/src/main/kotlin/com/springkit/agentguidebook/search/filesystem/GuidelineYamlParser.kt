@@ -15,18 +15,9 @@ import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
 import org.yaml.snakeyaml.error.YAMLException
 
-/**
- * YAML 문서를 검증해 검색 도메인의 지침으로 변환합니다.
- *
- * 안전한 생성자를 사용하고 현재 스키마 밖의 필드를 거부합니다.
- */
 internal class GuidelineYamlParser {
 
-  /**
-   * 지정한 지침 YAML 파일을 엄격한 UTF-8로 읽고 구조를 검증합니다.
-   *
-   * 파일, 문법 또는 필드 오류는 지침 로딩 오류로 전달합니다.
-   */
+  /** 엄격한 UTF-8로 읽고 알 수 없는 필드는 거부합니다. YAML 오류는 지침 로딩 오류로 전달합니다. */
   fun read(filepath: Path): Guideline {
     val document = readDocument(filepath)
     val parsed =
