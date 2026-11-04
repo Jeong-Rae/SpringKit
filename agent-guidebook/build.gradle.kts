@@ -9,7 +9,7 @@ group = "com.springkit.agentguidebook"
 version = "0.0.1-SNAPSHOT"
 
 application {
-  mainClass.set("com.springkit.agentguidebook.codex.MainKt")
+  mainClass.set("com.springkit.agentguidebook.provision.codex.MainKt")
   applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
@@ -61,6 +61,7 @@ dependencies {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  inputs.dir("../.agents/guides")
   dependsOn(tasks.named("installDist"))
   systemProperty(
       "agentGuidebook.applicationExecutable",

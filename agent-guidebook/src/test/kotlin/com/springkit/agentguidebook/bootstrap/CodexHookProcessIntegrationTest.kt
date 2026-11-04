@@ -85,8 +85,8 @@ class CodexHookProcessIntegrationTest :
                   anotherSession.additionalContext() shouldBe "[process-rule]\n프로세스 통합 지침입니다.\n"
                   rows(databasePath) shouldContainExactly
                       listOf(
-                          StoredPresentation("session-a", "process-rule"),
-                          StoredPresentation("session-b", "process-rule"),
+                          StoredProvision("session-a", "process-rule"),
+                          StoredProvision("session-b", "process-rule"),
                       )
                 }
               }
@@ -153,7 +153,7 @@ class CodexHookProcessIntegrationTest :
           }
         }
 
-        scenario("SQLite 경로가 디렉터리이면 저장소 진단과 1을 반환하고 Context를 출력하지 않습니다.") {
+        scenario("SQLite 경로가 디렉터리이면 일반 실행 실패와 1을 반환하고 Context를 출력하지 않습니다.") {
           withTemporaryInstallation(sourceInstallationDirectory) { installation ->
             withTemporaryProject(installation.temporaryRoot) { cwd ->
               withTemporaryHome(installation.temporaryRoot) { userHome ->
@@ -172,7 +172,7 @@ class CodexHookProcessIntegrationTest :
                 withClue(result.diagnostic("저장 실패 호출")) {
                   result.exitCode shouldBe 1
                   result.stdout shouldBe ""
-                  result.stderr shouldContain "저장소"
+                  result.stderr shouldContain "Agent Guidebook 실행 실패"
                   Files.isDirectory(databasePath) shouldBe true
                 }
               }
@@ -215,7 +215,7 @@ private data class CodexHookProcessResult(
   }
 }
 
-private data class StoredPresentation(
+private data class StoredProvision(
     val sessionId: String,
     val guidelineId: String,
 )
@@ -318,22 +318,22 @@ private fun executeHook(
 private fun readIfPresent(filepath: Path): String =
     if (Files.exists(filepath)) Files.readString(filepath, UTF_8) else ""
 
-private fun rows(databasePath: Path): List<StoredPresentation> {
+private fun rows(databasePath: Path): List<StoredProvision> {
   if (!Files.isRegularFile(databasePath)) {
     return emptyList()
   }
 
-  val storedRows = ArrayList<StoredPresentation>()
+  val storedRows = ArrayList<StoredProvision>()
   DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
     connection.createStatement().use { statement ->
       statement
           .executeQuery(
-              "SELECT session_id, guideline_id FROM presentation ORDER BY session_id, guideline_id"
+              "SELECT session_id, guideline_id FROM provision ORDER BY session_id, guideline_id"
           )
           .use { resultSet ->
             while (resultSet.next()) {
               storedRows.add(
-                  StoredPresentation(
+                  StoredProvision(
                       sessionId = resultSet.getString("session_id"),
                       guidelineId = resultSet.getString("guideline_id"),
                   )
