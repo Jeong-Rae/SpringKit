@@ -29,7 +29,7 @@ import com.springkit.agentguidebook.search.SearchRequest
 import java.nio.file.Path
 
 val matches =
-    Factory.fileSystem().search(
+    Factory.fileSystem().execute(
         SearchRequest(
             cwd = Path.of("/workspace/backend-order"),
             filepaths = listOf(Path.of("/workspace/backend-order/src/OrderService.kt")),
@@ -50,7 +50,7 @@ import com.springkit.agentguidebook.presentation.SessionId
 import java.nio.file.Path
 
 val newGuidelines =
-    Factory.fileSystem().present(
+    Factory.fileSystem().execute(
         PresentationRequest(
             sessionId = SessionId("codex-session-123"),
             cwd = Path.of("/workspace/backend-order"),
@@ -59,11 +59,9 @@ val newGuidelines =
     )
 ```
 
-기존 호출 경로도 Kotlin 소스 재컴파일 호환으로 유지합니다. `client.GuidelineSearchFactory`, `client.GuidelinePresentationFactory`, `services.GuidelineSearchService`, `services.GuidelinePresentationService`와 각 서비스의 생성자 및 `search`·`present` 메서드를 사용할 수 있습니다. `core`, `models`, `services`, `errors`, `config`, `storage`, `features.search.application`, `features.presentation`, `features.presentation.application`은 canonical Slice가 소유한 선언을 가리키는 호환 별칭만 둡니다. `client`의 두 Factory는 새 Slice Factory를 forwarding합니다. 이미 컴파일된 이전 FQCN의 JVM 바이너리 호환은 보장하지 않습니다. 설치 앱의 실행 계약인 `com.springkit.agentguidebook.codex.MainKt`는 새 `presentation.codex` 실행 조립을 forwarding합니다.
-
 기본 이력 DB는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`입니다. 이력은
 Session ID와 Guideline ID 조합으로 저장되므로 본문이 바뀌어도 같은 Guideline ID를 다시 제공하지 않습니다.
-`present`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
+`PresentGuidelinesUseCase.execute`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
 Commit 후 반환 전에 프로세스가 끝나면 다음 요청은 저장된 ID를 제외합니다. 수신 확인이나 재전송은 하지 않습니다.
 SQLite는 IMMEDIATE transaction과 최대 1,000ms busy timeout을 사용합니다. Exposed의
 `defaultMaxAttempts=1` 설정으로 SQL callback은 자동 재실행하지 않습니다. 잠금이 계속되거나 저장에 실패하면 오류를 호출자에게 전달합니다.
@@ -72,11 +70,10 @@ SQLite는 IMMEDIATE transaction과 최대 1,000ms busy timeout을 사용합니�
 
 Codex `PostToolUse` Hook wrapper는 배포한 JVM 앱에 연결되어 있습니다. 진입점은
 `presentation.codex.HookInput`, `HookOutput`과 `presentation.Factory`를 조립합니다.
-입력 객체는 EOF까지 UTF-8 입력을 읽어 기존 Adapter로 요청을 변환하고, 출력 객체는
+입력 객체는 EOF까지 UTF-8 입력을 읽어 PostToolUse Adapter로 요청을 변환하고, 출력 객체는
 정상 응답과 진단을 각각 stdout과 stderr에 기록한 뒤 flush합니다. 호출자가 전달한 스트림은 닫지 않습니다.
 `presentation.codex.HookApplication.run(input, output)`은 실행 흐름과 종료 코드만 결정합니다.
-`presentation.PresentGuidelinesUseCase`가 검색과 Session별 이력 기록을 조율하며, 기존
-`GuidelinePresentationService.present`도 같은 UseCase로 위임합니다.
+`presentation.PresentGuidelinesUseCase.execute`가 검색과 Session별 이력 기록을 조율합니다.
 
 검색은 `.kt`와 `.kts` 파일만 읽고, `cwd/.agents/guides` 아래의 `guideline.yaml`을
 상대 경로 사전순으로 평가합니다. YAML 지침의 저장소, 언어, `file_changed` 이벤트와
@@ -102,7 +99,7 @@ codex
 
 생산 wrapper와 배포 앱의 표준 입력·출력·오류·종료 코드는 프로세스 통합 테스트로 검증합니다. Codex CLI 0.166.0의 임시 Git 프로젝트에서 CLI inline Hook 설정으로 실행해, 실제 추가 컨텍스트가 다음 모델 입력에 전달되는 것을 확인했습니다. 이 실행은 성공했으며, Codex stderr에는 별도 MCP worker의 HTTP 403 로그도 포함됐습니다. 예제 `hooks.json` 파일 형식은 Codex 공식 구성을 참고한 것이며, 파일 기반 설정 로딩은 아직 runtime 검증되지 않았습니다.
 
-입력 Adapter는 `PostToolUse`의 `apply_patch` 이벤트만 처리합니다. 대상 요청에는 비어 있지 않은 `session_id`, 절대 경로 `cwd`, 문자열 `tool_response`가 필요합니다. 성공한 `tool_response`의 `Exit code: 0`과 `Success. Updated the following files:` marker 아래에서 추가·수정된 경로를 읽습니다. marker부터 시작하는 원래 도구 출력도 지원합니다. 상대 경로는 `cwd` 기준으로 해석합니다. 삭제되거나 현재 없는 경로와 디렉터리는 검색하지 않습니다. 기존 검색 서비스가 `.kt`와 `.kts` 파일만 읽습니다. 다른 이벤트·도구, 실패한 패치, 검색 대상이 없는 요청은 빈 stdout과 종료 코드 0을 반환합니다.
+입력 Adapter는 `PostToolUse`의 `apply_patch` 이벤트만 처리합니다. 대상 요청에는 비어 있지 않은 `session_id`, 절대 경로 `cwd`, 문자열 `tool_response`가 필요합니다. 성공한 `tool_response`의 `Exit code: 0`과 `Success. Updated the following files:` marker 아래에서 추가·수정된 경로를 읽습니다. marker부터 시작하는 원래 도구 출력도 지원합니다. 상대 경로는 `cwd` 기준으로 해석합니다. 삭제되거나 현재 없는 경로와 디렉터리는 검색하지 않습니다. Search Application은 `.kt`와 `.kts` 파일만 읽습니다. 다른 이벤트·도구, 실패한 패치, 검색 대상이 없는 요청은 빈 stdout과 종료 코드 0을 반환합니다.
 
 잘못된 Hook JSON이나 대상 이벤트의 필드 오류는 stderr 진단과 종료 코드 64를 반환합니다. 검색·저장·표준 스트림 오류는 원인 메시지를 stderr에 쓰고 종료 코드 1을 반환합니다. stdout에는 진단이나 실패 JSON을 쓰지 않습니다. wrapper의 실행 파일 설정 오류는 64, 파일을 찾을 수 없는 경우는 127, 실행할 수 없는 경우는 126을 반환합니다. 유효한 앱을 실행한 뒤에는 앱의 종료 코드를 그대로 전달합니다. 기본 테스트와 실행 방법은 아래 [검증](#검증) 절을 따릅니다.
 

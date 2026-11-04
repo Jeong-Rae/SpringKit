@@ -1,16 +1,11 @@
-package com.springkit.agentguidebook.services
+package com.springkit.agentguidebook.presentation
 
-import com.springkit.agentguidebook.client.GuidelinePresentationFactory
-import com.springkit.agentguidebook.client.GuidelineSearchFactory
-import com.springkit.agentguidebook.config.SqlitePresentationConfig
-import com.springkit.agentguidebook.core.Presentation
-import com.springkit.agentguidebook.errors.GuidelineLoadException
-import com.springkit.agentguidebook.errors.InvalidSearchRequestException
-import com.springkit.agentguidebook.models.GuidelineId
-import com.springkit.agentguidebook.models.GuidelinePresentationRequest
-import com.springkit.agentguidebook.models.SessionId
-import com.springkit.agentguidebook.storage.SqlitePresentationRepository
-import com.springkit.agentguidebook.storage.SqlitePresentationUnitOfWork
+import com.springkit.agentguidebook.domain.GuidelineId
+import com.springkit.agentguidebook.presentation.sqlite.SqliteConfig
+import com.springkit.agentguidebook.presentation.sqlite.SqliteRepository
+import com.springkit.agentguidebook.presentation.sqlite.SqliteUnitOfWork
+import com.springkit.agentguidebook.search.GuidelineLoadException
+import com.springkit.agentguidebook.search.InvalidSearchRequestException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.datatest.withScenarios
@@ -54,7 +49,7 @@ class GuidelinePresentationIntegrationTest :
 
             val result =
                 presentationService(project.cwd, databasePath)
-                    .present(request(project, "session-a"))
+                    .execute(request(project, "session-a"))
 
             result.map { it.id.value } shouldContainExactly listOf("alpha-rule", "zeta-rule")
             result.map { it.content } shouldContainExactly
@@ -83,10 +78,10 @@ class GuidelinePresentationIntegrationTest :
             )
             val databasePath = project.cwd.resolve("history.sqlite")
             val firstService = presentationService(project.cwd, databasePath)
-            val firstResult = firstService.present(request(project, "session-a"))
+            val firstResult = firstService.execute(request(project, "session-a"))
             val restartedService = presentationService(project.cwd, databasePath)
 
-            val afterRestart = restartedService.present(request(project, "session-a"))
+            val afterRestart = restartedService.execute(request(project, "session-a"))
 
             firstResult.map { it.id.value } shouldBe listOf("service-rule")
             afterRestart shouldBe emptyList()
@@ -113,8 +108,8 @@ class GuidelinePresentationIntegrationTest :
             insertPresentation(databasePath, "session-a", "alpha-rule", OLD_TIMESTAMP)
             val service = presentationService(project.cwd, databasePath)
 
-            val additionalForFirst = service.present(request(project, "session-a"))
-            val firstForSecond = service.present(request(project, "session-b"))
+            val additionalForFirst = service.execute(request(project, "session-a"))
+            val firstForSecond = service.execute(request(project, "session-b"))
 
             additionalForFirst.map { it.id.value } shouldBe listOf("zeta-rule")
             firstForSecond.map { it.id.value } shouldBe listOf("alpha-rule", "zeta-rule")
@@ -142,7 +137,7 @@ class GuidelinePresentationIntegrationTest :
             )
             val databasePath = project.cwd.resolve("history.sqlite")
             val service = presentationService(project.cwd, databasePath)
-            service.present(request(project, "session-a"))
+            service.execute(request(project, "session-a"))
             writeGuideline(
                 project.cwd,
                 "rules/guideline.yaml",
@@ -151,7 +146,7 @@ class GuidelinePresentationIntegrationTest :
                 content = "수정된 본문입니다.",
             )
 
-            val repeated = service.present(request(project, "session-a"))
+            val repeated = service.execute(request(project, "session-a"))
 
             repeated shouldBe emptyList()
             rows(databasePath, "session-a") shouldBe
@@ -175,10 +170,10 @@ class GuidelinePresentationIntegrationTest :
             )
             val databasePath = project.cwd.resolve("history.sqlite")
             val service = presentationService(project.cwd, databasePath)
-            val first = service.present(request(project, "session-a"))
+            val first = service.execute(request(project, "session-a"))
             Files.writeString(project.sourceFile, "class OrderRepository")
 
-            val afterFileChange = service.present(request(project, "session-a"))
+            val afterFileChange = service.execute(request(project, "session-a"))
 
             first.map { it.id.value } shouldBe listOf("service-rule")
             afterFileChange.map { it.id.value } shouldBe listOf("repository-rule")
@@ -198,13 +193,13 @@ class GuidelinePresentationIntegrationTest :
             val databasePath = project.cwd.resolve("unused/history.sqlite")
             val service = presentationService(project.cwd, databasePath)
             val nonKotlinRequest =
-                GuidelinePresentationRequest(
+                PresentationRequest(
                     sessionId = SessionId("session-a"),
                     cwd = project.cwd,
                     filepaths = listOf(project.cwd.resolve("src/OrderService.java")),
                 )
 
-            val result = service.present(nonKotlinRequest)
+            val result = service.execute(nonKotlinRequest)
 
             result shouldBe emptyList()
             Files.exists(databasePath) shouldBe false
@@ -227,7 +222,7 @@ class GuidelinePresentationIntegrationTest :
             insertPresentation(databasePath, "session-a", "older-rule", OLD_TIMESTAMP)
             val before = rows(databasePath)
             val invalidRequest =
-                GuidelinePresentationRequest(
+                PresentationRequest(
                     sessionId = SessionId("session-a"),
                     cwd = project.cwd,
                     filepaths = listOf(Path.of("relative/OrderService.kt")),
@@ -235,7 +230,7 @@ class GuidelinePresentationIntegrationTest :
 
             val failure =
                 shouldThrow<InvalidSearchRequestException> {
-                  presentationService(project.cwd, databasePath).present(invalidRequest)
+                  presentationService(project.cwd, databasePath).execute(invalidRequest)
                 }
 
             failure.message.orEmpty() shouldContain "파일 경로"
@@ -252,7 +247,7 @@ class GuidelinePresentationIntegrationTest :
             val before = rows(databasePath)
 
             shouldThrow<GuidelineLoadException> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
 
             rows(databasePath) shouldBe before
@@ -271,7 +266,7 @@ class GuidelinePresentationIntegrationTest :
             Files.writeString(databasePath, "SQLite 데이터베이스가 아닙니다.")
 
             shouldThrow<Exception> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
             Files.readString(databasePath) shouldBe "SQLite 데이터베이스가 아닙니다."
           }
@@ -292,7 +287,7 @@ class GuidelinePresentationIntegrationTest :
             val before = Files.readAllBytes(databasePath)
 
             shouldThrow<Exception> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
             Files.readAllBytes(databasePath).toList() shouldBe before.toList()
           }
@@ -331,7 +326,7 @@ class GuidelinePresentationIntegrationTest :
             val before = rows(databasePath)
 
             shouldThrow<Exception> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
             rows(databasePath) shouldBe before
           }
@@ -350,7 +345,7 @@ class GuidelinePresentationIntegrationTest :
             val databasePath = parentFile.resolve("history.sqlite")
 
             shouldThrow<Exception> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
             Files.readString(parentFile) shouldBe "파일입니다."
           }
@@ -375,7 +370,7 @@ class GuidelinePresentationIntegrationTest :
             createSecondInsertAbortTrigger(databasePath, "zeta-rule")
 
             shouldThrow<Exception> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
             rows(databasePath) shouldBe emptyList()
           }
@@ -400,7 +395,7 @@ class GuidelinePresentationIntegrationTest :
             createSecondInsertRollbackTrigger(databasePath, "zeta-rule")
 
             shouldThrow<Exception> {
-              presentationService(project.cwd, databasePath).present(request(project, "session-a"))
+              presentationService(project.cwd, databasePath).execute(request(project, "session-a"))
             }
             rows(databasePath) shouldBe emptyList()
           }
@@ -424,7 +419,7 @@ class GuidelinePresentationIntegrationTest :
             try {
               shouldThrow<Exception> {
                 presentationService(project.cwd, databasePath)
-                    .present(request(project, "session-a"))
+                    .execute(request(project, "session-a"))
               }
             } finally {
               lockConnection.createStatement().use { statement ->
@@ -458,7 +453,7 @@ class GuidelinePresentationIntegrationTest :
             try {
               shouldThrow<Exception> {
                 presentationService(project.cwd, databasePath)
-                    .present(request(project, "session-a"))
+                    .execute(request(project, "session-a"))
               }
             } finally {
               reader.createStatement().use { statement ->
@@ -483,8 +478,8 @@ class GuidelinePresentationIntegrationTest :
                     GuidelineId("new-rule"),
                     FIXED_INSTANT,
                 )
-            val unitOfWork = SqlitePresentationUnitOfWork(SqlitePresentationConfig(databasePath))
-            val repository = SqlitePresentationRepository()
+            val unitOfWork = SqliteUnitOfWork(SqliteConfig(databasePath))
+            val repository = SqliteRepository()
 
             shouldThrow<IllegalArgumentException> {
               unitOfWork.execute {
@@ -650,9 +645,9 @@ object PresentationIntegrationJvmProbe {
     }
 
     val result =
-        GuidelinePresentationFactory.fileSystem()
-            .present(
-                GuidelinePresentationRequest(
+        com.springkit.agentguidebook.presentation.Factory.fileSystem()
+            .execute(
+                PresentationRequest(
                     sessionId = SessionId(sessionId),
                     cwd = cwd,
                     filepaths = listOf(sourceFile),
@@ -682,13 +677,13 @@ private fun presentationService(
     cwd: Path,
     databasePath: Path,
     clock: Clock = FIXED_CLOCK,
-): GuidelinePresentationService {
-  val unitOfWork = SqlitePresentationUnitOfWork(SqlitePresentationConfig(databasePath))
+): PresentGuidelinesUseCase {
+  val unitOfWork = SqliteUnitOfWork(SqliteConfig(databasePath))
 
-  return GuidelinePresentationService(
-      guidelineSearchService = GuidelineSearchFactory.fileSystem(),
+  return PresentGuidelinesUseCase(
+      guidelineSearchService = com.springkit.agentguidebook.search.Factory.fileSystem(),
       unitOfWork = unitOfWork,
-      presentationRepository = SqlitePresentationRepository(),
+      presentationRepository = SqliteRepository(),
       clock = clock,
   )
 }
@@ -696,8 +691,8 @@ private fun presentationService(
 private fun request(
     project: PresentationProject,
     sessionId: String,
-): GuidelinePresentationRequest =
-    GuidelinePresentationRequest(
+): PresentationRequest =
+    PresentationRequest(
         sessionId = SessionId(sessionId),
         cwd = project.cwd,
         filepaths = listOf(project.sourceFile),

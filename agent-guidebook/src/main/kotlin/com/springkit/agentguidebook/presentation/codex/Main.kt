@@ -17,7 +17,7 @@ fun main() {
           stderr = FileOutputStream(FileDescriptor.err),
           outputAdapter = PostToolUseOutputAdapter(),
       )
-  val application = HookApplication(Factory.fileSystem()::present)
+  val application = HookApplication(Factory.fileSystem()::execute)
 
   exitProcess(application.run(input, output))
 }

@@ -1,13 +1,7 @@
-package com.springkit.agentguidebook.services
+package com.springkit.agentguidebook.search
 
-import com.springkit.agentguidebook.client.GuidelineSearchFactory
-import com.springkit.agentguidebook.core.MatchedGuideline
-import com.springkit.agentguidebook.errors.GuidelineLoadException
-import com.springkit.agentguidebook.errors.InvalidSearchRequestException
-import com.springkit.agentguidebook.errors.RepositoryIdentityUnavailableException
-import com.springkit.agentguidebook.errors.SourceReadException
-import com.springkit.agentguidebook.models.GuidelineId
-import com.springkit.agentguidebook.models.GuidelineSearchRequest
+import com.springkit.agentguidebook.domain.GuidelineId
+import com.springkit.agentguidebook.domain.MatchedGuideline
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FeatureSpec
 import io.kotest.datatest.withScenarios
@@ -51,8 +45,7 @@ class GuidelineSearchIntegrationTest :
                 )
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches shouldBe
                 listOf(
@@ -84,9 +77,9 @@ class GuidelineSearchIntegrationTest :
             val normalizedRepositoryFile = cwd.resolve("src/../src/OrderRepository.kt")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(
-                        GuidelineSearchRequest(
+                Factory.fileSystem()
+                    .execute(
+                        SearchRequest(
                             cwd = cwd,
                             filepaths =
                                 listOf(
@@ -119,8 +112,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches.map { it.id } shouldBe
                 listOf(GuidelineId("alpha-rule"), GuidelineId("zeta-rule"))
@@ -157,8 +149,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
           }
@@ -171,8 +162,7 @@ class GuidelineSearchIntegrationTest :
                 writeSource(cwd, "src/main/kotlin/OrderRepository.kt", "interface OrderRepository")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             val abstractDependencyGuideline = matches.single {
               it.id == GuidelineId("abstract-dependency-boundaries-and-confirmed-extension-points")
@@ -198,8 +188,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
           }
@@ -248,9 +237,9 @@ class GuidelineSearchIntegrationTest :
                   writeSource(linkedWorktree, "src/OrderService.kt", "class OrderService")
 
               val matches =
-                  GuidelineSearchFactory.fileSystem()
-                      .search(
-                          GuidelineSearchRequest(
+                  Factory.fileSystem()
+                      .execute(
+                          SearchRequest(
                               cwd = linkedWorktree,
                               filepaths = listOf(filepath),
                           )
@@ -287,8 +276,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
           }
@@ -309,8 +297,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches.map { it.id } shouldBe listOf(GuidelineId("first-repository-rule"))
           }
@@ -339,12 +326,12 @@ class GuidelineSearchIntegrationTest :
                 ),
             )
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
-            val service = GuidelineSearchFactory.fileSystem()
-            val request = GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath))
+            val service = Factory.fileSystem()
+            val request = SearchRequest(cwd = cwd, filepaths = listOf(filepath))
 
-            val initialMatches = service.search(request)
+            val initialMatches = service.execute(request)
             Files.writeString(filepath, "class OrderRepository")
-            val updatedMatches = service.search(request)
+            val updatedMatches = service.execute(request)
 
             initialMatches.map { it.id } shouldBe listOf(GuidelineId("service-rule"))
             updatedMatches.map { it.id } shouldBe listOf(GuidelineId("repository-rule"))
@@ -371,8 +358,7 @@ class GuidelineSearchIntegrationTest :
             val guidelineBytesBefore = Files.readAllBytes(guidelinePath).toList()
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches.map { it.id } shouldBe listOf(GuidelineId("service-rule"))
             Files.readAllBytes(filepath).toList() shouldBe sourceBytesBefore
@@ -437,8 +423,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
 
             matches shouldBe emptyList()
           }
@@ -493,9 +478,9 @@ class GuidelineSearchIntegrationTest :
             }
 
             val matches =
-                GuidelineSearchFactory.fileSystem()
-                    .search(
-                        GuidelineSearchRequest(
+                Factory.fileSystem()
+                    .execute(
+                        SearchRequest(
                             cwd = cwd,
                             filepaths = filepath?.let(::listOf) ?: emptyList(),
                         )
@@ -535,8 +520,8 @@ class GuidelineSearchIntegrationTest :
             val filepath = cwd.resolve("src/OrderService.kt")
 
             shouldThrow<InvalidSearchRequestException> {
-              GuidelineSearchFactory.fileSystem()
-                  .search(GuidelineSearchRequest(cwd = invalidCwd, filepaths = listOf(filepath)))
+              Factory.fileSystem()
+                  .execute(SearchRequest(cwd = invalidCwd, filepaths = listOf(filepath)))
             }
           }
         }
@@ -544,9 +529,9 @@ class GuidelineSearchIntegrationTest :
         scenario("파일 경로가 상대 경로인 요청을 검색하면, 요청이 거부됩니다.") {
           withProject { cwd ->
             shouldThrow<InvalidSearchRequestException> {
-              GuidelineSearchFactory.fileSystem()
-                  .search(
-                      GuidelineSearchRequest(
+              Factory.fileSystem()
+                  .execute(
+                      SearchRequest(
                           cwd = cwd,
                           filepaths = listOf(Path.of("src/OrderService.kt")),
                       )
@@ -584,8 +569,7 @@ class GuidelineSearchIntegrationTest :
                 }
 
             shouldThrow<SourceReadException> {
-              GuidelineSearchFactory.fileSystem()
-                  .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+              Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
             }
           }
         }
@@ -602,8 +586,8 @@ class GuidelineSearchIntegrationTest :
 
             val exception =
                 shouldThrow<SourceReadException> {
-                  GuidelineSearchFactory.fileSystem()
-                      .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                  Factory.fileSystem()
+                      .execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
                 }
 
             (exception.cause is java.nio.charset.CharacterCodingException) shouldBe true
@@ -690,8 +674,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             shouldThrow<GuidelineLoadException> {
-              GuidelineSearchFactory.fileSystem()
-                  .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+              Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
             }
           }
         }
@@ -702,8 +685,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             shouldThrow<GuidelineLoadException> {
-              GuidelineSearchFactory.fileSystem()
-                  .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+              Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
             }
           }
         }
@@ -717,8 +699,8 @@ class GuidelineSearchIntegrationTest :
 
             val exception =
                 shouldThrow<GuidelineLoadException> {
-                  GuidelineSearchFactory.fileSystem()
-                      .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                  Factory.fileSystem()
+                      .execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
                 }
 
             (exception.cause is java.nio.charset.CharacterCodingException) shouldBe true
@@ -736,8 +718,8 @@ class GuidelineSearchIntegrationTest :
 
             val exception =
                 shouldThrow<GuidelineLoadException> {
-                  GuidelineSearchFactory.fileSystem()
-                      .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+                  Factory.fileSystem()
+                      .execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
                 }
 
             (exception.cause is IllegalArgumentException) shouldBe true
@@ -776,8 +758,7 @@ class GuidelineSearchIntegrationTest :
             val filepath = writeSource(cwd, "src/OrderService.kt", "class OrderService")
 
             shouldThrow<RepositoryIdentityUnavailableException> {
-              GuidelineSearchFactory.fileSystem()
-                  .search(GuidelineSearchRequest(cwd = cwd, filepaths = listOf(filepath)))
+              Factory.fileSystem().execute(SearchRequest(cwd = cwd, filepaths = listOf(filepath)))
             }
           }
         }

@@ -30,7 +30,7 @@ class PresentGuidelinesFailureTest :
 
           val thrown =
               shouldThrow<IllegalArgumentException> {
-                fixture.service.present(request("session-a"))
+                fixture.service.execute(request("session-a"))
               }
 
           thrown shouldBe failure

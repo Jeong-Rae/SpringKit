@@ -46,7 +46,4 @@ class PresentGuidelinesUseCase(
       newGuidelines
     }
   }
-
-  /** Session에 새로 제공할 지침을 commit한 뒤 반환합니다. */
-  fun present(request: PresentationRequest): List<MatchedGuideline> = execute(request)
 }

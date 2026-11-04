@@ -9,7 +9,7 @@ group = "com.springkit.agentguidebook"
 version = "0.0.1-SNAPSHOT"
 
 application {
-  mainClass.set("com.springkit.agentguidebook.codex.MainKt")
+  mainClass.set("com.springkit.agentguidebook.presentation.codex.MainKt")
   applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
