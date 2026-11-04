@@ -8,18 +8,18 @@ Session에 새로 제공한 지침을 기록하는 Kotlin 라이브러리와 JVM
 ## 패키지
 
 기본 패키지는 `com.springkit.agentguidebook`입니다.
-Agent Guidebook은 하나의 Bounded Context(BC, 업무 경계)로 유지합니다. `search`와 `presentation`은 별도 BC가 아니라 이 BC 안에서 검색과 지침 제공 흐름을 소유하는 Slice입니다.
+Agent Guidebook은 하나의 Bounded Context(BC, 업무 경계)로 유지합니다. `search`와 `provision`은 별도 BC가 아니라 이 BC 안에서 검색과 지침 제공 흐름을 소유하는 Slice입니다.
 
 | 패키지 | 책임 |
 | --- | --- |
 | `domain` | Guideline 모델, 적용 범위, 정규식 일치, 순수 검색 규칙과 검색 결과 |
 | `search` | 검색 요청·오류, 공개 `SearchGuidelines` 계약, Application, 입력 포트와 Factory |
 | `search.filesystem` | 파일 시스템, YAML, JGit 입력 Adapter |
-| `presentation` | 제공 요청·Application, Session 이력 모델, Repository·UnitOfWork 포트와 Factory |
-| `presentation.sqlite` | SQLite 연결·테이블과 Repository·UnitOfWork 구현 |
-| `presentation.codex` | Codex Hook 입출력, PostToolUse Adapter와 실행 조립 |
+| `provision` | 제공 요청·Application, Session 이력 모델, Repository·UnitOfWork 포트와 Factory |
+| `provision.sqlite` | SQLite 연결·테이블과 Repository·UnitOfWork 구현 |
+| `provision.codex` | Codex Hook 입출력, PostToolUse Adapter와 실행 조립 |
 
-`domain`은 Search나 Presentation, 기술 Adapter에 의존하지 않습니다. Presentation은 공개 `SearchGuidelines` 계약을 사용하므로 `search.filesystem` 구현을 직접 알지 않습니다. 각 Slice의 Factory가 Application과 기술 Adapter를 조립합니다.
+`domain`은 Search나 Provision, 기술 Adapter에 의존하지 않습니다. Provision은 공개 `SearchGuidelines` 계약을 사용하므로 `search.filesystem` 구현을 직접 알지 않습니다. 각 Slice의 Factory가 Application과 기술 Adapter를 조립합니다.
 
 프로젝트 파일을 검색하려면 Search Factory를 호출합니다.
 
@@ -37,21 +37,21 @@ val matches =
     )
 ```
 
-`SearchGuidelinesUseCase`가 검색 행위를 소유하고 `InputReader` 포트에서 프로젝트 파일, 지침과 Git 식별자를 읽습니다. 검색은 Exposed transaction 밖에서 실행합니다. 검색 결과가 비면 Presentation 저장소나 SQLite에 접근하지 않습니다.
+`SearchGuidelinesUseCase`가 검색 행위를 소유하고 `InputReader` 포트에서 프로젝트 파일, 지침과 Git 식별자를 읽습니다. 검색은 Exposed transaction 밖에서 실행합니다. 검색 결과가 비면 Provision 저장소나 SQLite에 접근하지 않습니다.
 
-Presentation의 `Repository`와 `UnitOfWork`는 `presentation` 포트입니다. `SqliteRepository`는 Exposed DSL로 이력을 조회·기록하고, `SqliteUnitOfWork`는 callback을 Exposed transaction 안에서 실행합니다. Exposed가 commit·rollback과 연결 수명을 관리하며, UnitOfWork는 `finally`에서 실행별 `Database` 등록을 해제합니다. Session의 새 지침 선별과 기록은 하나의 transaction 안에서 진행합니다.
+Provision의 `Repository`와 `UnitOfWork`는 `provision` 포트입니다. `SqliteRepository`는 Exposed DSL로 이력을 조회·기록하고, `SqliteUnitOfWork`는 callback을 Exposed transaction 안에서 실행합니다. Exposed가 commit·rollback과 연결 수명을 관리하며, UnitOfWork는 `finally`에서 실행별 `Database` 등록을 해제합니다. Session의 새 지침 선별과 기록은 하나의 transaction 안에서 진행합니다.
 
-Session별로 아직 제공하지 않은 지침을 검색하고 SQLite에 기록하려면 Presentation factory를 사용합니다.
+Session별로 아직 제공하지 않은 지침을 검색하고 SQLite에 기록하려면 Provision factory를 사용합니다.
 
 ```kotlin
-import com.springkit.agentguidebook.presentation.Factory
-import com.springkit.agentguidebook.presentation.PresentationRequest
-import com.springkit.agentguidebook.presentation.SessionId
+import com.springkit.agentguidebook.provision.Factory
+import com.springkit.agentguidebook.provision.ProvisionRequest
+import com.springkit.agentguidebook.provision.SessionId
 import java.nio.file.Path
 
 val newGuidelines =
     Factory.fileSystem().execute(
-        PresentationRequest(
+        ProvisionRequest(
             sessionId = SessionId("codex-session-123"),
             cwd = Path.of("/workspace/backend-order"),
             filepaths = listOf(Path.of("/workspace/backend-order/src/OrderService.kt")),
@@ -61,19 +61,19 @@ val newGuidelines =
 
 기본 이력 DB는 `user.home/.adaptive-guidebook/adaptive-guidebook.db`입니다. 이력은
 Session ID와 Guideline ID 조합으로 저장되므로 본문이 바뀌어도 같은 Guideline ID를 다시 제공하지 않습니다.
-`PresentGuidelinesUseCase.execute`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
+`ProvideGuidelinesUseCase.execute`는 해당 호출의 SQLite transaction commit이 성공한 뒤에만 새 지침 목록을 반환합니다.
 Commit 후 반환 전에 프로세스가 끝나면 다음 요청은 저장된 ID를 제외합니다. 수신 확인이나 재전송은 하지 않습니다.
 SQLite는 IMMEDIATE transaction과 최대 1,000ms busy timeout을 사용합니다. Exposed의
 `defaultMaxAttempts=1` 설정으로 SQL callback은 자동 재실행하지 않습니다. 잠금이 계속되거나 저장에 실패하면 오류를 호출자에게 전달합니다.
 이력 저장은 Exposed 1.6.0의 `core`, `jdbc` typed DSL과 SQLite JDBC 3.53.4.0 driver를 사용합니다.
-세 `TEXT` 열과 `(session_id, guideline_id)` 기본 키는 일반 Exposed `Table`로 정의하고, Repository는 typed `selectAll`과 `insert`로 조회·기록합니다. 조회한 문자열 행은 transaction 안에서 도메인 `Presentation`으로 복원합니다.
+`provision` 테이블은 `session_id`, `guideline_id`, `provided_at` 세 `TEXT` 열과 `(session_id, guideline_id)` 기본 키를 사용합니다. Exposed `Table`로 저장 구조를 정의하고 Repository는 typed `selectAll`과 `insert`로 조회·기록합니다. 조회한 문자열 행은 transaction 안에서 도메인 `Provision`으로 복원합니다.
 
 Codex `PostToolUse` Hook wrapper는 배포한 JVM 앱에 연결되어 있습니다. 진입점은
-`presentation.codex.HookInput`, `HookOutput`과 `presentation.Factory`를 조립합니다.
+`provision.codex.HookInput`, `HookOutput`과 `provision.Factory`를 조립합니다.
 입력 객체는 EOF까지 UTF-8 입력을 읽어 PostToolUse Adapter로 요청을 변환하고, 출력 객체는
 정상 응답과 진단을 각각 stdout과 stderr에 기록한 뒤 flush합니다. 호출자가 전달한 스트림은 닫지 않습니다.
-`presentation.codex.HookApplication.run(input, output)`은 실행 흐름과 종료 코드만 결정합니다.
-`presentation.PresentGuidelinesUseCase.execute`가 검색과 Session별 이력 기록을 조율합니다.
+`provision.codex.HookApplication.run(input, output)`은 실행 흐름과 종료 코드만 결정합니다.
+`provision.ProvideGuidelinesUseCase.execute`가 검색과 Session별 이력 기록을 조율합니다.
 
 검색은 `.kt`와 `.kts` 파일만 읽고, `cwd/.agents/guides` 아래의 `guideline.yaml`을
 상대 경로 사전순으로 평가합니다. YAML 지침의 저장소, 언어, `file_changed` 이벤트와

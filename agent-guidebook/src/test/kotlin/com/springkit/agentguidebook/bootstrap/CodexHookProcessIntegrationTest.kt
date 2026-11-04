@@ -85,8 +85,8 @@ class CodexHookProcessIntegrationTest :
                   anotherSession.additionalContext() shouldBe "[process-rule]\n프로세스 통합 지침입니다.\n"
                   rows(databasePath) shouldContainExactly
                       listOf(
-                          StoredPresentation("session-a", "process-rule"),
-                          StoredPresentation("session-b", "process-rule"),
+                          StoredProvision("session-a", "process-rule"),
+                          StoredProvision("session-b", "process-rule"),
                       )
                 }
               }
@@ -215,7 +215,7 @@ private data class CodexHookProcessResult(
   }
 }
 
-private data class StoredPresentation(
+private data class StoredProvision(
     val sessionId: String,
     val guidelineId: String,
 )
@@ -318,22 +318,22 @@ private fun executeHook(
 private fun readIfPresent(filepath: Path): String =
     if (Files.exists(filepath)) Files.readString(filepath, UTF_8) else ""
 
-private fun rows(databasePath: Path): List<StoredPresentation> {
+private fun rows(databasePath: Path): List<StoredProvision> {
   if (!Files.isRegularFile(databasePath)) {
     return emptyList()
   }
 
-  val storedRows = ArrayList<StoredPresentation>()
+  val storedRows = ArrayList<StoredProvision>()
   DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
     connection.createStatement().use { statement ->
       statement
           .executeQuery(
-              "SELECT session_id, guideline_id FROM presentation ORDER BY session_id, guideline_id"
+              "SELECT session_id, guideline_id FROM provision ORDER BY session_id, guideline_id"
           )
           .use { resultSet ->
             while (resultSet.next()) {
               storedRows.add(
-                  StoredPresentation(
+                  StoredProvision(
                       sessionId = resultSet.getString("session_id"),
                       guidelineId = resultSet.getString("guideline_id"),
                   )
