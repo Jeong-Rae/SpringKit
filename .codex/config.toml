@@ -1,0 +1,7 @@
+[[hooks.PostToolUse]]
+matcher = "^apply_patch$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'repo_root="$(git rev-parse --show-toplevel)" && AGENT_GUIDEBOOK_APP_EXECUTABLE="$repo_root/agent-guidebook/build/install/agent-guidebook/bin/agent-guidebook" "$repo_root/agent-guidebook/build/install/agent-guidebook/hooks/post-tool-use.sh"'
+timeout = 10
