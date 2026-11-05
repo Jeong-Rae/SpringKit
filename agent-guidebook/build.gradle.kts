@@ -25,13 +25,13 @@ application {
 distributions {
   main {
     contents {
-      from("../tools/agent-guidebook/hooks/post-tool-use.sh") {
+      from("../tools/agent-guidebook/bin/post-tool-use.sh") {
         into("hooks")
         filePermissions {
           unix("rwxr-xr-x")
         }
       }
-      from("../tools/agent-guidebook/hooks/hooks.example.json") {
+      from("../tools/agent-guidebook/bin/hooks.example.json") {
         into("hooks")
       }
     }
