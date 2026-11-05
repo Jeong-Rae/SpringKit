@@ -8,6 +8,15 @@ group = "com.springkit.agentguidebook"
 
 version = "0.0.1-SNAPSHOT"
 
+layout.buildDirectory.set(
+    layout.projectDirectory
+        .dir("../tools/agent-guidebook/build")
+        .asFile
+        .toPath()
+        .normalize()
+        .toFile(),
+)
+
 application {
   mainClass.set("com.springkit.agentguidebook.provision.codex.MainKt")
   applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
@@ -16,13 +25,13 @@ application {
 distributions {
   main {
     contents {
-      from("hooks/post-tool-use.sh") {
+      from("../tools/agent-guidebook/hooks/post-tool-use.sh") {
         into("hooks")
         filePermissions {
           unix("rwxr-xr-x")
         }
       }
-      from("hooks/hooks.example.json") {
+      from("../tools/agent-guidebook/hooks/hooks.example.json") {
         into("hooks")
       }
     }

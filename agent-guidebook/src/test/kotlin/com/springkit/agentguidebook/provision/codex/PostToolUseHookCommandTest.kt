@@ -9,7 +9,17 @@ import java.nio.file.Path
 
 class PostToolUseHookCommandTest :
     FeatureSpec({
-      val hookScript = Path.of(System.getProperty("user.dir")).resolve("hooks/post-tool-use.sh")
+      val applicationExecutable =
+          Path.of(
+              checkNotNull(System.getProperty("agentGuidebook.applicationExecutable")) {
+                "Gradle installDist 실행 파일 경로가 전달되지 않았습니다."
+              }
+          )
+      val installationDirectory =
+          checkNotNull(applicationExecutable.parent?.parent) {
+            "설치 디렉터리를 실행 파일 경로에서 찾을 수 없습니다."
+          }
+      val hookScript = installationDirectory.resolve("hooks/post-tool-use.sh")
 
       feature("Codex Hook 앱 프로세스 전달") {
         scenario("정상 입력을 앱에 전달하면, 입력과 출력 및 현재 작업 경로가 보존됩니다.") {

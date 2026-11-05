@@ -10,6 +10,8 @@ cd agent-guidebook
 cd ..
 ```
 
+배포본은 `tools/agent-guidebook/build/install/agent-guidebook`에 생성됩니다. 실행 앱은 `bin/agent-guidebook`, Hook 진입점은 `hooks/post-tool-use.sh`입니다.
+
 ## 사용
 
 Codex는 SpringKit 프로젝트 루트에서 실행합니다.
