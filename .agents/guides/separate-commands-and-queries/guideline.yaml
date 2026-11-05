@@ -1,0 +1,87 @@
+id: separate-commands-and-queries
+scope:
+  repositories:
+    - "*"
+  languages:
+    - "*"
+when:
+  - file_changed
+match:
+  any: []
+content: |
+  # 명령과 조회 분리하기
+
+  호출자가 객체의 공개 함수만 보고 상태를 변경하는 동작과 조회하는 동작을 구분할 수 있게 합니다.
+
+  ## 작성 지침
+
+  첫째, 객체의 공개 함수는 상태를 변경하는 명령과 상태를 조회하는 함수로 분리합니다. 상태 변경과 조회를 하나의 공개 함수에 결합하지 않습니다.
+
+  둘째, 조회 함수는 호출자가 관찰할 수 있는 상태를 변경하지 않습니다. 조회를 위해 호출한 함수가 객체나 협력 객체의 상태를 바꾸지 않도록 합니다.
+
+  셋째, 명령 함수의 이름에는 상태를 변경하는 동작을 드러냅니다. 호출자가 내부 구현을 읽지 않아도 어떤 변경을 요청하는지 알 수 있어야 합니다.
+
+  ## Do Not 예시
+
+  ```kotlin
+  class TradingAccount(private var orderableAmount: Long) {
+      fun reserveAndGetOrderableAmount(amount: Long): Long { // Do Not: 예약과 조회를 하나의 공개 함수에 결합
+          orderableAmount -= amount
+          return orderableAmount
+      }
+  }
+
+  val account = TradingAccount(orderableAmount = 1_000_000)
+  val remainingAmount = account.reserveAndGetOrderableAmount(300_000) // Do Not: 주문 가능 금액 조회가 예약과 결합
+  ```
+
+  ```kotlin
+  class BuyOrder(private var unfilledQuantity: Long) {
+      private var cancelledQuantity: Long = 0
+
+      fun cancelledQuantity(): Long { // Do Not: 조회 함수에 주문 취소를 숨김
+          cancelledQuantity += unfilledQuantity
+          unfilledQuantity = 0
+          return cancelledQuantity
+      }
+  }
+
+  val order = BuyOrder(unfilledQuantity = 10)
+  val cancelledQuantity = order.cancelledQuantity() // Do Not: 취소 수량 조회가 미체결 주문을 취소
+  ```
+
+  ## Do 예시
+
+  ```kotlin
+  class TradingAccount(private var orderableAmount: Long) {
+      fun reserveForBuyOrder(amount: Long) { // Do: 매수 주문 금액 예약을 이름에 표현
+          orderableAmount -= amount
+      }
+
+      fun orderableAmount(): Long =
+          orderableAmount // Do: 상태 변경 없이 주문 가능 금액 조회
+  }
+
+  val account = TradingAccount(orderableAmount = 1_000_000)
+  account.reserveForBuyOrder(300_000) // Do: 매수 주문 금액 예약을 명시적으로 요청
+  val remainingAmount = account.orderableAmount() // Do: 추가 예약 없이 남은 주문 가능 금액 조회
+  ```
+
+  ```kotlin
+  class BuyOrder(private var unfilledQuantity: Long) {
+      private var cancelledQuantity: Long = 0
+
+      fun cancelUnfilled() { // Do: 미체결 주문 취소를 공개 함수로 분리
+          cancelledQuantity += unfilledQuantity
+          unfilledQuantity = 0
+      }
+
+      fun cancelledQuantity(): Long =
+          cancelledQuantity // Do: 상태 변경 없이 취소 수량 조회
+  }
+
+  val order = BuyOrder(unfilledQuantity = 10)
+  val beforeCancellation = order.cancelledQuantity() // Do: 취소 전 조회가 미체결 주문을 유지
+  order.cancelUnfilled() // Do: 미체결 주문 취소를 명시적으로 요청
+  val afterCancellation = order.cancelledQuantity() // Do: 취소 후 조회도 추가 상태 변경 없음
+  ```

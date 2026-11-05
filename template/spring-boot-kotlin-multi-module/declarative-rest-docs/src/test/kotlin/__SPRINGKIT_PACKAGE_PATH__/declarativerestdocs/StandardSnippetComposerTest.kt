@@ -31,7 +31,10 @@ class StandardSnippetComposerTest :
                         Headers(listOf(Header("X-Request-Id", "요청 ID", sampleOf("request-1"))))
                     ),
                 requestBody =
-                    bodyCompiler.compile(Body(listOf(Field("name", "사용자 이름", sampleOf("Alice"))))),
+                    bodyCompiler.compileRequest(
+                        Body(listOf(Field("name", "사용자 이름", sampleOf("Alice")))),
+                        Headers(),
+                    ),
                 responseHeaders =
                     headerCompiler.compile(
                         Headers(listOf(Header("Location", "생성 URI", sampleOf("/users/1"))))
@@ -63,7 +66,7 @@ class StandardSnippetComposerTest :
                         )
                     ),
                 requestHeaders = headerCompiler.compile(Headers()),
-                requestBody = bodyCompiler.compile(Body()),
+                requestBody = bodyCompiler.compileRequest(Body(), Headers()),
                 responseHeaders = headerCompiler.compile(Headers()),
                 responseBody = bodyCompiler.compile(Body()),
             )
@@ -95,7 +98,7 @@ class StandardSnippetComposerTest :
                             )
                         )
                     ),
-                requestBody = bodyCompiler.compile(Body()),
+                requestBody = bodyCompiler.compileRequest(Body(), Headers()),
                 responseHeaders = headerCompiler.compile(Headers()),
                 responseBody = bodyCompiler.compile(Body()),
             )

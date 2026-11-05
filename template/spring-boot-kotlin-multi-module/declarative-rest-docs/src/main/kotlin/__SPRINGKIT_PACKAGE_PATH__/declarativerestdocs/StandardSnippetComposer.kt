@@ -6,14 +6,15 @@ import org.springframework.restdocs.payload.PayloadDocumentation.requestFields
 import org.springframework.restdocs.payload.PayloadDocumentation.responseFields
 import org.springframework.restdocs.request.RequestDocumentation.pathParameters
 import org.springframework.restdocs.request.RequestDocumentation.queryParameters
+import org.springframework.restdocs.request.RequestDocumentation.requestParts
 import org.springframework.restdocs.snippet.Snippet
 
 /** 컴파일된 HTTP context의 Spring REST Docs 표준 snippet 순서 조합 */
-class StandardSnippetComposer {
+internal class StandardSnippetComposer {
   fun compose(
       requestLine: CompiledRequestLine,
       requestHeaders: CompiledHeaders,
-      requestBody: CompiledBody,
+      requestBody: CompiledRequestBody,
       responseHeaders: CompiledHeaders,
       responseBody: CompiledBody,
   ): List<Snippet> = buildList {
@@ -31,8 +32,15 @@ class StandardSnippetComposer {
       add(requestHeadersSnippet(requestHeaders.headers.map { it.descriptor }))
     }
 
-    if (requestBody.fields.isNotEmpty()) {
+    if (requestBody.format.kind == RequestBodyFormat.Kind.JSON && requestBody.fields.isNotEmpty()) {
       add(requestFields(requestBody.fields))
+    }
+
+    if (
+        requestBody.format.kind == RequestBodyFormat.Kind.MULTIPART &&
+            requestBody.requestParts.isNotEmpty()
+    ) {
+      add(requestParts(*requestBody.requestParts.toTypedArray()))
     }
 
     if (responseHeaders.headers.isNotEmpty()) {

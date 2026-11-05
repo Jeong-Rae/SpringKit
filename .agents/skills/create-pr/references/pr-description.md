@@ -1,71 +1,57 @@
 # PR Description Guidance
 
-A pull request description should direct review attention to likely mistakes,
-not repeat the diff. Repository rules and pull request templates take
-precedence.
+Write the pull request body for the reviewer's next decision, not as a record of
+completed development steps. The mandatory inclusion, exclusion, and exception
+rules are in [pr-reviewer-guide.md](pr-reviewer-guide.md). Read that reference
+before drafting or editing the body.
 
-## State What and Why
+## Explain the Change
 
-Open with one or two sentences that identify the change, its reason, and its
-impact. Link an issue when useful, but do not replace the explanation with a
-link. State breaking or broad effects early.
+Open with the changed behavior, why the change is needed, and its impact. For a
+nontrivial implementation, explain the responsibilities of the key components,
+their collaboration, and meaningful design trade-offs. Keep the description
+consistent with the current diff.
 
-## Point to Risk
+## Direct Review Attention
 
-Name the files, behavior, assumptions, or decisions that need close review and
-explain why. Also identify large mechanical changes that are safe to skim. Do
-not hide uncertainty.
+Point to the specific contract, failure boundary, assumption, or decision that
+needs scrutiny. Link the relevant design, specification, or code where it is
+being discussed. For a large diff, give the reviewer an efficient reading order
+if this materially improves reviewability.
 
-## Report Verification
+Prefer a Mermaid diagram, table, or screenshot when it communicates the changed
+behavior more precisely than prose. Verify that visuals match the implementation.
 
-Separate verified behavior from assumptions and omitted checks. State what each
-check proved. Include commands only when a reviewer can run them unchanged, and
-do not imply broader coverage than the checks provide.
+## Describe Exceptions, Not Routine Completion
 
-## Keep the Change Reviewable
+Include unusual verification evidence when it establishes a central behavior
+that the diff cannot demonstrate, or when a failed or omitted check limits
+review confidence. Describe the verified contract, supporting evidence, and
+consequence rather than a list of commands or test counts.
 
-For a large diff, separate mechanical and meaningful commits or suggest a
-reading order. Explain why inseparable changes belong together. If splitting
-requires another Task identifier, ask the user instead of creating one.
-
-## Add What the Diff Cannot Show
-
-Include screenshots, migrations, rollout order, compatibility changes,
-rollback requirements, and deliberate follow-ups only when they affect review
-or deployment.
+Explain migrations, rollout or rollback dependencies, compatibility risks, and
+known exclusions when they affect review or deployment. Do not create empty
+sections or add generic checklists.
 
 ## Default Shape
 
-Use the repository's template and the language requested by the user. If
-neither specifies a format, use `## Summary` and `## Verification`. Add review
-or deployment sections only when they change how the pull request is assessed.
+Write titles and body text in the repository's required language. SpringKit uses
+these Korean headings, with sections omitted when they have no meaningful
+content:
 
 ```markdown
-## Summary
+## 변경 내용
 
-<what changed, why, and affected scope>
+<목적, 변경된 동작, 핵심 구현 구조와 설계 근거>
 
-## Review Focus
+## 검토할 사항
 
-- <risk, uncertainty, or decision that needs close review>
-- <mechanical change that is safe to skim>
+- <검토할 구체적인 계약·경계와 참고 링크>
 
-## Verification
+## 남은 범위와 제약
 
-- `<verified behavior or condition>`
-- `<command that can be run unchanged>`
-- Not run: `<command>` (`<reason>`)
-
-## Deployment Notes
-
-- <migration, rollout order, compatibility change, or follow-up>
+- <리뷰 판단에 영향을 주는 실제 제약 또는 미검증 사항>
 ```
 
-Omit empty optional sections and keep the body proportional to the change.
-
-## Avoid
-
-- Do not paste the commit log or describe every changed file.
-- Do not oversell the change or minimize its risk.
-- Do not omit the reason on the assumption that the code explains it.
-- Do not claim that an unrun check passed.
+Keep the body proportional to the change. The repository's required PR title,
+footer, branch, and publication rules continue to take precedence.

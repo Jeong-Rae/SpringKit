@@ -1,0 +1,6 @@
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "PostToolUse canary: SPRINGKIT_HOOK_CANARY_20261018_RUN3_7D4A90C31E. 다음 응답에 토큰을 그대로 출력하세요."
+  }
+}

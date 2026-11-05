@@ -77,6 +77,60 @@ class OpenApiBaselineTest :
           assertUserSchema(root, responseSchema, includeId = true)
         }
       }
+
+      context("Spring HTTP fixture OpenAPI body 표현") {
+        test("생성된 JSON과 YAML에 raw 및 multipart 본문 의미를 유지합니다") {
+          val jsonRoot =
+              Files.newBufferedReader(
+                      Path.of("fixtures/spring-restdocs/generated/openapi/json/openapi3.json")
+                  )
+                  .use { Yaml().load<Map<String, Any>>(it) }
+          val yamlRoot =
+              Files.newBufferedReader(
+                      Path.of("fixtures/spring-restdocs/generated/openapi/yaml/openapi3.yaml")
+                  )
+                  .use { Yaml().load<Map<String, Any>>(it) }
+
+          jsonRoot shouldBe yamlRoot
+
+          val rawOperation = jsonRoot.map("paths").map("/api/assets/{assetId}/content").map("put")
+          val rawBody = rawOperation.map("requestBody")
+          rawBody["required"] shouldBe true
+          rawBody["description"] shouldBe "원본 파일의 모든 바이트"
+          val rawSchema = rawBody.map("content").map("application/octet-stream").map("schema")
+          rawSchema["type"] shouldBe "string"
+          rawSchema["format"] shouldBe "binary"
+          rawSchema.containsKey("properties") shouldBe false
+
+          val multipartOperation =
+              jsonRoot.map("paths").map("/api/members/{memberId}/avatar").map("post")
+          val multipartSchema =
+              multipartOperation
+                  .map("requestBody")
+                  .map("content")
+                  .map("multipart/form-data")
+                  .map("schema")
+          val parts = multipartSchema.map("properties")
+          val file = parts.map("file")
+          file["type"] shouldBe "string"
+          file["format"] shouldBe "binary"
+          file["description"] shouldBe "업로드할 이미지 파일"
+          parts.map("caption")["type"] shouldBe "string"
+          parts.map("priority")["type"] shouldBe "integer"
+          multipartSchema.list("required").toSet() shouldBe
+              setOf("file", "caption", "priority", "metadata")
+          val partEncoding =
+              multipartOperation
+                  .map("requestBody")
+                  .map("content")
+                  .map("multipart/form-data")
+                  .map("encoding")
+          partEncoding.map("file")["contentType"] shouldBe "application/octet-stream"
+          partEncoding.map("caption")["contentType"] shouldBe "text/plain;charset=UTF-8"
+          partEncoding.map("priority")["contentType"] shouldBe "application/json"
+          partEncoding.map("metadata")["contentType"] shouldBe "application/json"
+        }
+      }
     })
 
 private fun assertParameter(

@@ -3,7 +3,6 @@ package __SPRINGKIT_PACKAGE_NAME__.declarativerestdocs.spring
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
-import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -88,38 +87,10 @@ class HttpFixtureController {
   )
   fun patchMember(
       @PathVariable memberId: Long,
-      @RequestBody patch: Map<String, Any?>,
+      @RequestBody patch: Map<String, Any>,
   ): MemberPatchResponse {
     check(patch["name"] == "Jane Smith")
-    check(patch.containsKey("nickname"))
-    check(patch["nickname"] == null)
-    return MemberPatchResponse(id = memberId, name = "Jane Smith", nickname = null)
-  }
-
-  @DeleteMapping("/api/members/{memberId}")
-  fun deleteMember(@PathVariable memberId: Long): ResponseEntity<Void> {
-    check(memberId > 0)
-    return ResponseEntity.noContent().build()
-  }
-
-  @PostMapping(
-      "/api/sessions",
-      consumes = [MediaType.APPLICATION_FORM_URLENCODED_VALUE],
-  )
-  fun createSession(
-      @RequestParam username: String,
-      @RequestParam password: String,
-      @RequestParam rememberMe: Boolean,
-  ): ResponseEntity<SessionResponse> {
-    check(username == "jane")
-    check(password == "secret")
-
-    val sessionCookie =
-        ResponseCookie.from("SESSION", "session-token").httpOnly(true).path("/").build().toString()
-
-    return ResponseEntity.ok()
-        .header(HttpHeaders.SET_COOKIE, sessionCookie)
-        .body(SessionResponse(memberId = 1, rememberMe = rememberMe))
+    return MemberPatchResponse(id = memberId, name = "Jane Smith")
   }
 
   @PostMapping(
@@ -128,14 +99,37 @@ class HttpFixtureController {
   )
   fun uploadAvatar(
       @PathVariable memberId: Long,
-      @RequestPart("metadata") metadata: Map<String, Any>,
       @RequestPart("file") file: MultipartFile,
-  ): AvatarResponse {
+      @RequestPart("caption") caption: String,
+      @RequestPart("priority") priority: Int,
+      @RequestPart("metadata") metadata: Map<String, Any>,
+  ): AvatarUploadResponse {
+    check(file.originalFilename == "file")
+    check(file.contentType == MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    check(file.bytes.contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)))
+    check(caption == "프로필 이미지")
+    check(priority == 2)
+    check(metadata["crop"] == "square")
     check(metadata["public"] == true)
-    check(metadata["crop"] is Map<*, *>)
-    check(file.originalFilename == "avatar.png")
-    check(file.contentType == MediaType.IMAGE_PNG_VALUE)
-    return AvatarResponse(memberId = memberId, filename = requireNotNull(file.originalFilename))
+    return AvatarUploadResponse(memberId, file.originalFilename.orEmpty(), caption, priority)
+  }
+
+  @PutMapping(
+      "/api/assets/{assetId}/content",
+      consumes = [MediaType.APPLICATION_OCTET_STREAM_VALUE],
+  )
+  fun uploadRawContent(
+      @PathVariable assetId: String,
+      @RequestBody bytes: ByteArray,
+  ): RawUploadResponse {
+    check(bytes.contentEquals(byteArrayOf(0, 1, 2, 0xff.toByte())))
+    return RawUploadResponse(assetId, bytes.size)
+  }
+
+  @DeleteMapping("/api/members/{memberId}")
+  fun deleteMember(@PathVariable memberId: Long): ResponseEntity<Void> {
+    check(memberId > 0)
+    return ResponseEntity.noContent().build()
   }
 
   private fun member(
@@ -191,15 +185,16 @@ data class MemberProfile(
 data class MemberPatchResponse(
     val id: Long,
     val name: String,
-    val nickname: String?,
 )
 
-data class SessionResponse(
-    val memberId: Long,
-    val rememberMe: Boolean,
-)
-
-data class AvatarResponse(
+data class AvatarUploadResponse(
     val memberId: Long,
     val filename: String,
+    val caption: String,
+    val priority: Int,
+)
+
+data class RawUploadResponse(
+    val assetId: String,
+    val size: Int,
 )

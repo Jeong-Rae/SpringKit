@@ -5,7 +5,8 @@ info:
   version: 1.0.0
 servers:
 - url: http://localhost
-tags: []
+tags: [
+  ]
 paths:
   /api/members:
     get:
@@ -56,17 +57,15 @@ paths:
           type: string
         example: req-001
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/api-members-339374535"
+                $ref: '#/components/schemas/api-members-339374535'
               examples:
                 get-members:
-                  value: "{\"content\":[{\"id\":1,\"name\":\"Jane\",\"email\":\"jane@example.com\"\
-                    ,\"active\":true,\"profile\":{\"age\":30,\"tags\":[\"java\",\"\
-                    spring\"]}}],\"page\":0,\"size\":20}"
+                  value: '{"content":[{"id":1,"name":"Jane","email":"jane@example.com","active":true,"profile":{"age":30,"tags":["java","spring"]}}],"page":0,"size":20}'
     post:
       tags:
       - members
@@ -85,22 +84,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/api-members-memberId-1079907891"
+              $ref: '#/components/schemas/api-members-1079907891'
             examples:
               create-member:
-                value: |-
-                  {
-                    "name": "Jane",
-                    "email": "jane@example.com",
-                    "active": true,
-                    "profile": {
-                      "age": 30,
-                      "tags": ["java", "spring"]
-                    }
-                  }
+                value: '{"name":"Jane","email":"jane@example.com","active":true,"profile":{"age":30,"tags":["java","spring"]}}'
       responses:
-        "201":
-          description: "201"
+        '201':
+          description: '201'
           headers:
             Location:
               description: 생성된 회원 URI
@@ -109,50 +99,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/api-members-memberId104719280"
+                $ref: '#/components/schemas/api-members104719280'
               examples:
                 create-member:
-                  value: "{\"id\":1,\"name\":\"Jane\",\"email\":\"jane@example.com\"\
-                    ,\"active\":true,\"profile\":{\"age\":30,\"tags\":[\"java\",\"\
-                    spring\"]}}"
-  /api/sessions:
-    post:
-      tags:
-      - sessions
-      summary: 세션 생성
-      description: form-urlencoded 요청으로 세션을 생성합니다.
-      operationId: create-session
-      parameters:
-      - name: Content-Type
-        in: header
-        description: form-urlencoded 요청 Content-Type
-        required: true
-        schema:
-          type: string
-        example: application/x-www-form-urlencoded
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: "#/components/schemas/api-sessions-33084672"
-            examples:
-              create-session:
-                value: username=jane&password=secret&rememberMe=true
-      responses:
-        "200":
-          description: "200"
-          headers:
-            Set-Cookie:
-              description: 생성된 세션 쿠키
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/api-sessions1853216028"
-              examples:
-                create-session:
-                  value: "{\"memberId\":1,\"rememberMe\":true}"
+                  value: '{"id":1,"name":"Jane","email":"jane@example.com","active":true,"profile":{"age":30,"tags":["java","spring"]}}'
   /api/members/{memberId}:
     get:
       tags:
@@ -176,17 +126,15 @@ paths:
           type: string
         example: SESSION=session-token
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/api-members-memberId104719280"
+                $ref: '#/components/schemas/api-members104719280'
               examples:
                 get-member:
-                  value: "{\"id\":1,\"name\":\"Jane\",\"email\":\"jane@example.com\"\
-                    ,\"active\":true,\"profile\":{\"age\":30,\"tags\":[\"java\",\"\
-                    spring\"]}}"
+                  value: '{"id":1,"name":"Jane","email":"jane@example.com","active":true,"profile":{"age":30,"tags":["java","spring"]}}'
     put:
       tags:
       - members
@@ -212,22 +160,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/api-members-memberId-1079907891"
+              $ref: '#/components/schemas/api-members-1079907891'
             examples:
               replace-member:
-                value: |-
-                  {
-                    "name": "Jane Doe",
-                    "email": "jane.doe@example.com",
-                    "active": false,
-                    "profile": {
-                      "age": 31,
-                      "tags": []
-                    }
-                  }
+                value: '{"name":"Jane Doe","email":"jane.doe@example.com","active":false,"profile":{"age":31,"tags":[]}}'
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
           headers:
             ETag:
               description: 수정 후 ETag
@@ -236,11 +175,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/api-members-memberId104719280"
+                $ref: '#/components/schemas/api-members104719280'
               examples:
                 replace-member:
-                  value: "{\"id\":1,\"name\":\"Jane Doe\",\"email\":\"jane.doe@example.com\"\
-                    ,\"active\":false,\"profile\":{\"age\":31,\"tags\":[]}}"
+                  value: '{"id":1,"name":"Jane Doe","email":"jane.doe@example.com","active":false,"profile":{"age":31,"tags":[]}}'
     delete:
       tags:
       - members
@@ -256,8 +194,8 @@ paths:
           type: integer
           format: int32
       responses:
-        "204":
-          description: "204"
+        '204':
+          description: '204'
     options:
       tags:
       - members
@@ -273,8 +211,8 @@ paths:
           type: integer
           format: int32
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
           headers:
             Allow:
               description: 허용 HTTP 메서드
@@ -295,8 +233,8 @@ paths:
           type: integer
           format: int32
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
     patch:
       tags:
       - members
@@ -311,34 +249,70 @@ paths:
         schema:
           type: integer
           format: int32
+      - name: Content-Type
+        in: header
+        description: JSON Merge Patch Content-Type
+        required: true
+        schema:
+          type: string
+        example: application/merge-patch+json
       requestBody:
         content:
           application/merge-patch+json:
             schema:
-              $ref: "#/components/schemas/api-members-memberId-620114854"
+              $ref: '#/components/schemas/api-members-memberId-620114854'
             examples:
               patch-member:
-                value: |-
-                  {
-                    "name": "Jane Smith",
-                    "nickname": null
-                  }
+                value: '{"name":"Jane Smith"}'
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/api-members-memberId-1209850036"
+                $ref: '#/components/schemas/api-members-memberId-1209850036'
               examples:
                 patch-member:
-                  value: "{\"id\":1,\"name\":\"Jane Smith\",\"nickname\":null}"
+                  value: '{"id":1,"name":"Jane Smith"}'
+  /api/assets/{assetId}/content:
+    put:
+      tags:
+      - assets
+      summary: 원본 파일 업로드
+      description: 바이너리 요청 본문을 그대로 저장합니다.
+      operationId: upload-raw-content
+      parameters:
+      - name: assetId
+        in: path
+        description: 파일 식별자
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+        required: true
+        description: 원본 파일의 모든 바이트
+      responses:
+        '200':
+          description: '200'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api-assets-assetId-content-300841535'
+              examples:
+                upload-raw-content:
+                  value: '{"assetId":"asset-7","size":4}'
   /api/members/{memberId}/avatar:
     post:
       tags:
+      - images
       - members
-      summary: 회원 아바타 업로드
-      description: multipart 요청으로 JSON metadata와 이미지 파일을 업로드합니다.
+      summary: 회원 프로필 이미지 업로드
+      description: 회원의 프로필 이미지를 multipart 요청으로 업로드합니다.
       operationId: upload-avatar
       parameters:
       - name: memberId
@@ -356,17 +330,63 @@ paths:
           type: string
         example: multipart/form-data
       responses:
-        "200":
-          description: "200"
+        '200':
+          description: '200'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/api-members-memberId-avatar-957450325"
+                $ref: '#/components/schemas/api-members-memberId-avatar251906244'
               examples:
                 upload-avatar:
-                  value: "{\"memberId\":1,\"filename\":\"avatar.png\"}"
+                  value: '{"memberId":1,"filename":"file","caption":"프로필 이미지","priority":2}'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 업로드할 이미지 파일
+                caption:
+                  type: string
+                  description: 이미지 설명
+                priority:
+                  type: integer
+                  description: 이미지 표시 순서
+                metadata:
+                  type: object
+                  description: 이미지 자르기 및 공개 설정
+              required:
+              - file
+              - caption
+              - priority
+              - metadata
+            encoding:
+              file:
+                contentType: application/octet-stream
+              caption:
+                contentType: text/plain;charset=UTF-8
+              priority:
+                contentType: application/json
+              metadata:
+                contentType: application/json
 components:
   schemas:
+    api-assets-assetId-content-300841535:
+      required:
+      - assetId
+      - size
+      type: object
+      properties:
+        size:
+          type: number
+          description: 저장한 바이트 수
+        assetId:
+          type: string
+          description: 파일 식별자
     api-members-memberId-620114854:
       required:
       - name
@@ -375,33 +395,29 @@ components:
         name:
           type: string
           description: 변경할 회원 이름
-    api-members-memberId-avatar-957450325:
+    api-members-memberId-avatar251906244:
       required:
+      - caption
       - filename
       - memberId
+      - priority
       type: object
       properties:
         filename:
           type: string
           description: 업로드 파일 이름
+        caption:
+          type: string
+          description: 이미지 설명
+        priority:
+          type: number
+          description: 이미지 표시 순서
         memberId:
           type: number
           description: 회원 식별자
-    api-sessions-33084672:
+    api-assets-assetId-content-33084672:
       type: object
-    api-sessions1853216028:
-      required:
-      - memberId
-      - rememberMe
-      type: object
-      properties:
-        rememberMe:
-          type: boolean
-          description: 로그인 유지 여부
-        memberId:
-          type: number
-          description: 회원 식별자
-    api-members-memberId-1079907891:
+    api-members-1079907891:
       required:
       - active
       - email
@@ -479,7 +495,7 @@ components:
               email:
                 type: string
                 description: 회원 이메일
-    api-members-memberId104719280:
+    api-members104719280:
       required:
       - active
       - email
