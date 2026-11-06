@@ -16,6 +16,16 @@ Turn one verified change into a reviewable draft pull request. Follow repository
 instructions for branch, commit, validation, publication, and authorization
 rules.
 
+Always apply the substantive writing and review rules in
+[pr-reviewer-guide.md](references/pr-reviewer-guide.md) and
+[pr-description.md](references/pr-description.md). For the PR body's default
+shape, prefer the target repository's applicable GitHub pull request template.
+Follow the template's required sections, prompts, and compliance rules first
+when they conflict with general body-writing guidance; retain all compatible
+rules. Use the bundled default shape only when no applicable template exists.
+Repository instructions still govern the PR title, footer, branch, publication,
+and authorization.
+
 ## References
 
 - For branch setup, validation, publication, review updates, and recovery, read
