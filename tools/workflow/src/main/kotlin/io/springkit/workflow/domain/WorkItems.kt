@@ -139,3 +139,18 @@ data class SubTask(
 fun SubTask.withState(state: SubTaskState): SubTask = copy(state = state)
 
 fun SubTask.withDependency(requires: SubTaskId?): SubTask = copy(requires = requires)
+
+/*
+ * SubTask.title에서 commit 제목과 PR 제목을 순서대로 파생합니다. Type 접두사 뒤 설명이 비어 있으면 null을 반환합니다.
+ */
+fun SubTask.reviewTitlesOrNull(): Pair<String, String>? {
+  val source = title.trim()
+  val typedTitle = REVIEW_TITLE_PREFIX.matchEntire(source)
+  val type = typedTitle?.groupValues?.get(1) ?: "Feature"
+  val description = (typedTitle?.groupValues?.get(2) ?: source).trim()
+  if (description.isEmpty()) return null
+
+  return "$type: $description" to "[$id] $description"
+}
+
+private val REVIEW_TITLE_PREFIX = Regex("^([A-Za-z]+)\\s*:\\s*(.*)$")

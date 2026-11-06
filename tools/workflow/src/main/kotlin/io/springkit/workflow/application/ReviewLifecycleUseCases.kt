@@ -29,6 +29,7 @@ import io.springkit.workflow.domain.Validation
 import io.springkit.workflow.domain.WorkflowResult
 import io.springkit.workflow.domain.Workspace
 import io.springkit.workflow.domain.WorkspaceId
+import io.springkit.workflow.domain.reviewTitlesOrNull
 import io.springkit.workflow.domain.toSubTaskState
 
 /*
@@ -144,7 +145,13 @@ class ReviewLifecycleUseCases(
     if (check is WorkflowResult.Failure) return check
     check as WorkflowResult.Success
     val validationSummary = check.data
-    val title = "[${subTask.id}] ${subTask.title}"
+    val (commitTitle, pullRequestTitle) =
+        subTask.reviewTitlesOrNull()
+            ?: return failure(
+                FailureCode.INVALID_ARGUMENT,
+                "SubTask 제목에 Type 뒤 설명이 필요합니다.",
+                subTask.id,
+            )
     val base =
         if (subTask.requires == null) {
           "main"
@@ -183,7 +190,7 @@ class ReviewLifecycleUseCases(
                 PublishBranchRequest(
                     workspaceId = workspace.id,
                     branch = subTask.branch,
-                    commitTitle = title,
+                    commitTitle = commitTitle,
                     expectedRevision = status.revision,
                     expectedFingerprint = status.fingerprint,
                 )
@@ -197,7 +204,7 @@ class ReviewLifecycleUseCases(
             reviewPort.open(
                 OpenReviewRequest(
                     subTaskId = subTask.id,
-                    title = title,
+                    title = pullRequestTitle,
                     body = request.body,
                     base = base,
                     branch = subTask.branch,
@@ -212,7 +219,7 @@ class ReviewLifecycleUseCases(
         !validOpen(
             opened.pullRequest,
             subTask,
-            title,
+            pullRequestTitle,
             base,
             request,
             reviewRevision,
@@ -257,7 +264,7 @@ class ReviewLifecycleUseCases(
     val storedCheck = validationSummary.retarget(published.fingerprint, published.revision)
     val pullRequest =
         opened.pullRequest.copy(
-            title = title,
+            title = pullRequestTitle,
             body = request.body,
             base = base,
             state = PullRequestState.DRAFT,
@@ -366,6 +373,17 @@ class ReviewLifecycleUseCases(
     if (!codeChanged && request.body == null) {
       return failure(FailureCode.INVALID_ARGUMENT, "Review update에는 본문 또는 코드 변경이 필요합니다.")
     }
+    val commitTitle =
+        if (codeChanged) {
+          subTask.reviewTitlesOrNull()?.first
+              ?: return failure(
+                  FailureCode.INVALID_ARGUMENT,
+                  "SubTask 제목에 Type 뒤 설명이 필요합니다.",
+                  subTask.id,
+              )
+        } else {
+          null
+        }
     val transaction = begin(snapshot.revision, "review-update:${request.requestId}")
     if (transaction is BeginFailure) return transaction.failure
     transaction as BeginSuccess
@@ -388,7 +406,7 @@ class ReviewLifecycleUseCases(
                   PublishBranchRequest(
                       workspaceId = workspace.id,
                       branch = subTask.branch,
-                      commitTitle = stored.title,
+                      commitTitle = checkNotNull(commitTitle),
                       expectedRevision = status.revision,
                       expectedFingerprint = status.fingerprint,
                   )

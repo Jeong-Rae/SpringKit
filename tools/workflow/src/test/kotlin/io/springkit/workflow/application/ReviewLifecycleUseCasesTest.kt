@@ -53,12 +53,36 @@ class ReviewLifecycleUseCasesTest :
           response.pullRequest.title shouldBe "[sk-101] 변경 설명"
           response.pullRequest.state shouldBe PullRequestState.DRAFT
           response.pullRequest.changeRevision.diff.identity shouldBe "published-fingerprint"
-          fixture.publish.requests.single().commitTitle shouldBe "[sk-101] 변경 설명"
+          fixture.publish.requests.single().commitTitle shouldBe "Fix: 변경 설명"
           fixture.review.openRequests.single().base shouldBe "main"
           fixture.ci.starts shouldBe 1
           fixture.ai.starts shouldBe 1
           fixture.store.current.pullRequests.single().id shouldBe "pr-101"
           fixture.store.current.eventLog.events.single().shouldBeInstanceOf<ReviewOpened>()
+        }
+
+        test("Type 접두사 뒤 설명이 비어 있으면, transaction과 외부 게시 전에 요청을 거부합니다") {
+          val fixture = ReviewLifecycleFixture(subTaskTitle = "Fix:   ")
+
+          val result =
+              fixture
+                  .useCases()
+                  .open(
+                      OpenReviewLifecycleRequest(
+                          workspaceId = "ws-101",
+                          subTaskId = "sk-101",
+                          body = validReviewBody(),
+                          risk = Risk.NORMAL,
+                      )
+                  )
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.INVALID_ARGUMENT
+          fixture.publish.requests shouldBe emptyList()
+          fixture.review.openRequests shouldBe emptyList()
+          fixture.store.beginCalls shouldBe 0
+          fixture.ci.starts shouldBe 0
+          fixture.ai.starts shouldBe 0
         }
 
         test("현재 fingerprint와 check가 일치하지 않으면, 외부 게시 없이 CHECK 오류를 반환합니다") {
@@ -193,7 +217,7 @@ class ReviewLifecycleUseCasesTest :
 
       context("Review를 갱신하는 상황에서") {
         test("본문만 바뀌면, change revision과 승인과 게이트를 유지하고 review revision만 갱신합니다") {
-          val fixture = ReviewLifecycleFixture(withPullRequest = true)
+          val fixture = ReviewLifecycleFixture(withPullRequest = true, subTaskTitle = "Fix:")
 
           val result =
               fixture
@@ -230,6 +254,7 @@ class ReviewLifecycleUseCasesTest :
                   withPullRequest = true,
                   statusFingerprint = "fingerprint-2",
                   statusRevision = "head-2",
+                  pullRequestTitle = "사용자가 수정한 PR 제목",
               )
           fixture.store.current =
               fixture.store.current.copy(
@@ -258,9 +283,43 @@ class ReviewLifecycleUseCasesTest :
           response.pullRequest.changeRevision.id shouldBe "cr-2"
           response.pullRequest.changeRevision.diff.identity shouldBe "published-fingerprint"
           response.pullRequest.approval shouldBe null
-          fixture.publish.requests.single().commitTitle shouldBe "[sk-101] 변경 설명"
+          fixture.publish.requests.single().commitTitle shouldBe "Fix: 변경 설명"
           fixture.ci.starts shouldBe 1
           fixture.ai.starts shouldBe 1
+        }
+
+        test("Type 접두사 뒤 설명이 비어 있으면, 코드 변경 게시 전에 요청을 거부합니다") {
+          val fixture =
+              ReviewLifecycleFixture(
+                  withPullRequest = true,
+                  subTaskTitle = "Fix:",
+                  statusFingerprint = "fingerprint-2",
+                  statusRevision = "head-2",
+              )
+          fixture.store.current =
+              fixture.store.current.copy(
+                  checks = mapOf("sk-101" to check("fingerprint-2", "head-2"))
+              )
+
+          val result =
+              fixture
+                  .useCases()
+                  .update(
+                      UpdateReviewLifecycleRequest(
+                          workspaceId = "ws-101",
+                          subTaskId = "sk-101",
+                          pullRequestId = "pr-101",
+                          expectedReviewRevisionId = "rv-1",
+                      )
+                  )
+
+          result.shouldBeInstanceOf<WorkflowResult.Failure>().data.code shouldBe
+              FailureCode.INVALID_ARGUMENT
+          fixture.publish.requests shouldBe emptyList()
+          fixture.review.updateCalls shouldBe 0
+          fixture.store.beginCalls shouldBe 0
+          fixture.ci.starts shouldBe 0
+          fixture.ai.starts shouldBe 0
         }
 
         test("CI 시작이 실패하면, Store를 커밋하지 않고 외부 변경 보상을 요청합니다") {
@@ -291,20 +350,24 @@ private class ReviewLifecycleFixture(
     statusFingerprint: String = "fingerprint-1",
     statusRevision: String = "head-1",
     withPullRequest: Boolean = false,
+    private val subTaskTitle: String = "Fix: 변경 설명",
+    private val pullRequestTitle: String = "[sk-101] 변경 설명",
     private val ciFailure: Boolean = false,
     private val withAiReview: Boolean = true,
 ) {
-  val store = LifecycleFakeStore(snapshot(withPullRequest))
+  val store = LifecycleFakeStore(snapshot(withPullRequest, subTaskTitle, pullRequestTitle))
   val workspace = LifecycleFakeWorkspacePort()
   val git = LifecycleFakeGitPort(statusFingerprint, statusRevision)
   val publish = LifecycleFakeGitPublishPort()
-  val review = LifecycleFakeReviewPort()
+  val review = LifecycleFakeReviewPort(pullRequest(pullRequestTitle))
   val ci = LifecycleFakeCiPort(ciFailure)
   val ai = LifecycleFakeAiPort()
   val compensation = LifecycleFakeCompensationPort()
 
   init {
-    if (withPullRequest) store.current = store.current.copy(pullRequests = listOf(pullRequest()))
+    if (withPullRequest) {
+      store.current = store.current.copy(pullRequests = listOf(pullRequest(pullRequestTitle)))
+    }
   }
 
   fun useCases() =
@@ -336,7 +399,11 @@ private fun validReviewBody(): String =
         )
         .joinToString("\n\n") { heading -> "## $heading\n설명" }
 
-private fun snapshot(withPullRequest: Boolean): WorkflowStoreSnapshot =
+private fun snapshot(
+    withPullRequest: Boolean,
+    subTaskTitle: String,
+    pullRequestTitle: String,
+): WorkflowStoreSnapshot =
     WorkflowStoreSnapshot(
         revision = "0",
         sequence =
@@ -358,7 +425,7 @@ private fun snapshot(withPullRequest: Boolean): WorkflowStoreSnapshot =
                 SubTask(
                     "sk-101",
                     "task-101",
-                    "변경 설명",
+                    subTaskTitle,
                     state = if (withPullRequest) SubTaskState.DRAFT else SubTaskState.DEVELOPMENT,
                     workspace = testWorkspace(),
                     pullRequestId = if (withPullRequest) "pr-101" else null,
@@ -366,7 +433,7 @@ private fun snapshot(withPullRequest: Boolean): WorkflowStoreSnapshot =
             ),
         workspaces = listOf(testWorkspace()),
         checks = mapOf("sk-101" to check("fingerprint-1", "head-1")),
-        pullRequests = if (withPullRequest) listOf(pullRequest()) else emptyList(),
+        pullRequests = if (withPullRequest) listOf(pullRequest(pullRequestTitle)) else emptyList(),
     )
 
 private fun check(fingerprint: String, revision: String): CheckSummary =
@@ -383,11 +450,11 @@ private fun check(fingerprint: String, revision: String): CheckSummary =
 private fun reviewRevision(id: String, body: String): ReviewRevision =
     ReviewRevision(id, id.removePrefix("rv-").toLong(), body)
 
-private fun pullRequest(): PullRequest =
+private fun pullRequest(title: String = "[sk-101] 변경 설명"): PullRequest =
     PullRequest(
         id = "pr-101",
         subTaskId = "sk-101",
-        title = "[sk-101] 변경 설명",
+        title = title,
         body = validReviewBody(),
         base = "main",
         state = PullRequestState.DRAFT,
@@ -455,11 +522,11 @@ private class LifecycleFakeGitPublishPort : GitPublishPort {
   }
 }
 
-private class LifecycleFakeReviewPort : ReviewPort {
+private class LifecycleFakeReviewPort(initialPullRequest: PullRequest) : ReviewPort {
   val openRequests = mutableListOf<OpenReviewRequest>()
   var getCalls = 0
   var updateCalls = 0
-  private var current = pullRequest()
+  private var current = initialPullRequest
 
   override fun open(request: OpenReviewRequest): PortResult<OpenReviewResponse> {
     openRequests += request

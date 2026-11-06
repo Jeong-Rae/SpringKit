@@ -39,8 +39,22 @@ tools/workflow/bin/workflow review update --revision rv-4 --allow-account-mismat
 tools/workflow/bin/workflow status --subtask sk-33
 ```
 
+## Review 제목
+
+`start --title`에 `Type: 설명`을 입력하면 commit 제목은 `Type: 설명`, PR 제목은 `[SubTask ID] 설명`으로 구성합니다. Type을 생략하면 `Feature`를 사용합니다. Type 접두사 뒤 설명이 비어 있으면 Review 게시와 코드 변경 갱신을 외부 변경 전에 거부합니다. 입력한 `SubTask.title` 원문은 Workflow Store에 그대로 보존합니다.
+
+본문만 갱신할 때는 commit을 만들거나 CI·AI Review를 다시 시작하지 않습니다. PR 제목을 GitHub에서 직접 수정해도 코드 변경 commit 제목은 원래 `SubTask.title`에서 계산합니다.
+
 ## 댓글과 인증
 
 에이전트가 `review comment` 또는 `review reply`로 작성하는 댓글 본문은 `[Agent]`로 시작해야 합니다. `--body`와 `--body-file` 모두 같은 규칙을 적용합니다.
 
 Workflow CLI는 설정된 인증을 사용하며 로그인이나 인증 절차를 다시 실행하지 않습니다.
+
+## 개발 검증
+
+개발 중에는 `tools/workflow`에서 Gradle로 JVM 애플리케이션을 빌드하고 실행합니다. Native 실행 파일의 생성과 갱신은 최종 배포 단계에서 진행합니다.
+
+```sh
+./gradlew run --args='--help'
+```
