@@ -1,50 +1,28 @@
-# PR Description Guidance
+# PR 본문 작성 지침
 
-Write the pull request body for the reviewer's next decision, not as a record of
-completed development steps. The mandatory inclusion, exclusion, and exception
-rules are in [pr-reviewer-guide.md](pr-reviewer-guide.md). Read that reference
-before drafting or editing the body.
+PR 본문은 개발 과정의 완료 기록보다 리뷰어가 다음 결정을 내리는 데 필요한 정보를 중심으로 작성합니다. 반드시 포함하거나 제외해야 할 내용과 예외 규칙은 [pr-reviewer-guide.md](pr-reviewer-guide.md)에 정리되어 있습니다. 본문을 작성하거나 수정하기 전에 해당 문서를 읽습니다.
 
-## Explain the Change
+## 변경 내용 설명
 
-Open with the changed behavior, why the change is needed, and its impact. For a
-nontrivial implementation, explain the responsibilities of the key components,
-their collaboration, and meaningful design trade-offs. Keep the description
-consistent with the current diff.
+변경된 동작, 변경 이유, 영향부터 설명합니다. 구현이 복잡하다면 주요 구성 요소의 책임과 협력 관계, 의미 있는 설계상의 트레이드오프를 기술합니다. 설명은 현재 Diff와 일치해야 합니다.
 
-## Direct Review Attention
+## 검토 대상 명시
 
-Point to the specific contract, failure boundary, assumption, or decision that
-needs scrutiny. Link the relevant design, specification, or code where it is
-being discussed. For a large diff, give the reviewer an efficient reading order
-if this materially improves reviewability.
+리뷰어가 확인해야 할 구체적인 계약, 실패 경계, 가정 또는 설계 결정을 제시합니다. 관련 설계 문서, 명세 또는 코드는 설명하는 위치에 연결합니다. 변경 규모가 크고 검토에 도움이 된다면 파일이나 기능을 살펴볼 순서도 안내합니다.
 
-Prefer a Mermaid diagram, table, or screenshot when it communicates the changed
-behavior more precisely than prose. Verify that visuals match the implementation.
+변경된 동작을 글보다 정확하게 전달할 수 있다면 Mermaid 다이어그램, 표 또는 스크린샷을 활용합니다. 시각 자료가 실제 구현과 일치하는지도 확인합니다.
 
-## Describe Exceptions, Not Routine Completion
+## 일반적인 완료 기록 대신 예외 설명
 
-Include unusual verification evidence when it establishes a central behavior
-that the diff cannot demonstrate, or when a failed or omitted check limits
-review confidence. Describe the verified contract, supporting evidence, and
-consequence rather than a list of commands or test counts.
+Diff만으로 확인하기 어려운 핵심 동작을 입증할 때, 또는 실패하거나 생략한 검사가 리뷰 판단의 확실성을 제한할 때는 해당 검증 결과를 기술합니다. 명령이나 테스트 개수를 나열하는 대신 확인한 계약, 근거 및 영향을 설명합니다.
 
-Explain migrations, rollout or rollback dependencies, compatibility risks, and
-known exclusions when they affect review or deployment. Do not create empty
-sections or add generic checklists.
+마이그레이션, 점진적 배포나 롤백에 필요한 조건, 호환성 위험, 알려진 제외 범위가 리뷰 또는 배포 판단에 영향을 준다면 명시합니다. 내용이 없는 섹션과 일반적인 점검 목록은 추가하지 않습니다.
 
-## Default Shape
+## 기본 구성
 
-Write titles and body text in the repository's required language. Apply the
-substantive guidance throughout this document and the Must / Must Not rules in
-[pr-reviewer-guide.md](pr-reviewer-guide.md) to every PR body. The target
-repository's applicable pull request template replaces only the default body
-shape and supplies any additional body requirements. Preserve its required
-sections and prompts. When a template requirement conflicts with general
-body-writing guidance, satisfy the template and retain all compatible rules.
+제목과 본문은 저장소에서 요구하는 언어로 작성합니다. 모든 PR 본문에는 이 문서의 작성 원칙과 [pr-reviewer-guide.md](pr-reviewer-guide.md)의 Must / Must Not 규칙을 적용합니다. 대상 저장소에 적용 가능한 PR 템플릿이 있다면 아래 기본 구성 대신 해당 템플릿을 사용하고, 템플릿의 추가 작성 요건도 충족합니다. 필수 섹션과 질문은 유지합니다. 템플릿 요건과 일반적인 본문 작성 지침이 충돌하면 템플릿을 우선하고, 양립할 수 있는 규칙은 계속 적용합니다.
 
-Use the following Korean headings only when no applicable repository template
-exists; omit sections without meaningful content:
+적용 가능한 저장소 템플릿이 없을 때만 아래의 한국어 제목을 사용합니다. 의미 있는 내용이 없는 섹션은 생략합니다.
 
 ```markdown
 ## 변경 내용
@@ -60,5 +38,4 @@ exists; omit sections without meaningful content:
 - <리뷰 판단에 영향을 주는 실제 제약 또는 미검증 사항>
 ```
 
-Keep the body proportional to the change. The repository's required PR title,
-footer, branch, and publication rules continue to take precedence.
+본문 분량은 변경 규모에 맞춥니다. PR 제목, 푸터, 브랜치 및 게시 절차에는 저장소의 필수 규칙을 우선 적용합니다.
