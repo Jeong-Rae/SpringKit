@@ -1,0 +1,3 @@
+interface:
+  display_name: "PR Creator"
+  short_description: "리뷰어 중심 PR을 작성하고 검증·구조·가독성 문제를 수정"
