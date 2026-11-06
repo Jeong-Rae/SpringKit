@@ -41,12 +41,16 @@ model. Repository instructions and pull request templates take precedence.
    When several templates exist, select the one applicable to the change.
 
    Read [pr-reviewer-guide.md](pr-reviewer-guide.md) and
-   [pr-description.md](pr-description.md). When a repository template applies,
-   use its section structure and complete its required prompts using verified
-   change details. Keep required headings, questions, and checklists. Apply
-   the bundled default body structure only when no applicable template exists.
-   In either case, follow repository and user writing requirements, and save
-   the complete body to a temporary Markdown file for publication.
+   [pr-description.md](pr-description.md) fully. Apply their substantive
+   inclusion, exclusion, review, and composition rules to every PR body.
+   When a repository template applies, use it instead of the bundled Default
+   Shape: preserve its section structure, fill required prompts with verified
+   change details, and satisfy its explicit body requirements. If a template
+   requirement conflicts with general body-writing guidance, the template
+   requirement takes precedence; continue following all compatible rules.
+   Without an applicable template, use the bundled Default Shape. Follow
+   repository instructions for titles, footers, branches, publication, and
+   authorization, and save the complete body to a temporary Markdown file.
 
 6. Publish through the repository-required command or script. If none exists,
    push the branch and create a draft pull request:
