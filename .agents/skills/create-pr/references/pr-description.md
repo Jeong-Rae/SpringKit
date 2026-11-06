@@ -35,9 +35,11 @@ sections or add generic checklists.
 
 ## Default Shape
 
-Write titles and body text in the repository's required language. SpringKit uses
-these Korean headings, with sections omitted when they have no meaningful
-content:
+Write titles and body text in the repository's required language. First use the
+target repository's applicable pull request template, preserving its required
+sections and prompts. The following Korean headings are the fallback structure
+only when no applicable repository template exists; omit sections without
+meaningful content:
 
 ```markdown
 ## 변경 내용

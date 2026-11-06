@@ -33,9 +33,20 @@ model. Repository instructions and pull request templates take precedence.
    rtk git commit -m "<repository-compliant title>"
    ```
 
-5. Read [pr-description.md](pr-description.md) and write the pull request body
-   to a temporary Markdown file. Apply the repository's or user's language and
-   writing requirements.
+5. Find the target repository's pull request template before drafting the body.
+   Check GitHub's conventional locations, including
+   `PULL_REQUEST_TEMPLATE.md` at the repository root, in `.github/`, or
+   in `docs/`, and Markdown templates in `.github/PULL_REQUEST_TEMPLATE/`.
+   Follow repository-specific template configuration or selection instructions.
+   When several templates exist, select the one applicable to the change.
+
+   Read [pr-reviewer-guide.md](pr-reviewer-guide.md) and
+   [pr-description.md](pr-description.md). When a repository template applies,
+   use its section structure and complete its required prompts using verified
+   change details. Keep required headings, questions, and checklists. Apply
+   the bundled default body structure only when no applicable template exists.
+   In either case, follow repository and user writing requirements, and save
+   the complete body to a temporary Markdown file for publication.
 
 6. Publish through the repository-required command or script. If none exists,
    push the branch and create a draft pull request:

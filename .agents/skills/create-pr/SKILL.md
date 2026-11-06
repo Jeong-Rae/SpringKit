@@ -16,6 +16,11 @@ Turn one verified change into a reviewable draft pull request. Follow repository
 instructions for branch, commit, validation, publication, and authorization
 rules.
 
+Before drafting the PR body, find and use an applicable GitHub pull request
+template from the target repository. Preserve its required structure and
+questions. Use the bundled default body structure only when no applicable
+repository template exists.
+
 ## References
 
 - For branch setup, validation, publication, review updates, and recovery, read
