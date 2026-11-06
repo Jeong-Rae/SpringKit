@@ -1,6 +1,6 @@
 # PR 작성 규칙 참고 자료
 
-다음 자료는 이 프로젝트의 PR 본문 작성 규칙을 정할 때 참고했습니다. 필수·금지 사항(Must / Must Not)은 이 프로젝트의 [리뷰어 중심 작성 규칙](pr-reviewer-guide.md)을 따릅니다.
+이 프로젝트는 다음 자료를 참고해 PR 본문 작성 규칙을 정했습니다. 꼭 넣어야 하거나 제외해야 할 내용(Must / Must Not)은 [리뷰어 중심 작성 규칙](pr-reviewer-guide.md)에 정리돼 있습니다.
 
 - [Google Engineering Practices: Writing good CL descriptions](https://google.github.io/eng-practices/review/developer/cl-descriptions.html)
 - [GitHub Docs: Helping others review your changes](https://docs.github.com/en/pull-requests/concepts/helping-others-review-your-changes)
