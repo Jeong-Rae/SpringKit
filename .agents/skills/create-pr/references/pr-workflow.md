@@ -1,11 +1,10 @@
-# PR Workflow
+# PR 작업 절차
 
-Use this workflow with any programming language, build system, or branching
-model. Repository instructions and pull request templates take precedence.
+이 절차는 프로그래밍 언어, 빌드 시스템, 브랜치를 관리하는 방식과 관계없이 적용합니다. 저장소의 지침과 PR 템플릿을 우선합니다.
 
-## Create a Pull Request
+## PR 생성
 
-1. Inspect the working tree and current branch:
+1. 작업 트리와 현재 브랜치의 상태를 확인합니다.
 
    ```bash
    rtk git status --short
@@ -13,19 +12,13 @@ model. Repository instructions and pull request templates take precedence.
    rtk git diff -- <paths>
    ```
 
-   Preserve unrelated changes and limit work to the requested change.
+   요청과 관계없는 변경은 그대로 두고 요청받은 부분만 수정합니다.
 
-2. Read the applicable repository instructions. Identify the required branch
-   name, base branch, commit format, validation commands, publication method,
-   pull request state, and authorization boundaries before changing Git.
+2. 해당 저장소의 지침을 읽습니다. Git 작업을 시작하기 전에 브랜치 이름과 대상 브랜치, 커밋 형식, 검증 명령, 게시 방법, PR 상태, 허용된 작업 범위를 확인합니다.
 
-3. Create or enter the branch through the repository-required workflow. If the
-   repository defines no workflow, use its established branch convention and
-   ordinary Git commands.
+3. 저장소에서 요구하는 절차에 따라 작업 브랜치를 생성하거나 기존 브랜치로 이동합니다. 별도 절차가 없다면 저장소의 기존 브랜치 이름 규칙과 일반 Git 명령을 따릅니다.
 
-4. Run the narrowest validation that covers the change. Use the repository's
-   test, lint, build, or documentation checks instead of assuming a language or
-   build tool. Then stage only relevant files and commit:
+4. 변경 사항을 확인하는 데 필요한 최소 범위의 검사를 실행합니다. 특정 언어나 빌드 도구를 임의로 정하지 않고 저장소에서 정한 테스트, 린트, 빌드 또는 문서 검사를 사용합니다. 검사가 끝나면 이번 변경과 관련된 파일만 스테이징한 뒤 커밋합니다.
 
    ```bash
    rtk git add <paths>
@@ -33,53 +26,34 @@ model. Repository instructions and pull request templates take precedence.
    rtk git commit -m "<repository-compliant title>"
    ```
 
-5. Find the target repository's pull request template before drafting the body.
-   Check GitHub's conventional locations, including
-   `PULL_REQUEST_TEMPLATE.md` at the repository root, in `.github/`, or
-   in `docs/`, and Markdown templates in `.github/PULL_REQUEST_TEMPLATE/`.
-   Follow repository-specific template configuration or selection instructions.
-   When several templates exist, select the one applicable to the change.
+5. PR 본문을 작성하기 전에 대상 저장소의 PR 템플릿을 찾습니다. 저장소 루트, `.github/`, `docs/`의 `PULL_REQUEST_TEMPLATE.md`와 `.github/PULL_REQUEST_TEMPLATE/`의 Markdown 템플릿 등 GitHub의 일반적인 위치를 확인합니다. 저장소에서 템플릿 사용 방법을 정했다면 그 지침을 따릅니다. 템플릿이 여러 개라면 이번 변경에 맞는 템플릿을 선택합니다.
 
-   Read [pr-reviewer-guide.md](pr-reviewer-guide.md) and
-   [pr-description.md](pr-description.md) fully. Apply their substantive
-   inclusion, exclusion, review, and composition rules to every PR body.
-   When a repository template applies, use it instead of the bundled Default
-   Shape: preserve its section structure, fill required prompts with verified
-   change details, and satisfy its explicit body requirements. If a template
-   requirement conflicts with general body-writing guidance, the template
-   requirement takes precedence; continue following all compatible rules.
-   Without an applicable template, use the bundled Default Shape. Follow
-   repository instructions for titles, footers, branches, publication, and
-   authorization, and save the complete body to a temporary Markdown file.
+   [pr-reviewer-guide.md](pr-reviewer-guide.md)와 [pr-description.md](pr-description.md)를 끝까지 읽고, 모든 PR 본문에 반드시 넣을 내용과 넣지 말아야 할 내용, 검토 기준, 작성 규칙을 적용합니다.
 
-6. Publish through the repository-required command or script. If none exists,
-   push the branch and create a draft pull request:
+   적용 가능한 저장소 템플릿이 있다면 스킬에 포함된 기본 구성 대신 해당 템플릿을 사용합니다. 템플릿의 섹션 구조를 유지합니다. 필수 질문에는 확인된 변경 내용을 작성하고, 명시된 본문 요건을 충족합니다. 템플릿의 요구 사항과 일반적인 본문 작성 지침이 충돌하면 템플릿을 우선합니다. 충돌하지 않는 지침은 계속 적용합니다.
+
+   적용 가능한 템플릿이 없다면 스킬의 기본 구성을 사용합니다. PR 제목, 푸터, 브랜치, 게시 및 권한에 관해서는 저장소 지침을 따릅니다. 작성한 PR 본문 전체를 임시 Markdown 파일에 저장합니다.
+
+6. 저장소에서 지정한 명령이나 스크립트로 변경을 게시합니다. 별도 절차가 없다면 브랜치를 푸시한 뒤 초안 PR을 생성합니다.
 
    ```bash
    rtk git push -u origin <branch>
    rtk gh pr create --draft --base <base> --title "<title>" --body-file <path>
    ```
 
-   Keep the pull request in the required state and do not broaden authorization
-   to ready, merge, deployment, or other external actions.
+   PR은 저장소가 정한 상태로 유지합니다. 사용자가 초안 해제, 병합, 배포까지 허용했다고 판단하지 않습니다.
 
-## Recover a Failed Publication
+## PR 게시 실패 후 복구
 
-Inspect the branch and its pull request before retrying:
+재시도하기 전에 브랜치와 PR의 상태를 확인합니다.
 
 ```bash
 rtk git status --short --branch
 rtk gh pr view <branch> --json url,isDraft,title,baseRefName,state
 ```
 
-Report which local and remote steps completed and which command failed. Retry
-only after confirming that the retry cannot create a duplicate pull request. If
-authentication fails, ask the user to restore it before continuing.
+로컬과 원격에서 어디까지 완료됐고 어떤 명령이 실패했는지 나누어 보고합니다. PR이 중복 생성되지 않는지 확인한 뒤에만 다시 실행합니다. 인증에 실패했다면 사용자에게 인증 복구를 요청합니다.
 
-## Update After Review
+## 리뷰 반영
 
-Inspect the pull request diff, checks, and review feedback. Change only the
-requested scope, run relevant validation, and commit the result. Publish with
-the repository-required update workflow or push the current branch when no such
-workflow exists. Recheck approval and continuous integration status after
-publication.
+PR의 Diff, 검사 결과 및 리뷰 의견을 확인합니다. 요청받은 범위에서만 수정하고 관련 검증을 실행한 뒤 커밋합니다. 저장소에서 정한 방식으로 수정 내용을 게시합니다. 별도 절차가 없다면 현재 브랜치를 푸시합니다. 게시 후에는 승인 상태와 CI 결과를 다시 확인합니다.
