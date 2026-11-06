@@ -30,8 +30,9 @@ sealed interface WorkflowCommandRequest {
   data object Check : WorkflowCommandRequest
 
   data class ReviewOpen(
-      val bodyFile: String,
+      val bodyFile: String? = null,
       val risk: String,
+      val body: String? = null,
   ) : WorkflowCommandRequest
 
   data class ReviewShow(
@@ -43,6 +44,7 @@ sealed interface WorkflowCommandRequest {
       val revision: String,
       val bodyFile: String? = null,
       val allowAccountMismatch: Boolean = false,
+      val body: String? = null,
   ) : WorkflowCommandRequest
 
   data class ReviewComment(
@@ -281,14 +283,16 @@ private class ReviewOpenCommand(
     stdout: PrintStream,
     stderr: PrintStream,
 ) : WorkflowLeafCommand("open", "현재 변경을 게시하고 Draft PR을 생성합니다.", gateway, stdout, stderr) {
-  private val bodyFile by option("--body-file").required()
+  private val body by option("--body")
+  private val bodyFile by option("--body-file")
   private val risk by option("--risk").required()
 
   override fun run() {
+    requireExactlyOne("--body", body, "--body-file", bodyFile)
     if (risk != "normal" && risk != "high") {
       invalid("--risk는 normal 또는 high여야 합니다.")
     }
-    execute(WorkflowCommandRequest.ReviewOpen(bodyFile, risk))
+    execute(WorkflowCommandRequest.ReviewOpen(bodyFile = bodyFile, risk = risk, body = body))
   }
 }
 
@@ -315,6 +319,7 @@ private class ReviewUpdateCommand(
     stderr: PrintStream,
 ) : WorkflowLeafCommand("update", "Review 변경을 다시 게시합니다.", gateway, stdout, stderr) {
   private val revision by option("--revision").required()
+  private val body by option("--body")
   private val bodyFile by option("--body-file")
   private val allowAccountMismatch by
       option(
@@ -324,7 +329,17 @@ private class ReviewUpdateCommand(
           .flag()
 
   override fun run() {
-    execute(WorkflowCommandRequest.ReviewUpdate(revision, bodyFile, allowAccountMismatch))
+    if (body != null && bodyFile != null) {
+      invalid("--body 또는 --body-file 중 하나만 지정해야 합니다.")
+    }
+    execute(
+        WorkflowCommandRequest.ReviewUpdate(
+            revision = revision,
+            bodyFile = bodyFile,
+            allowAccountMismatch = allowAccountMismatch,
+            body = body,
+        )
+    )
   }
 }
 

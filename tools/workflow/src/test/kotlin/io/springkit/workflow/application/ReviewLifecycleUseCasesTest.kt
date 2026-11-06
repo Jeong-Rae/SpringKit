@@ -40,7 +40,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = validReviewBody(),
+                          body = sampleReviewBody(),
                           risk = Risk.NORMAL,
                       )
                   )
@@ -71,7 +71,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = validReviewBody(),
+                          body = sampleReviewBody(),
                           risk = Risk.NORMAL,
                       )
                   )
@@ -95,7 +95,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = validReviewBody(),
+                          body = sampleReviewBody(),
                           risk = Risk.NORMAL,
                       )
                   )
@@ -116,7 +116,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = validReviewBody(),
+                          body = sampleReviewBody(),
                           risk = Risk.NORMAL,
                       )
                   )
@@ -129,41 +129,10 @@ class ReviewLifecycleUseCasesTest :
         }
       }
 
-      context("PR 본문 템플릿을 검증하는 상황에서") {
-        test("필수 제목이 없으면, 포트를 호출하지 않고 본문 오류를 SubTask 대상으로 반환합니다") {
+      context("PR 본문 원문을 전달하는 상황에서") {
+        test("초기 게시 본문에 임의의 제목과 슬롯이 있어도, 본문 원문을 그대로 전달합니다") {
           val fixture = ReviewLifecycleFixture()
-
-          val result =
-              fixture
-                  .useCases()
-                  .open(
-                      OpenReviewLifecycleRequest(
-                          workspaceId = "ws-101",
-                          subTaskId = "sk-101",
-                          body = "# 해결하려는 문제\n내용",
-                          risk = Risk.NORMAL,
-                      )
-                  )
-
-          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
-          failure.code shouldBe FailureCode.INVALID_ARGUMENT
-          failure.message shouldBe "PR 본문에 '왜 지금 해결해야 하는가' 제목이 없습니다."
-          failure.blockedBy.single().target shouldBe "sk-101"
-          fixture.git.inspectCalls shouldBe 0
-          fixture.publish.requests shouldBe emptyList()
-          fixture.review.getCalls shouldBe 0
-          fixture.review.openRequests shouldBe emptyList()
-          fixture.store.snapshotCalls shouldBe 0
-          fixture.store.beginCalls shouldBe 0
-        }
-
-        test("필수 제목의 순서가 잘못되면, 포트를 호출하지 않고 제목 순서 오류를 반환합니다") {
-          val fixture = ReviewLifecycleFixture()
-          val body =
-              validReviewBody()
-                  .replace("## 해결하려는 문제", "## 임시 제목")
-                  .replace("## 왜 지금 해결해야 하는가", "## 해결하려는 문제")
-                  .replace("## 임시 제목", "## 왜 지금 해결해야 하는가")
+          val body = "  임의 제목\n\n{{placeholder}}\n본문 끝  "
 
           val result =
               fixture
@@ -177,18 +146,13 @@ class ReviewLifecycleUseCasesTest :
                       )
                   )
 
-          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
-          failure.code shouldBe FailureCode.INVALID_ARGUMENT
-          failure.message shouldBe
-              "PR 본문 제목 순서가 잘못되었습니다. '해결하려는 문제' 다음에 '왜 지금 해결해야 하는가' 제목이 있어야 합니다."
-          failure.blockedBy.single().target shouldBe "sk-101"
-          fixture.git.inspectCalls shouldBe 0
-          fixture.review.openRequests shouldBe emptyList()
-          fixture.store.snapshotCalls shouldBe 0
+          result.shouldBeInstanceOf<WorkflowResult.Success<OpenReviewLifecycleResponse>>()
+          fixture.review.openRequests.single().body shouldBe body
         }
 
-        test("본문 갱신의 제목이 누락되면, Review 조회 전에 PR 대상으로 오류를 반환합니다") {
+        test("본문 갱신에 Markdown과 슬롯이 있어도, 본문 원문을 그대로 전달합니다") {
           val fixture = ReviewLifecycleFixture(withPullRequest = true)
+          val body = "\n# 사용자 제목\n\n`{{placeholder}}`\n  "
 
           val result =
               fixture
@@ -199,19 +163,15 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           pullRequestId = "pr-101",
                           expectedReviewRevisionId = "rv-1",
-                          body = "갱신된 본문",
+                          body = body,
                       )
                   )
 
-          val failure = result.shouldBeInstanceOf<WorkflowResult.Failure>().data
-          failure.code shouldBe FailureCode.INVALID_ARGUMENT
-          failure.message shouldBe "PR 본문에 '해결하려는 문제' 제목이 없습니다."
-          failure.blockedBy.single().target shouldBe "pr-101"
-          fixture.git.inspectCalls shouldBe 0
-          fixture.review.getCalls shouldBe 0
-          fixture.review.updateCalls shouldBe 0
-          fixture.store.snapshotCalls shouldBe 0
-          fixture.store.beginCalls shouldBe 0
+          val response =
+              result
+                  .shouldBeInstanceOf<WorkflowResult.Success<UpdateReviewLifecycleResponse>>()
+                  .data
+          response.pullRequest.body shouldBe body
         }
       }
 
@@ -228,7 +188,7 @@ class ReviewLifecycleUseCasesTest :
                           subTaskId = "sk-101",
                           pullRequestId = "pr-101",
                           expectedReviewRevisionId = "rv-1",
-                          body = validReviewBody(),
+                          body = sampleReviewBody(),
                       )
                   )
 
@@ -332,7 +292,7 @@ class ReviewLifecycleUseCasesTest :
                       OpenReviewLifecycleRequest(
                           workspaceId = "ws-101",
                           subTaskId = "sk-101",
-                          body = validReviewBody(),
+                          body = sampleReviewBody(),
                           risk = Risk.NORMAL,
                       )
                   )
@@ -386,18 +346,7 @@ private class ReviewLifecycleFixture(
 private fun testWorkspace(): Workspace =
     Workspace("ws-101", "sk-101", WorkspacePath("workspace/sk-101"), "sk-101")
 
-private fun validReviewBody(): String =
-    listOf(
-            "해결하려는 문제",
-            "왜 지금 해결해야 하는가",
-            "어떻게 해결했는가",
-            "한계와 트레이드오프",
-            "기존 기능에 미치는 영향",
-            "Edge Case와 실패 시나리오",
-            "검토한 대안과 선택 이유",
-            "리뷰 포인트",
-        )
-        .joinToString("\n\n") { heading -> "## $heading\n설명" }
+private fun sampleReviewBody(): String = "본문입니다."
 
 private fun snapshot(
     withPullRequest: Boolean,
@@ -455,10 +404,10 @@ private fun pullRequest(title: String = "[sk-101] 변경 설명"): PullRequest =
         id = "pr-101",
         subTaskId = "sk-101",
         title = title,
-        body = validReviewBody(),
+        body = sampleReviewBody(),
         base = "main",
         state = PullRequestState.DRAFT,
-        reviewRevision = reviewRevision("rv-1", validReviewBody()),
+        reviewRevision = reviewRevision("rv-1", sampleReviewBody()),
         changeRevision = ChangeRevision("cr-1", 1, Diff("fingerprint-1")),
         approval =
             Approval("approval-1", Actor("human-1", ActorKind.HUMAN), "cr-1", "fingerprint-1"),
