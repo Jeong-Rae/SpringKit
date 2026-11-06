@@ -357,6 +357,7 @@ class RuntimeFactoryTest :
           val root = Files.createTempDirectory("workflow-runtime-review-")
           val statePath = root.resolve("state.json")
           val bodyPath = root.resolve("pr.md")
+          val initialBody = "  임의 제목\n\n{{placeholder}}\n본문 끝  "
           val workspace = Workspace("ws-1", "sk-101", WorkspacePath(root.toString()), "sk-101")
           val subTask = SubTask("sk-101", "task-1", "변경", workspace = workspace)
           val task =
@@ -375,20 +376,7 @@ class RuntimeFactoryTest :
                   )
               ),
           )
-          Files.writeString(
-              bodyPath,
-              listOf(
-                      "해결하려는 문제",
-                      "왜 지금 해결해야 하는가",
-                      "어떻게 해결했는가",
-                      "한계와 트레이드오프",
-                      "기존 기능에 미치는 영향",
-                      "Edge Case와 실패 시나리오",
-                      "검토한 대안과 선택 이유",
-                      "리뷰 포인트",
-                  )
-                  .joinToString("\n\n") { heading -> "## $heading\n설명" },
-          )
+          Files.writeString(bodyPath, initialBody)
           val commandRunner = RuntimeCommandRunner(root)
           val gateway =
               createDefaultRuntime(
@@ -420,6 +408,7 @@ class RuntimeFactoryTest :
                   io.springkit.workflow.domain.WorkflowResult.Success<JsonObject>
               >()
           success.data["pull_request"].toString() shouldContain "\"id\":\"1\""
+          commandRunner.submittedPullRequestBody shouldBe initialBody
 
           val stored = WorkflowStateJsonCodec.decode(Files.readString(statePath))
           val pullRequest = requireNotNull(stored.pullRequests["1"])
@@ -491,9 +480,25 @@ class RuntimeFactoryTest :
           reviewAfterComment.reviewRevision.id shouldNotBe reviewBeforeComment.reviewRevision.id
           reviewAfterComment.reviewRevision.threads.size shouldBe 3
 
+          val updateBody = "\n# 다른 제목\n\n{{update-slot}}\n  "
+          val updateResult =
+              gateway.execute(
+                  WorkflowCommandRequest.ReviewUpdate(
+                      revision = reviewAfterComment.reviewRevision.id,
+                      body = updateBody,
+                  )
+              )
+          updateResult.shouldBeInstanceOf<WorkflowResult.Success<JsonObject>>()
+          commandRunner.submittedPullRequestBody shouldBe updateBody
+
           val outsideBody = Files.createTempFile("workflow-body-outside-", ".md")
+          val invalidUtf8Body =
+              Files.write(root.resolve("invalid-utf8.md"), byteArrayOf(0xC3.toByte(), 0x28))
           val invalidResults =
               listOf(
+                  gateway.execute(
+                      WorkflowCommandRequest.ReviewOpen(body = " \n\t ", risk = "normal")
+                  ),
                   gateway.execute(
                       WorkflowCommandRequest.ReviewOpen(
                           bodyFile = outsideBody.toString(),
@@ -502,8 +507,20 @@ class RuntimeFactoryTest :
                   ),
                   gateway.execute(
                       WorkflowCommandRequest.ReviewUpdate(
-                          revision = pullRequest.reviewRevision.id,
+                          revision = reviewAfterComment.reviewRevision.id,
                           bodyFile = outsideBody.toString(),
+                      )
+                  ),
+                  gateway.execute(
+                      WorkflowCommandRequest.ReviewUpdate(
+                          revision = reviewAfterComment.reviewRevision.id,
+                          bodyFile = invalidUtf8Body.toString(),
+                      )
+                  ),
+                  gateway.execute(
+                      WorkflowCommandRequest.ReviewUpdate(
+                          revision = reviewAfterComment.reviewRevision.id,
+                          body = " \n\t ",
                       )
                   ),
                   gateway.execute(
@@ -535,6 +552,7 @@ class RuntimeFactoryTest :
 private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRunner {
   private var reviewCommentCreated = false
   private var pullRequestBody = "PR 본문"
+  var submittedPullRequestBody: String? = null
 
   override fun run(command: List<String>, workingDirectory: Path): CommandResult =
       when {
@@ -553,9 +571,20 @@ private class RuntimeCommandRunner(private val repositoryRoot: Path) : CommandRu
             command.getOrNull(2) == "create" -> {
           val bodyIndex = command.indexOf("--body")
           if (bodyIndex >= 0) {
-            pullRequestBody = command.getOrNull(bodyIndex + 1) ?: pullRequestBody
+            submittedPullRequestBody = command.getOrNull(bodyIndex + 1)
+            pullRequestBody = submittedPullRequestBody ?: pullRequestBody
           }
           CommandResult(0, "https://github.com/example/repository/pull/1\n", "")
+        }
+        command.firstOrNull() == "gh" &&
+            command.getOrNull(1) == "pr" &&
+            command.getOrNull(2) == "edit" -> {
+          val bodyIndex = command.indexOf("--body")
+          if (bodyIndex >= 0) {
+            submittedPullRequestBody = command.getOrNull(bodyIndex + 1)
+            pullRequestBody = submittedPullRequestBody ?: pullRequestBody
+          }
+          CommandResult(0, "", "")
         }
         command == listOf("gh", "api", "user", "--jq", ".login") ->
             CommandResult(0, "agent-1\n", "")

@@ -146,4 +146,24 @@ class WorkflowDomainTest :
           nextReleaseAction(release) shouldBe null
         }
       }
+
+      context("SubTask 제목을 Review 제목으로 분리할 때") {
+        test("Type 접두사와 설명의 공백을 정리해 commit과 PR 제목을 만듭니다") {
+          val subTask = SubTask("sk-101", "task-101", " Fix :  변경 설명  ")
+
+          subTask.reviewTitlesOrNull() shouldBe ("Fix: 변경 설명" to "[sk-101] 변경 설명")
+        }
+
+        test("Type 접두사가 없으면 Feature를 기본값으로 사용합니다") {
+          val subTask = SubTask("sk-101", "task-101", "  변경 설명  ")
+
+          subTask.reviewTitlesOrNull() shouldBe ("Feature: 변경 설명" to "[sk-101] 변경 설명")
+        }
+
+        test("Type 접두사 뒤에 설명이 없으면 제목을 만들지 않습니다") {
+          val subTask = SubTask("sk-101", "task-101", "Fix:   ")
+
+          subTask.reviewTitlesOrNull() shouldBe null
+        }
+      }
     })
