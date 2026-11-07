@@ -7,8 +7,7 @@
 | 길고 복잡한 설명 정리 | [visual-structure.md](visual-structure.md) | 의미별 서브헤딩, 비교표, 관계 다이어그램 |
 | 문제 진단 및 수정 | [problem-catalog.md](problem-catalog.md) | 위반 확정 조건, 예외, 수정 방법, 재점검 |
 | 품질 평가와 중요 위반 판정 | [rubric.md](rubric.md) | 6개 평가 항목, 중요 FAIL은 점수와 관계없이 수정 |
-| 실제 아키텍처 사례 | [case-pr38.md](case-pr38.md) | BC, Slice, DB, API의 영향을 주제별로 설명 |
-| 출처 확인 | [sources.md](sources.md) | 공식 지원 형식과 작성 원칙 구분 |
+| 다양한 가상 사례와 반례 | [cases.md](cases.md) | 적용 조건과 예외를 이해할 때만 선택적으로 읽기 |
 | 기계적 신호 탐지 | [../scripts/check_pr.py](../scripts/check_pr.py) | 위반 확정이 아닌 구조 개선 신호 |
 
 ## 주요 점검 항목
@@ -18,3 +17,4 @@
 - **중요 정보 누락:** `PRC-004`, `PRC-005`, `PRC-007`, `PRC-013` → 최종 Diff와 계약을 비교.
 - **검증이 부정확한 PR:** `PRC-006`, `PRC-008`, `PRC-014` → 확인 결과와 보장 범위 대조.
 - **문서/정책 변경:** `PRC-009` → 신규 규칙과 순수 표현 수정 분리.
+가상 사례는 규칙의 근거가 아닙니다. 실제 판정에서는 현재 PR의 Diff, 계약과 검증 결과를 먼저 확인하고, 사례는 예외와 판단 범위를 이해하는 보조 자료로 사용합니다.
