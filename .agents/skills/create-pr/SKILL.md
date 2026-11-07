@@ -1,41 +1,89 @@
 ---
 name: create-pr
-description: >
-  Create a reviewable, validated draft pull request in a software repository.
-  Use when preparing a branch, committing changes, writing a PR title or body,
-  publishing a draft PR, updating it after review, or recovering from a failed
-  publication. Follow repository instructions for tools and workflow.
-license: MIT
-metadata:
-  internal: true
+description: 저장소의 작업·권한 규칙에 따라 Git 변경을 검증하고 Draft Pull Request를 생성·갱신·복구하며, 리뷰어가 변경의 필요성·계약·설계 선택·위험·검증 범위를 판단할 수 있도록 PR 제목과 본문을 작성·평가·수정한다. 브랜치 준비, 커밋, PR 게시, 게시 실패 복구, 리뷰 반영, 기존 PR 본문 재작성 및 Agent 결과보고형 PR 진단에 사용한다.
 ---
 
 # Create PR
 
-Turn one verified change into a reviewable draft pull request. Follow repository
-instructions for branch, commit, validation, publication, and authorization
-rules.
+검증된 하나의 변경을 저장소 규칙에 맞는 **리뷰 가능한 Draft PR**로 전달한다. 요청이 본문 작성이나 평가에 한정되면 Git·원격 상태를 변경하지 않고 해당 산출물만 제공한다.
 
-Always apply the substantive writing and review rules in
-[pr-reviewer-guide.md](references/pr-reviewer-guide.md) and
-[pr-description.md](references/pr-description.md). For the PR body's default
-shape, prefer the target repository's applicable GitHub pull request template.
-Follow the template's required sections, prompts, and compliance rules first
-when they conflict with general body-writing guidance; retain all compatible
-rules. Use the bundled default shape only when no applicable template exists.
-Repository instructions still govern the PR title, footer, branch, publication,
-and authorization.
+## 좋은 PR이 지향하는 상태
 
-## References
+좋은 PR은 작업 수행자의 성과 보고서가 아니라, **다른 개발자가 변경의 필요성, 설계 선택, 계약의 변화와 위험을 독립적으로 판단할 수 있는 검토 자료**다. 작성자는 리뷰어가 자신의 작업 이력을 모른다는 전제로 설명한다. 리뷰어가 Diff를 살피기 전에 `문제 → 선택 → 결과 → 확인과 불확실성 → 검토할 판단`의 인과관계를 파악할 수 있게 한다.
 
-- For branch setup, validation, publication, review updates, and recovery, read
-  [references/pr-workflow.md](references/pr-workflow.md) fully.
-- When writing or updating the pull request body, first read
-  [references/pr-reviewer-guide.md](references/pr-reviewer-guide.md) fully for
-  mandatory Must / Must Not rules, exceptions, and reviewer-only content.
-- Then read [references/pr-description.md](references/pr-description.md) fully
-  for composition, diagrams, links, and the default body structure. Apply
-  the repository's or user's writing rules.
-- When researching or revising these PR writing rules, consult
-  [references/pr-description-sources.md](references/pr-description-sources.md)
-  for the supporting materials. Do not load it for routine PR drafting.
+독자의 주의력을 제한된 자원으로 취급한다. **핵심 결정과 중요한 위험은 앞에, 관계는 필요한 표·다이어그램으로, 세부 구현은 근거 링크로** 전달한다. 정보량과 도표의 수가 품질의 척도는 아니다. 간결함을 이유로 계약 변경, 실제 검증 실패, 중요 제약을 삭제하지 않는다. 독자가 코드의 내부 구조를 이미 안다고 가정하지 않는다.
+
+## 저장소 계약과 작업 권한
+
+- 작업 전에 `AGENTS.md`, `CONTRIBUTING.md`, 사용자 지시와 저장소의 브랜치·대상 브랜치·커밋·제목·푸터·검증·게시·권한 규칙을 확인한다. 저장소에서 별도로 정한 도구와 실행 절차를 우선한다.
+- PR 본문 작성 전 적용 가능한 GitHub PR 템플릿을 확인한다. 템플릿의 필수 섹션·질문·준수 요건을 우선하고, 충돌하지 않는 이 Skill의 작성·검토 규칙을 함께 적용한다. 템플릿이 없으면 [기본 PR 템플릿](assets/pr-template.md)을 변경 규모에 맞게 축약한다.
+- 브랜치·커밋·제목·푸터·게시 상태·권한은 저장소의 명시적 계약을 따른다. 저장소가 별도로 정하지 않은 PR 생성의 기본 게시 상태는 **Draft**다.
+- PR 게시 권한을 받았다는 사실만으로 Draft 해제, 병합, 배포까지 허용받았다고 판단하지 않는다. 현재 요청이 분석·재작성·진단이면 PR 상태를 변경하지 않는다.
+- 변경 범위 밖의 작업 트리 파일을 건드리지 않는다. 관찰한 상태와 추정, 미실행 검증, 실패를 구별한다.
+
+## PR 작업 절차
+
+- **생성·게시:** [pr-workflow.md](references/pr-workflow.md)를 **끝까지 읽고**, 작업 트리 확인, 저장소 계약 확인, 브랜치 준비, 필요한 검증, 관련 변경만 스테이징·커밋, PR 템플릿 선택, Draft 게시 절차를 따른다. PR 본문은 아래 작성·진단 규칙으로 준비한다.
+- **본문 작성·평가:** 실제 Diff, 계약, 이슈와 확인된 검증 근거를 읽고 PR 제목·본문을 작성하거나 평가한다. 게시·커밋·푸시는 수행하지 않는다.
+- **게시 실패 복구:** [pr-workflow.md](references/pr-workflow.md)의 상태 확인·중복 PR 방지·인증 복구 절차를 따른다. 성공하지 않은 명령을 성공했다고 보고하지 않는다.
+- **리뷰 반영:** [pr-workflow.md](references/pr-workflow.md)의 검증·커밋·게시 절차를 따르고 **최종 Diff**와 실제 CI 상태에 맞춰 본문·표·다이어그램·검토 요청도 갱신한다.
+
+## 리뷰어 중심 PR 작성
+
+- **변경의 이유:** 현재의 구체적인 문제, 재현 조건, 사용 시나리오 또는 설계상의 비용을 설명한다. `품질 개선`처럼 판단 근거가 없는 일반 표현으로 대체하지 않는다.
+- **핵심 변화:** 최종 Diff와 공개 계약·테스트·설정·문서를 대조한다. 사용자·API·DB·권한·운영·규범적 정책·도메인 책임의 **의미 있는 변화**를 분류하여 본문의 판단 단위에 대응시킨다. 파일 목록이나 커밋 로그를 변경 설명으로 대체하지 않는다.
+- **선택의 근거:** 중요한 설계·책임 경계, 대안과 트레이드오프를 설명한다. 코드를 읽어도 알기 어려운 이유를 우선한다. 자명한 작은 수정에 가상의 설계 대안을 만들지 않는다.
+- **영향과 제약:** 호환성 중단, 데이터·보안·운영·배포·마이그레이션·롤백·실패 경계를 중요도에 맞게 드러낸다. 큰 영향이나 위험은 첫 단락에서도 알린다.
+- **검증과 불확실성:** 실제로 수행한 검사, 결과, 해당 근거가 입증하는 범위를 구분한다. 테스트 작성, CI 설정, CI 성공, 로컬 실행, 통합 검증은 서로 다른 사실이다. 중요한 미실시 검사·실패·한계는 숨기지 않는다. 일반적인 검사 성공이나 테스트 개수를 작업 성과로 나열하지 않는다.
+- **리뷰 요청:** 판단해야 할 계약·설계·실패 조건·정책 변경을 구체적인 위치와 함께 제시한다. 실제 논쟁점이 없는 작은 변경에 형식적인 검토 요청을 만들지 않는다.
+
+PR 본문은 최종 상태를 설명한다. 후속 수정·검토·TDD 단계·Agent 사용 도구의 시간순 이력을 누적하지 않는다. 작업 도구 자체가 설계 선택이나 재현에 필수일 때만 필요한 범위에서 다룬다. 운용자용 실행 결과와 PR 설명을 분리한다.
+
+## 정보 구조와 표현
+
+- 첫 한두 문장에서 문제와 핵심 변경을 전달한다. 하나의 긴 `변경 내용` 문단에 설계, 공개 API, DB, 실행 경계, 테스트와 운영 영향을 함께 넣지 않는다. 서로 독립된 판단 단위는 의미가 드러나는 `###` 서브헤딩으로 구분한다.
+- 두 가지 이상의 책임·계약·전후 상태를 비교할 때는 Markdown 표를 검토한다. 의존 방향, 호출 순서, 트랜잭션 경계, 실패 분기가 복잡하면 확인된 사실에 근거한 Mermaid `flowchart` 또는 `sequenceDiagram`을 검토한다.
+- 표·다이어그램은 문제·선택의 이유와 남은 제약을 대신하지 않는다. 작은 PR에는 강제하지 않는다. 실제 구현과 일치하도록 확인하고, 도표 없이도 핵심 계약을 읽을 수 있게 한다.
+- 한국어는 변경 대상·조건·결과가 명확한 평서문으로 쓴다. `검토했습니다`, `적용했습니다`와 같은 수행 기록보다 실제로 달라진 동작과 근거를 먼저 설명한다. `Must`, `Must Not`, `Should`의 강도와 예외·적용 범위는 임의로 바꾸지 않는다.
+- 정착된 전문 용어와 코드 식별자를 정확하게 쓰고, 처음 언급하는 내부 약어·개념을 설명한다. 확인된 사실, 작성 의도, 기대 효과, 미확인 범위를 구분하며 `안전`, `영향 없음`, `검증 완료`를 근거 없이 단정하지 않는다.
+
+자세한 구획·표·Mermaid 선택과 사례는 [visual-structure.md](references/visual-structure.md)에서 확인한다.
+
+## 문제 진단과 수정
+
+- [index.md](references/index.md)의 진단 경로를 따라 [problem-catalog.md](references/problem-catalog.md)의 `PRC-001`~`PRC-014` 위반 조건·적용 예외·해결방안을 확인한다.
+- `Must Not` 위반은 **표현의 존재, 문단 길이, 도표 유무만으로 확정하지 않는다**. 최종 Diff·저장소 정책·실제 검증 근거·본문을 비교하여 위반 조건에 부합하면 `FAIL`로 판정한다. 단순 패턴 일치는 `NEEDS_REVIEW`다.
+- `FAIL`은 해당 문장·근거·리뷰어에 대한 영향을 특정하고 `문제 → 영향 → 필요한 정보·표현 → 수정 → 중요 사실 보존 확인` 순서로 수정한다. 검증 실패·계약·위험을 단순히 삭제하여 점수를 높이지 않는다.
+- `PASS`는 확인한 근거가 있는 항목, `NOT_APPLICABLE`은 명확한 비적용 근거가 있는 항목에만 사용한다. 높은 루브릭 점수로 중요한 위반을 상쇄하지 않는다.
+- 필요할 때 `scripts/check_pr.py`로 긴 무제목 구간·문단·표·Mermaid·플레이스홀더의 **기계적 신호**를 수집한다. 이 도구의 경고는 위반 확정이 아니며, 경고가 없더라도 의미·계약·위험 검토를 생략하지 않는다.
+
+평가 축과 기록 형식은 [rubric.md](references/rubric.md)를 따른다. 문제 유형은 [problem-catalog.md](references/problem-catalog.md)에 정의된 규칙 ID를 단일 원천으로 사용한다.
+
+## 최종 품질 게이트
+
+- 저장소의 작업·권한·PR 템플릿 규칙을 충족했는가?
+- 본문이 최종 Diff의 중요한 변경·보존 계약·설계 선택·위험에 대응하는가?
+- 검증의 실행 여부·결과·증거 범위가 정확하고, 중요 미확인 사항을 숨기지 않는가?
+- 독자가 핵심 변경을 먼저 이해하고 구체적인 검토 판단에 도달할 수 있는가?
+- 수정 과정에서 기존 계약·제약·검증 실패·리뷰 요청이 사라지지 않았는가?
+- [rubric.md](references/rubric.md)의 6개 축을 평가했고, [problem-catalog.md](references/problem-catalog.md)의 중요 `FAIL`은 수정했는가?
+
+평가만 요청받았다면 문제와 근거, 해결방안을 보고한다. 본문 작성을 요청받았다면 완성된 제목·본문을 전달한다. GitHub 상태 변경은 요청·권한과 [작업 절차](references/pr-workflow.md)에 따라 수행한다.
+
+## 참고 자료
+
+| 수행 목적 | 읽을 파일 |
+| --- | --- |
+| 브랜치·커밋·검증·Draft 게시·복구·리뷰 반영 | [pr-workflow.md](references/pr-workflow.md) — 작업 수행 시 전체 읽기 |
+| 작성·진단에 필요한 자료 안내 | [index.md](references/index.md) |
+| 위반 조건·예외·문제별 수정 | [problem-catalog.md](references/problem-catalog.md) |
+| 6개 평가 축·점수·핵심 게이트 | [rubric.md](references/rubric.md) |
+| 장문·관계·전후 비교 및 Mermaid | [visual-structure.md](references/visual-structure.md) |
+| 큰 설계 변경의 재구성 사례 | [case-pr38.md](references/case-pr38.md) |
+| 관련 공식 자료 및 운영 규칙의 출처 | [sources.md](references/sources.md) — 근거 조사·규칙 수정 시 |
+| 저장소에 PR 템플릿이 없을 때 | [pr-template.md](assets/pr-template.md) |
+| 기계적 구조 신호 검사 | [check_pr.py](scripts/check_pr.py) — 필요한 경우 실행 |
+
+## 라이선스
+
+이 Skill은 [MIT License](LICENSE)에 따라 배포한다.

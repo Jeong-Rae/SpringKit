@@ -21,7 +21,6 @@ def inspect(markdown: str) -> dict:
     headings = []
     paragraphs = []
     paragraphs_buffer = []
-    section_parts = []
     in_fence = False
     fence_marker = ""
     diagram_count = 0
