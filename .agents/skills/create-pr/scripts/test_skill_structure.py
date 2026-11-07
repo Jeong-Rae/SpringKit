@@ -41,7 +41,7 @@ class SkillStructureTests(unittest.TestCase):
 
     def test_examples_contain_counterexamples(self):
         cases = (REFERENCES / "cases.md").read_text(encoding="utf-8")
-        self.assertGreaterEqual(cases.count("**판단·반례:**"), 10)
+        self.assertGreaterEqual(cases.count("**판단/반례:**"), 10)
         self.assertIn("가상", cases)
 
 
