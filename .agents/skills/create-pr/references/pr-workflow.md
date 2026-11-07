@@ -28,7 +28,7 @@
 
 5. PR 본문을 작성하기 전에 대상 저장소의 PR 템플릿을 찾습니다. 저장소 루트, `.github/`, `docs/`의 `PULL_REQUEST_TEMPLATE.md`와 `.github/PULL_REQUEST_TEMPLATE/`의 Markdown 템플릿 등 GitHub의 일반적인 위치를 확인합니다. 저장소에서 템플릿 사용 방법을 정했다면 그 지침을 따릅니다. 템플릿이 여러 개라면 이번 변경에 맞는 템플릿을 선택합니다.
 
-   PR 본문 작성 시 [SKILL.md](../SKILL.md)의 리뷰어 중심 작성 규칙과 문제 진단·수정·품질 게이트를 적용합니다. 상세 위반 조건은 [problem-catalog.md](problem-catalog.md), 평가 기준은 [rubric.md](rubric.md)에서 확인합니다.
+   PR 본문 작성 시 [SKILL.md](../SKILL.md)의 리뷰어 중심 작성 규칙과 문제를 점검하고 수정하는 기준과 최종 품질 점검을 적용합니다. 상세 위반 조건은 [problem-catalog.md](problem-catalog.md), 평가 기준은 [rubric.md](rubric.md)에서 확인합니다.
 
    적용 가능한 저장소 템플릿이 있다면 스킬에 포함된 기본 구성 대신 해당 템플릿을 사용합니다. 템플릿의 섹션 구조를 유지합니다. 필수 질문에는 확인된 변경 내용을 작성하고, 명시된 본문 요건을 충족합니다. 템플릿의 요구 사항과 일반적인 본문 작성 지침이 충돌하면 템플릿을 우선합니다. 충돌하지 않는 지침은 계속 적용합니다.
 
