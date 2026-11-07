@@ -6,7 +6,12 @@
 - [GitHub Docs: Helping others review your changes](https://docs.github.com/en/pull-requests/concepts/helping-others-review-your-changes): 문제/접근 방식/결과, 집중 검토할 부분을 전달하도록 안내한다.
 - [GitHub Docs: Organizing information with tables](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-tables): PR 본문에서 Markdown 표를 사용할 수 있다.
 - [GitHub Docs: Creating diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams): PR Markdown에서 Mermaid 다이어그램을 렌더링할 수 있다.
-- [GitHub Docs: Style guide, Tables](https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide): 표는 비교나 다속성 정보를 전달할 때 유리하며 단순 목록을 표로 만들지 말도록 안내한다. 이는 GitHub Docs 자체의 스타일 가이드로, 모든 PR에 강제되는 규칙은 아니다.
+- [GitHub Docs: Style guide, Tables](https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide): 표는 비교하거나 여러 속성을 설명할 때 유리하며 단순 목록을 표로 만들지 말도록 안내한다. 이는 GitHub Docs 자체의 스타일 가이드로, 모든 PR에 강제되는 규칙은 아니다.
+
+## 한국어 문장 작성 참고
+
+- [SpringKit Writing Guide](https://github.com/Jeong-Rae/SpringKit/tree/develop/.agents/skills/writing-guide): 주어와 서술어, 조사, 문장 순서, 용어 표기를 점검할 때 따른다.
+- [im-not-ai](https://github.com/epoko77-ai/im-not-ai): 번역투, 긴 명사 나열, 중복 수식과 기계적인 표현을 줄일 때 참고한다. 의미, 서법, 고유명사와 기술 용어는 보존한다.
 
 ## 스킬 자체 판단 규칙
 
