@@ -167,15 +167,23 @@ class WorkflowCommandGateway(
       context
           .currentWorkspaceContext()
           .flatMapResult { workspace ->
-            readBody(workspace.path, request.bodyFile).flatMap { body ->
-              reviewLifecycle.open(
-                  OpenReviewLifecycleRequest(
-                      workspaceId = workspace.id,
-                      subTaskId = workspace.subTaskId,
-                      body = body,
-                      risk = request.risk.toRisk(),
+            if ((request.body == null) == (request.bodyFile == null)) {
+              failure(FailureCode.INVALID_ARGUMENT, "--body 또는 --body-file 중 하나만 지정해야 합니다.")
+            } else {
+              body(workspace.path, request.body, request.bodyFile).flatMap { body ->
+                if (body.isBlank()) {
+                  failure(FailureCode.INVALID_ARGUMENT, "PR 본문은 비어 있을 수 없습니다.")
+                } else {
+                  reviewLifecycle.open(
+                      OpenReviewLifecycleRequest(
+                          workspaceId = workspace.id,
+                          subTaskId = workspace.subTaskId,
+                          body = body,
+                          risk = request.risk.toRisk(),
+                      )
                   )
-              )
+                }
+              }
             }
           }
           .toJson { data ->
@@ -290,16 +298,23 @@ class WorkflowCommandGateway(
           .flatMapResult { current ->
             authorizeReviewMutation(current.subTaskId, request.allowAccountMismatch) {
               context.currentWorkspaceContext().flatMapResult { workspace ->
-                optionalBody(workspace.path, request.bodyFile).flatMap { body ->
-                  reviewLifecycle.update(
-                      UpdateReviewLifecycleRequest(
-                          workspaceId = workspace.id,
-                          subTaskId = workspace.subTaskId,
-                          pullRequestId = current.pullRequestId,
-                          expectedReviewRevisionId = request.revision,
-                          body = body,
-                      )
+                if (request.body != null && request.bodyFile != null) {
+                  failure(
+                      FailureCode.INVALID_ARGUMENT,
+                      "--body 또는 --body-file 중 하나만 지정해야 합니다.",
                   )
+                } else {
+                  optionalBody(workspace.path, request.body, request.bodyFile).flatMap { body ->
+                    reviewLifecycle.update(
+                        UpdateReviewLifecycleRequest(
+                            workspaceId = workspace.id,
+                            subTaskId = workspace.subTaskId,
+                            pullRequestId = current.pullRequestId,
+                            expectedReviewRevisionId = request.revision,
+                            body = body,
+                        )
+                    )
+                  }
                 }
               }
             }
@@ -622,9 +637,18 @@ class WorkflowCommandGateway(
 
   private fun optionalBody(
       workspacePath: WorkspacePath,
+      value: String?,
       file: String?,
-  ): WorkflowResult<String?> =
-      if (file == null) WorkflowResult.Success(null) else readBody(workspacePath, file).map { it }
+  ): WorkflowResult<String?> {
+    if (value == null && file == null) return WorkflowResult.Success(null)
+    return body(workspacePath, value, file).flatMap { body ->
+      if (body.isBlank()) {
+        failure(FailureCode.INVALID_ARGUMENT, "PR 본문은 비어 있을 수 없습니다.")
+      } else {
+        WorkflowResult.Success(body)
+      }
+    }
+  }
 
   private fun readBody(workspacePath: WorkspacePath, path: String): WorkflowResult<String> =
       try {

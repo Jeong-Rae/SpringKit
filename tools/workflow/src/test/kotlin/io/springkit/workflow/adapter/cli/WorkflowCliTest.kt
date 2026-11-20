@@ -65,6 +65,14 @@ class WorkflowCliTest :
                 WorkflowCommandRequest.ReviewOpen("pr.md", "high"),
             ),
             CommandCase(
+                "review open direct body",
+                "review open --body '  임의 본문 {{placeholder}}  ' --risk normal",
+                WorkflowCommandRequest.ReviewOpen(
+                    risk = "normal",
+                    body = "  임의 본문 {{placeholder}}  ",
+                ),
+            ),
+            CommandCase(
                 "review show",
                 "review show --diff --threads all",
                 WorkflowCommandRequest.ReviewShow(diff = true, threads = "all"),
@@ -73,6 +81,19 @@ class WorkflowCliTest :
                 "review update",
                 "review update --revision rv-8 --body-file pr.md",
                 WorkflowCommandRequest.ReviewUpdate("rv-8", "pr.md"),
+            ),
+            CommandCase(
+                "review update direct body",
+                "review update --revision rv-8 --body '  임의 본문 {{placeholder}}  '",
+                WorkflowCommandRequest.ReviewUpdate(
+                    revision = "rv-8",
+                    body = "  임의 본문 {{placeholder}}  ",
+                ),
+            ),
+            CommandCase(
+                "review update without body",
+                "review update --revision rv-8",
+                WorkflowCommandRequest.ReviewUpdate("rv-8"),
             ),
             CommandCase(
                 "review update mismatch override",
@@ -201,6 +222,18 @@ class WorkflowCliTest :
       context("지원하지 않는 CLI 인자를 검증할 때") {
         withData(
             nameFn = { "${it.name}, 요청을 전달하지 않고 실패합니다" },
+            InvalidCommandCase(
+                "review open에서 본문 입력이 없으면",
+                "review open --risk normal",
+            ),
+            InvalidCommandCase(
+                "review open에서 두 본문 입력을 함께 지정하면",
+                "review open --risk normal --body 본문 --body-file pr.md",
+            ),
+            InvalidCommandCase(
+                "review update에서 두 본문 입력을 함께 지정하면",
+                "review update --revision rv-8 --body 본문 --body-file pr.md",
+            ),
             InvalidCommandCase(
                 "review open의 risk가 지원 값이 아니면",
                 "review open --body-file pr.md --risk medium",

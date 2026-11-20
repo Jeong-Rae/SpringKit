@@ -12,9 +12,9 @@ tools/workflow/bin/workflow <명령> [인자와 옵션]
 | --- | --- | --- |
 | `start` | `--task <task-id>`, `--request-id <request-id>`, `--title <text>` | `--requires <subtask-id>`로 직접 선행 작업을 지정합니다. |
 | `check` | 없음 | 현재 Worktree 변경을 검증합니다. |
-| `review open` | `--body-file <경로>`, `--risk` (`normal` 또는 `high`) | 변경을 게시하고 초안 PR(Pull request)을 엽니다. |
+| `review open` | `--body <내용>` 또는 `--body-file <경로>`, `--risk` (`normal` 또는 `high`) | 변경을 게시하고 초안 PR(Pull request)을 엽니다. 본문 입력은 하나만 지정합니다. |
 | `review show` | 없음 | `--diff`, `--threads` (`open` 또는 `all`)를 지원합니다. 기본 조회 범위는 `open`입니다. |
-| `review update` | `--revision <revision>` | 변경 커밋을 다시 게시합니다. `--body-file <경로>`를 지정하면 PR 설명도 갱신합니다. |
+| `review update` | `--revision <revision>` | 변경 커밋을 다시 게시합니다. `--body <내용>` 또는 `--body-file <경로>`를 지정하면 PR 설명도 갱신합니다. 본문 입력은 최대 하나만 지정할 수 있습니다. |
 | `review comment` | `--revision <revision>`, `--level` (`R`, `C` 또는 `A`), `--body <내용>` 또는 `--body-file <경로>` | 본문 입력은 하나만 지정합니다. 인라인 댓글에는 `--path <파일>`과 `--line <번호>`를 함께 지정합니다. |
 | `review reply` | `--revision <revision>`, `--thread <thread-id>`, `--body <내용>` 또는 `--body-file <경로>` | 본문 입력은 하나만 지정합니다. |
 | `review resolve` | `--revision <revision>`, `--thread <thread-id>` | 지정한 리뷰 대화를 해결 상태로 바꿉니다. |
@@ -30,17 +30,34 @@ tools/workflow/bin/workflow <명령> [인자와 옵션]
 
 `--allow-account-mismatch`는 `review update`, `review comment`, `review reply`, `review resolve`, `gate ready`, `gate approve`, `stack`, `sync`에서 사용할 수 있습니다. PR 변경 전에 현재 `gh` 사용자와 PR 작성자를 비교하며, 다르면 기본적으로 중단합니다. 이 옵션으로 계정 차이만 허용하면 작업을 계속하고 경고를 표준 오류(stderr)에 출력합니다. `--json` 결과는 표준 출력(stdout)에 유지됩니다.
 
+입력 본문은 공백이 아닌 문자를 포함해야 합니다. 원문은 앞뒤 공백과 개행을 보존해 게시합니다. 파일 본문은 현재 관리 Worktree 안의 파일에서 유효한 UTF-8로 읽습니다. `review update`에서 본문 옵션을 생략하면 코드만 갱신합니다.
+
 ```sh
 tools/workflow/bin/workflow start --task SK-33 --request-id sk-33-start --title '문서 추가'
-tools/workflow/bin/workflow review open --body-file /tmp/pr-body.md --risk normal
+tools/workflow/bin/workflow review open --body-file pr-body.md --risk normal
+tools/workflow/bin/workflow review open --body '임의 형식의 PR 본문' --risk normal
 tools/workflow/bin/workflow review show --diff --threads all --json
 tools/workflow/bin/workflow review comment --revision abc123 --level C --body '[Agent] 검토 의견입니다.'
-tools/workflow/bin/workflow review update --revision rv-4 --allow-account-mismatch --json
+tools/workflow/bin/workflow review update --revision rv-4 --body '갱신 본문' --allow-account-mismatch --json
 tools/workflow/bin/workflow status --subtask sk-33
 ```
+
+## Review 제목
+
+`start --title`에 `Type: 설명`을 입력하면 commit 제목은 `Type: 설명`, PR 제목은 `[SubTask ID] 설명`으로 구성합니다. Type을 생략하면 `Feature`를 사용합니다. Type 접두사 뒤 설명이 비어 있으면 Review 게시와 코드 변경 갱신을 외부 변경 전에 거부합니다. 입력한 `SubTask.title` 원문은 Workflow Store에 그대로 보존합니다.
+
+본문만 갱신할 때는 commit을 만들거나 CI·AI Review를 다시 시작하지 않습니다. PR 제목을 GitHub에서 직접 수정해도 코드 변경 commit 제목은 원래 `SubTask.title`에서 계산합니다.
 
 ## 댓글과 인증
 
 에이전트가 `review comment` 또는 `review reply`로 작성하는 댓글 본문은 `[Agent]`로 시작해야 합니다. `--body`와 `--body-file` 모두 같은 규칙을 적용합니다.
 
 Workflow CLI는 설정된 인증을 사용하며 로그인이나 인증 절차를 다시 실행하지 않습니다.
+
+## 개발 검증
+
+개발 중에는 `tools/workflow`에서 Gradle로 JVM 애플리케이션을 빌드하고 실행합니다. Native 실행 파일의 생성과 갱신은 최종 배포 단계에서 진행합니다.
+
+```sh
+./gradlew run --args='--help'
+```
