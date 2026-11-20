@@ -26,11 +26,11 @@
    rtk git commit -m "<repository-compliant title>"
    ```
 
-5. PR 본문을 작성하기 전에 대상 저장소의 PR 템플릿을 찾습니다. 저장소 루트, `.github/`, `docs/`의 `PULL_REQUEST_TEMPLATE.md`와 `.github/PULL_REQUEST_TEMPLATE/`의 Markdown 템플릿 등 GitHub의 일반적인 위치를 확인합니다. 저장소에서 템플릿 사용 방법을 정했다면 그 지침을 따릅니다. 템플릿이 여러 개라면 이번 변경에 맞는 템플릿을 선택합니다.
+5. PR 본문을 작성하기 전에 템플릿을 찾습니다. 저장소 루트, `.github/`, `docs/`의 `PULL_REQUEST_TEMPLATE.md`와 `.github/PULL_REQUEST_TEMPLATE/`의 Markdown 파일을 확인합니다. 저장소에서 사용 방법을 정했으면 그 지침을 따르고, 여러 템플릿 중 이번 변경에 맞는 것을 선택합니다.
 
-   [pr-reviewer-guide.md](pr-reviewer-guide.md)와 [pr-description.md](pr-description.md)를 끝까지 읽고, 모든 PR 본문에 반드시 넣을 내용과 넣지 말아야 할 내용, 검토 기준, 작성 규칙을 적용합니다.
+   PR 본문을 작성할 때는 [SKILL.md](../SKILL.md)의 작성 기준을 따릅니다. 문제를 진단하고 수정한 뒤 최종 품질도 점검합니다. 상세 위반 조건은 [problem-catalog.md](problem-catalog.md), 평가 기준은 [rubric.md](rubric.md)에서 확인합니다.
 
-   적용 가능한 저장소 템플릿이 있다면 스킬에 포함된 기본 구성 대신 해당 템플릿을 사용합니다. 템플릿의 섹션 구조를 유지합니다. 필수 질문에는 확인된 변경 내용을 작성하고, 명시된 본문 요건을 충족합니다. 템플릿의 요구 사항과 일반적인 본문 작성 지침이 충돌하면 템플릿을 우선합니다. 충돌하지 않는 지침은 계속 적용합니다.
+   적용할 템플릿이 있다면 Skill의 기본 구성 대신 사용합니다. 섹션 구조를 유지하고 필수 질문에는 확인된 변경 내용을 적습니다. 일반 작성 지침과 충돌하면 템플릿을 우선하며, 충돌하지 않는 규칙은 함께 적용합니다.
 
    적용 가능한 템플릿이 없다면 스킬의 기본 구성을 사용합니다. PR 제목, 푸터, 브랜치, 게시 및 권한에 관해서는 저장소 지침을 따릅니다. 작성한 PR 본문 전체를 임시 Markdown 파일에 저장합니다.
 

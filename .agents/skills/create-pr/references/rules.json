@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "judgment_states": ["PASS", "FAIL", "NEEDS_REVIEW", "NOT_APPLICABLE"],
+  "rule_ids": [
+    "PRC-001", "PRC-002", "PRC-003", "PRC-004", "PRC-005", "PRC-006", "PRC-007", "PRC-008",
+    "PRC-009", "PRC-010", "PRC-011", "PRC-012", "PRC-013", "PRC-014"
+  ],
+  "mechanical_signals": {
+    "max_paragraph_characters_warning": 600,
+    "max_prose_section_characters_warning": 1700,
+    "placeholder_warning": ["<기존", "<변경", "<검증", "<리뷰", "TODO", "TBD"],
+    "mermaid_language_tag": "mermaid",
+    "table_header_pattern": "^\\s*\\|.*\\|\\s*$"
+  },
+  "must_not_decision": "A mechanical signal is only NEEDS_REVIEW; semantic FAIL requires checked evidence and an applicable rule from problem-catalog.md."
+}
