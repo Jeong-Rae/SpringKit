@@ -1,10 +1,9 @@
-# PR 작성 참고 자료
+# PR Creator 참고 자료
 
 작성자가 리뷰어의 판단에 필요한 정보를 제공할 수 있도록 작업별 참고 자료를 안내합니다.
 
 | 수행할 작업 | 읽을 파일 | 핵심 기준 |
 | --- | --- | --- |
-| 브랜치/커밋/검증/Draft 게시/복구/리뷰 반영 | [pr-workflow.md](pr-workflow.md) | 저장소 작업 계약과 권한 준수 |
 | PR 제목/본문 작성/재구성 | [SKILL.md](../SKILL.md), [pr-template.md](../assets/pr-template.md) | 문제 → 변화 → 근거 → 영향 → 검증 → 질문 |
 | 길고 복잡한 설명 정리 | [visual-structure.md](visual-structure.md) | 의미별 서브헤딩, 비교표, 관계 다이어그램 |
 | 문제 진단 및 수정 | [problem-catalog.md](problem-catalog.md) | 위반 확정 조건, 예외, 수정 방법, 재점검 |

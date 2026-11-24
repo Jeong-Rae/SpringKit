@@ -100,4 +100,4 @@ Spotless의 기준 Git ref는 `-PspotlessRatchetFrom` 또는 `SPOTLESS_RATCHET_F
 # 전문 스킬
 
 - `$writing-guide`를 사용해야 합니다. 텍스트 기반 콘텐츠와 대화 응답을 작성, 수정, 검토할 때 스킬이 정한 글쓰기 기준을 적용해야 합니다.
-- `$create-pr`: 작업을 검증하고 커밋한 뒤 초안 PR을 생성할 때 사용할 수 있습니다.
+- `$pr-creator`: PR 제목과 본문을 작성·평가·수정할 때 사용합니다. Git 작업과 게시·병합은 이 문서의 workflow CLI 및 권한 규칙을 따릅니다.
